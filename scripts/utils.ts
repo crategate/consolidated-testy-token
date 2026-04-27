@@ -27,7 +27,9 @@ import {
     SYSVAR_CLOCK_PUBKEY,
 } from "@solana/web3.js";
 import * as sb from "@switchboard-xyz/on-demand";
-
+import * as fs from "fs";
+import * as path from "path";
+import { TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
 /**
  * Program keypair file paths
  * These are generated when you deploy the example programs using Anchor
@@ -657,6 +659,20 @@ export async function basicReadOracleIx(
         [Buffer.from("market_status")],
         program.programId
     )
+    const [feeAuthorityPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("fee_authority")],
+        program.programId
+    )
+    const mintKeyPath = path.join(process.cwd(), "target", "deploy", "coin_mint-keypair.json");
+    let nysehMintAddress: PublicKey;
+
+    if (fs.existsSync(mintKeyPath)) {
+        const keyData = JSON.parse(fs.readFileSync(mintKeyPath, "utf-8"));
+        const mintKeypair = Keypair.fromSecretKey(new Uint8Array(keyData));
+        nysehMintAddress = mintKeypair.publicKey;
+    } else {
+        throw new Error("MINT KEYPAIR NOT FOUND.... Initialize mint first!");
+    }
     return await program.methods
         .readOracleData()
         .accounts({
@@ -666,6 +682,9 @@ export async function basicReadOracleIx(
             payer: payer,
             systemProgram: anchor.web3.SystemProgram.programId,
             marketStatus: marketStatusPda,
+            mint: nysehMintAddress,
+            feeAuthority: feeAuthorityPda,
+            tokenProgram: TOKEN_2022_PROGRAM_ID,
         })
         .instruction();
 }

@@ -1,4 +1,7 @@
 use anchor_lang::prelude::*;
+use anchor_spl::token_interface::{
+    transfer_fee_set, Mint, TokenInterface, TransferFeeSetTransferFee,
+};
 use switchboard_on_demand::prelude::rust_decimal::prelude::ToPrimitive;
 use switchboard_on_demand::{default_queue, SwitchboardQuote, SwitchboardQuoteExt};
 
@@ -11,6 +14,8 @@ declare_id!("B692MbcR2C84pQrYW4iyJWfQ482UM2s87KZSHAjShKsc");
 /// simple applications.
 #[program]
 pub mod crank_oracle {
+    use anchor_spl::token_2022::spl_token_2022::extension::transfer_fee;
+
     use super::*;
 
     /// Read and verify oracle data from the managed oracle account
@@ -63,6 +68,41 @@ pub mod crank_oracle {
             .to_u8()
             .expect("number unable to convert to u8!!");
         ctx.accounts.market_status.last_updated_timestamp = Clock::get()?.unix_timestamp;
+
+        // calculate zeh fee....
+        let fee_bps: u16 = match ctx.accounts.market_status.current_state {
+            0 => 0,   // 0%
+            1 => 100, // 1.0%
+            2 => 250, // 2.5%
+            3 => 800, // 8.0%
+            _ => 0,
+        };
+
+        msg!(
+            "Market state is {}. Setting transfer fee to {} bps.",
+            ctx.accounts.market_status.current_state,
+            fee_bps
+        );
+        // 2. Prepare the CPI accounts
+        let cpi_accounts = TransferFeeSetTransferFee {
+            token_program_id: ctx.accounts.token_program.to_account_info(),
+            mint: ctx.accounts.mint.to_account_info(),
+            authority: ctx.accounts.fee_authority.to_account_info(),
+        };
+
+        let cpi_program = ctx.accounts.token_program.to_account_info();
+
+        // 3. Prepare the PDA signature (The "Corporate Stamp")
+        let bump = ctx.bumps.fee_authority;
+        let signer_seeds: &[&[&[u8]]] = &[&[b"fee_authority", &[bump]]];
+
+        let cpi_program = ctx.accounts.token_program.to_account_info();
+        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
+
+        // 4. Fire the CPI
+        // The second parameter is the new fee. The third parameter is the max fee.
+        // (You usually just pass the same fee_bps or your hardcoded 800 max).
+        transfer_fee_set(cpi_ctx, fee_bps, 900)?;
         Ok(())
     }
     pub fn initialize_state(ctx: Context<InitializeState>) -> Result<()> {
@@ -93,6 +133,19 @@ pub struct ReadOracleData<'info> {
 
     #[account(mut)]
     pub market_status: Account<'info, MarketStatus>,
+
+    #[account(mut)]
+    pub mint: InterfaceAccount<'info, Mint>,
+
+    /// CHECK: The PDA we derived in TypeScript. Anchor will automatically
+    /// verify the seeds because we defined them here.
+    #[account(
+        seeds = [b"fee_authority"],
+        bump
+    )]
+    pub fee_authority: UncheckedAccount<'info>,
+
+    pub token_program: Interface<'info, TokenInterface>,
 }
 
 #[account]
