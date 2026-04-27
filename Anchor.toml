@@ -6,11 +6,11 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-coin_mint = "DiBpZD4ynNg19gMHL67hH9b8JGhRfkNHeHgmcVQB6EZd"
-crank_oracle = "B692MbcR2C84pQrYW4iyJWfQ482UM2s87KZSHAjShKsc"
+coin_mint = "38fPj6DPz5FXwBzYnaNK67ifYVoffEhJMuFDacqkFubk"
+crank_oracle = "EqA8JFvh2XkxQNLohZ4gJprWSv6z897BsjfBhnQDoDPZ"
 
 [programs.localnet]
-testy_token = "C9kX2XAgFgNNzNikPDRDxVvsZcEbWVi7sBLK8p6LhAWn"
+testy_token = "HgxUgnUiQHYxx4NmLEcM1J2Jt3fyEzkSzZiVBtQARCmA"
 
 [registry]
 url = "https://api.apr.dev"
@@ -20,7 +20,6 @@ cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-# Dont forget to delete/move the mint json if you want new token instance....
-mint = "npx ts-node scripts/mint-launch.ts"
 crank = "npx ts-node ./scripts/managedUpdate.ts --feedId 0xaf3a39b12f5c052d81eb8c62bb86f4691fce2c2e0c88b39f83801978b6f203c3"
+mint = "npx ts-node scripts/mint-launch.ts"
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"

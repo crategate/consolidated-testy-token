@@ -5,7 +5,7 @@ use anchor_spl::token_interface::{
 use switchboard_on_demand::prelude::rust_decimal::prelude::ToPrimitive;
 use switchboard_on_demand::{default_queue, SwitchboardQuote, SwitchboardQuoteExt};
 
-declare_id!("B692MbcR2C84pQrYW4iyJWfQ482UM2s87KZSHAjShKsc");
+declare_id!("EqA8JFvh2XkxQNLohZ4gJprWSv6z897BsjfBhnQDoDPZ");
 
 /// Basic Oracle Example Program
 ///

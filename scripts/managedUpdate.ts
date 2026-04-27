@@ -110,7 +110,7 @@ const argv = yargs(process.argv)
             console.log("   To deploy, run: anchor build && anchor deploy");
         }
     } else {
-        console.log("ℹ️  Skipping crank: basic_oracle_example program not deployed");
+        console.log("ℹ️  Skipping crank: program not deployed");
         console.log("   To deploy, run: anchor build && anchor deploy");
     }
 

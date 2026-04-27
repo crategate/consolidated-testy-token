@@ -9,7 +9,7 @@ pub use constants::*;
 pub use instructions::*;
 pub use state::*;
 
-declare_id!("C9kX2XAgFgNNzNikPDRDxVvsZcEbWVi7sBLK8p6LhAWn");
+declare_id!("HgxUgnUiQHYxx4NmLEcM1J2Jt3fyEzkSzZiVBtQARCmA");
 
 #[program]
 pub mod testy_token {

@@ -35,7 +35,7 @@ import { TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
  * These are generated when you deploy the example programs using Anchor
  */
 export const BASIC_PROGRAM_PATH =
-    "target/deploy/basic_oracle_example-keypair.json";
+    path.join(process.cwd(), "target", "deploy", "crank_oracle-keypair.json");
 export const ADVANCED_PROGRAM_PATH =
     "target/deploy/advanced_oracle_example-keypair.json";
 export const PREDICTION_MARKET_PROGRAM_PATH =
