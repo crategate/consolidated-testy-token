@@ -66,7 +66,6 @@ async function main() {
         program.programId
     );
 
-    // Hardcoded addresses from your test
     const crankKeypairPath = path.join(process.cwd(), "target", "deploy", "crank_oracle-keypair.json");
     const crankKeyData = JSON.parse(fs.readFileSync(crankKeypairPath, "utf-8"));
     const oracleCrankProgramId = Keypair.fromSecretKey(new Uint8Array(crankKeyData)).publicKey;
