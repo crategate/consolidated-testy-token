@@ -26,6 +26,7 @@ import {
 } from "@solana/spl-token";
 import { createInitializeInstruction, pack, type TokenMetadata } from "@solana/spl-token-metadata";
 import * as fs from "fs";
+import * as path from "path";
 
 async function main() {
     // 1. Setup Provider
@@ -39,7 +40,7 @@ async function main() {
     console.log("🚀 Starting Token Deployment...");
 
     // 2. Load or Generate Mint Keypair
-    const mintKeypairPath = "./target/deploy/nyseh_mint-keypair.json";
+    const mintKeypairPath = path.join(process.cwd(), "target", "deploy", "nyseh_token-keypair.json");
     let mint: Keypair;
 
     if (fs.existsSync(mintKeypairPath)) {
@@ -66,7 +67,10 @@ async function main() {
     );
 
     // Hardcoded addresses from your test
-    const oracleCrankProgramId = new PublicKey("3rTiktUXLdYgnsPfPv3YLduUYdLTQANnzC8muZprYYHR");
+    const crankKeypairPath = path.join(process.cwd(), "target", "deploy", "crank_oracle-keypair.json");
+    const crankKeyData = JSON.parse(fs.readFileSync(crankKeypairPath, "utf-8"));
+    const oracleCrankProgramId = Keypair.fromSecretKey(new Uint8Array(crankKeyData)).publicKey;
+
     const [feeAuthorityPda] = PublicKey.findProgramAddressSync(
         [Buffer.from("fee_authority")],
         oracleCrankProgramId
@@ -76,8 +80,8 @@ async function main() {
     // 4. Token Metadata Configuration
     const metadata: TokenMetadata = {
         mint: mint.publicKey,
-        name: 'OracleFeeTest',
-        symbol: '222222',
+        name: 'TESTFEE updater',
+        symbol: '333',
         uri: 'https://copper-quick-koi-488.mypinata.cloud/ipfs/bafkreiblskodz5bwtelz4id437rnhsndtq3rfh7jjsgaj72wb55cgnbbea',
         additionalMetadata: [['description', 'combining concepts and learning the basics']],
     };

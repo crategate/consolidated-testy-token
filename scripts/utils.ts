@@ -663,13 +663,14 @@ export async function basicReadOracleIx(
         [Buffer.from("fee_authority")],
         program.programId
     )
-    const mintKeyPath = path.join(process.cwd(), "target", "deploy", "coin_mint-keypair.json");
+    const mintKeyPath = path.join(process.cwd(), "target", "deploy", "nyseh_token-keypair.json");
     let nysehMintAddress: PublicKey;
 
     if (fs.existsSync(mintKeyPath)) {
         const keyData = JSON.parse(fs.readFileSync(mintKeyPath, "utf-8"));
         const mintKeypair = Keypair.fromSecretKey(new Uint8Array(keyData));
         nysehMintAddress = mintKeypair.publicKey;
+        console.log("CRANK LOOKING AT ", nysehMintAddress.toBase58());
     } else {
         throw new Error("MINT KEYPAIR NOT FOUND.... Initialize mint first!");
     }

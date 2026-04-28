@@ -6,11 +6,11 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-coin_mint = "38fPj6DPz5FXwBzYnaNK67ifYVoffEhJMuFDacqkFubk"
-crank_oracle = "EqA8JFvh2XkxQNLohZ4gJprWSv6z897BsjfBhnQDoDPZ"
+coin_mint = "9saLNREfhgiSnuiCHNWZ33yh9NAtJYGrMXvksv88v2NY"
+crank_oracle = "7ctiSeGcLZGCEPkZzNkvJEXx1tzGfN8eZ3arFx1n3izU"
 
 [programs.localnet]
-testy_token = "HgxUgnUiQHYxx4NmLEcM1J2Jt3fyEzkSzZiVBtQARCmA"
+testy_token = "7eBWK9DNspsKiL9wPDu5T3Bj2cTECJ6hUmMXMRqzmShJ"
 
 [registry]
 url = "https://api.apr.dev"
