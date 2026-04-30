@@ -11,7 +11,7 @@ use spl_tlv_account_resolution::{
 };
 use spl_transfer_hook_interface::instruction::{ExecuteInstruction, TransferHookInstruction};
 
-declare_id!("9saLNREfhgiSnuiCHNWZ33yh9NAtJYGrMXvksv88v2NY");
+declare_id!("ACuGbED6m6PwyeU9x9eFPLGk8tu2snQhUe9mrWq44Y9N");
 
 #[error_code]
 pub enum MyError {
@@ -24,16 +24,18 @@ pub enum MyError {
     InvalidBorrowSpy,
 }
 
+pub const CRANK_ORACLE_PROGRAM_ID: Pubkey = pubkey!("5BkqMghT4iAWbfJyNhJ5oSYBoAfBMD1SvHKtxMxzssRF");
+
 #[program]
 pub mod coin_mint {
     use super::*;
-        // this is the PDA address which should have the MarketStatus account type
-      pub const DEVNET_ORACLE: anchor_lang::prelude::Pubkey = pubkey!("Fk1p2HvsEFCVuh7sHFY7gCcBhhfiyBDeB4WzqZw4xACA");//
-    //
       pub fn initialize_extra_account_meta_list(
         ctx: Context<InitializeExtraAccountMetaList>,
     ) -> Result<()> {
-              // The `addExtraAccountsToInstruction` JS helper function resolving incorrectly
+    let (market_status_pda, _) = Pubkey::find_program_address(
+        &[b"market_status"],
+        &CRANK_ORACLE_PROGRAM_ID,
+    );
         let account_metas = vec![
             ExtraAccountMeta::new_with_seeds(
                 &[Seed::Literal {
@@ -44,7 +46,7 @@ pub mod coin_mint {
             ).unwrap(),
             ExtraAccountMeta::new_with_pubkey(
                 // devnet 
-                &SplPubkey::from(DEVNET_ORACLE.to_bytes()),
+                &SplPubkey::from(market_status_pda.to_bytes()),
                 false,
                 false,
             ).unwrap()

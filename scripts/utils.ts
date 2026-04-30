@@ -648,40 +648,34 @@ export function calculateStatistics(latencies: number[]) {
  * @param {PublicKey} queue - The Switchboard queue public key
  * @param {PublicKey} payer - The payer account
  * @returns {Promise<TransactionInstruction>} Instruction to read oracle data
- */
+**/
 export async function basicReadOracleIx(
     program: anchor.Program,
     quoteAccount: PublicKey,
-    queue: PublicKey,
-    payer: PublicKey
+    _queue: PublicKey,  // unused but kept to avoid changing callers
+    _payer: PublicKey,  // unused but kept to avoid changing callers
 ): Promise<TransactionInstruction> {
     const [marketStatusPda] = PublicKey.findProgramAddressSync(
         [Buffer.from("market_status")],
         program.programId
-    )
+    );
     const [feeAuthorityPda] = PublicKey.findProgramAddressSync(
         [Buffer.from("fee_authority")],
         program.programId
-    )
-    const mintKeyPath = path.join(process.cwd(), "target", "deploy", "nyseh_token-keypair.json");
-    let nysehMintAddress: PublicKey;
+    );
 
-    if (fs.existsSync(mintKeyPath)) {
-        const keyData = JSON.parse(fs.readFileSync(mintKeyPath, "utf-8"));
-        const mintKeypair = Keypair.fromSecretKey(new Uint8Array(keyData));
-        nysehMintAddress = mintKeypair.publicKey;
-        console.log("CRANK LOOKING AT ", nysehMintAddress.toBase58());
-    } else {
-        throw new Error("MINT KEYPAIR NOT FOUND.... Initialize mint first!");
+    const mintKeyPath = path.join(process.cwd(), "target", "deploy", "nyseh_token-keypair.json");
+    if (!fs.existsSync(mintKeyPath)) {
+        throw new Error("MINT KEYPAIR NOT FOUND. Run mint-launch.ts first.");
     }
+    const keyData = JSON.parse(fs.readFileSync(mintKeyPath, "utf-8"));
+    const nysehMintAddress = Keypair.fromSecretKey(new Uint8Array(keyData)).publicKey;
+
     return await program.methods
         .readOracleData()
         .accounts({
-            queue: queue,
             quoteAccount: quoteAccount,
-            clockSysvar: SYSVAR_CLOCK_PUBKEY,
-            payer: payer,
-            systemProgram: anchor.web3.SystemProgram.programId,
+            clock: SYSVAR_CLOCK_PUBKEY,        // was clockSysvar
             marketStatus: marketStatusPda,
             mint: nysehMintAddress,
             feeAuthority: feeAuthorityPda,
@@ -689,7 +683,6 @@ export async function basicReadOracleIx(
         })
         .instruction();
 }
-
 /**
  * Creates an instruction to read oracle data in the advanced program (Pinocchio version)
  *

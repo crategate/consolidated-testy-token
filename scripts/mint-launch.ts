@@ -74,13 +74,17 @@ async function main() {
         [Buffer.from("fee_authority")],
         oracleCrankProgramId
     );
+    const [marketStatusPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("market_status")],
+        oracleCrankProgramId
+    );
     const lottoVault = new PublicKey("J6J9SuxEfe9aiMLha7ERX3uQhHXaD4Y7bFkJYQGP4guR");
 
     // 4. Token Metadata Configuration
     const metadata: TokenMetadata = {
         mint: mint.publicKey,
-        name: 'TESTFEE updater',
-        symbol: '333',
+        name: 'testing againe',
+        symbol: '33223',
         uri: 'https://copper-quick-koi-488.mypinata.cloud/ipfs/bafkreiblskodz5bwtelz4id437rnhsndtq3rfh7jjsgaj72wb55cgnbbea',
         additionalMetadata: [['description', 'combining concepts and learning the basics']],
     };

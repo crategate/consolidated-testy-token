@@ -5,13 +5,20 @@ use anchor_spl::token_interface::{
 use switchboard_on_demand::prelude::rust_decimal::prelude::ToPrimitive;
 use switchboard_on_demand::{default_queue, SwitchboardQuote, SwitchboardQuoteExt};
 
-declare_id!("7ctiSeGcLZGCEPkZzNkvJEXx1tzGfN8eZ3arFx1n3izU");
+declare_id!("5BkqMghT4iAWbfJyNhJ5oSYBoAfBMD1SvHKtxMxzssRF");
 
 /// Basic Oracle Example Program
 ///
 /// This program demonstrates the simplest possible integration with
 /// Switchboard's managed update system. Perfect for learning and
 /// simple applications.
+#[error_code]
+pub enum CrankError {
+    #[msg("No feeds found in oracle quote")]
+    NoFeeds,
+    #[msg("Feed value could not be converted to u8")]
+    InvalidFeedValue,
+}
 #[program]
 pub mod crank_oracle {
     use anchor_spl::token_2022::spl_token_2022::extension::transfer_fee;
@@ -36,37 +43,26 @@ pub mod crank_oracle {
         // Access the oracle data directly
         // The quote_account constraint validates it's the canonical account
         let feeds = &ctx.accounts.quote_account.feeds;
+        require!(!feeds.is_empty(), CrankError::NoFeeds);
 
         // Calculate staleness
-        let current_slot = ctx.accounts.sysvars.clock.slot;
+        let current_slot = ctx.accounts.clock.slot;
         let quote_slot = ctx.accounts.quote_account.slot;
         let staleness = current_slot.saturating_sub(quote_slot);
 
         msg!("Number of feeds: {}", feeds.len());
         msg!(
-            "📅 Quote slot: {}, Current slot: {}",
+            " Quote slot: {}, Current slot: {}",
             quote_slot,
             current_slot
         );
-        msg!("⏰ Staleness: {} slots", staleness);
-
-        // Process each feed
-        for (i, feed) in feeds.iter().enumerate() {
-            msg!("📊 Feed {}: ID = {}", i, feed.hex_id());
-            msg!("💰 Feed {}: Value = {}", i, feed.value());
-
-            // - Store the price in your program state
-            // - Trigger events based on price changes
-            // - Use the price for calculations
-        }
-
-        msg!("✅ Successfully read {} oracle feeds!", feeds.len());
-
-        msg!("WRITING TO pda STATE ACCOUNT");
-        ctx.accounts.market_status.current_state = feeds[0]
+        msg!(" Staleness: {} slots", staleness);
+        let market_state = feeds[0]
             .value()
             .to_u8()
-            .expect("number unable to convert to u8!!");
+            .ok_or(CrankError::InvalidFeedValue)?;
+        msg!("WRITING TO pda STATE ACCOUNT");
+        ctx.accounts.market_status.current_state = market_state;
         ctx.accounts.market_status.last_updated_timestamp = Clock::get()?.unix_timestamp;
 
         // calculate zeh fee....
@@ -89,8 +85,6 @@ pub mod crank_oracle {
             mint: ctx.accounts.mint.to_account_info(),
             authority: ctx.accounts.fee_authority.to_account_info(),
         };
-
-        let cpi_program = ctx.accounts.token_program.to_account_info();
 
         // 3. Prepare the PDA signature (The "Corporate Stamp")
         let bump = ctx.bumps.fee_authority;
@@ -119,17 +113,11 @@ pub mod crank_oracle {
 /// The quote_account is the canonical account derived from feed hashes.
 #[derive(Accounts)]
 pub struct ReadOracleData<'info> {
-    /// The canonical oracle account containing verified quote data
-    ///
-    /// This account is:
-    /// - Updated by the quote program's verified_update instruction
-    /// - Contains verified oracle data
-    /// - Validated to be the canonical account for the contained feeds
     #[account(address = quote_account.canonical_key(&default_queue()))]
     pub quote_account: Box<Account<'info, SwitchboardQuote>>,
 
     /// System variables required for quote verification
-    pub sysvars: Sysvars<'info>,
+    pub clock: Sysvar<'info, Clock>,
 
     #[account(mut)]
     pub market_status: Account<'info, MarketStatus>,

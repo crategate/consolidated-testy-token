@@ -93,10 +93,11 @@ const argv = yargs(process.argv)
     // Load the basic oracle example program
     const ixs = [...instructions];
 
+    let basicProgram;
     if (fs.existsSync(BASIC_PROGRAM_PATH)) {
         try {
             //const basicProgram = await loadBasicProgram(program!.provider);
-            const basicProgram = new anchor.Program(myIdl as anchor.Idl, program!.provider);
+            basicProgram = new anchor.Program(myIdl as anchor.Idl, program!.provider);
             const readOracleIx = await basicReadOracleIx(
                 basicProgram,
                 quoteAccount,
@@ -153,4 +154,13 @@ const argv = yargs(process.argv)
     } catch (error) {
         console.error("❌ Transaction failed:", error);
     }
+
+    // After confirmation in managedUpdate.ts
+    const [marketStatusPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("market_status")],
+        basicProgram.programId
+    );
+    const status = await basicProgram.account.marketStatus.fetch(marketStatusPda);
+    console.log(` On-chain market status: ${status.currentState}`);
+    console.log(` Last updated: ${new Date(Number(status.lastUpdatedTimestamp) * 1000).toISOString()}`);
 })();
