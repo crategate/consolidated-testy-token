@@ -83,8 +83,8 @@ async function main() {
     // 4. Token Metadata Configuration
     const metadata: TokenMetadata = {
         mint: mint.publicKey,
-        name: 'testing againe',
-        symbol: '33223',
+        name: 'matching max now',
+        symbol: 'anand',
         uri: 'https://copper-quick-koi-488.mypinata.cloud/ipfs/bafkreiblskodz5bwtelz4id437rnhsndtq3rfh7jjsgaj72wb55cgnbbea',
         additionalMetadata: [['description', 'combining concepts and learning the basics']],
     };
@@ -116,7 +116,7 @@ async function main() {
             feeAuthorityPda,
             lottoVault,
             0, // Initial fee
-            BigInt(900), // Max fee
+            BigInt(1900), // Max fee
             TOKEN_2022_PROGRAM_ID
         ),
         createInitializeMetadataPointerInstruction(

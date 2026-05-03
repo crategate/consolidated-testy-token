@@ -67,10 +67,10 @@ pub mod crank_oracle {
 
         // calculate zeh fee....
         let fee_bps: u16 = match ctx.accounts.market_status.current_state {
-            0 => 0,   // 0%
-            1 => 100, // 1.0%
-            2 => 250, // 2.5%
-            3 => 800, // 8.0%
+            0 => 0,    // 0%
+            1 => 300,  // 3.0%
+            2 => 700,  // 7.0%
+            3 => 1800, // 18.0%
             _ => 0,
         };
 
@@ -96,7 +96,7 @@ pub mod crank_oracle {
         // 4. Fire the CPI
         // The second parameter is the new fee. The third parameter is the max fee.
         // (You usually just pass the same fee_bps or your hardcoded 800 max).
-        transfer_fee_set(cpi_ctx, fee_bps, 900)?;
+        transfer_fee_set(cpi_ctx, fee_bps, 1900)?;
         Ok(())
     }
     pub fn initialize_state(ctx: Context<InitializeState>) -> Result<()> {

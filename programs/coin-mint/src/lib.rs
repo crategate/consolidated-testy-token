@@ -99,9 +99,9 @@ pub mod coin_mint {
 
         match market_status.current_state {
             0 => fee = 0.0,
-            1 => fee = 0.01,
-            2 => fee = 0.025,
-            3 => fee = 0.08,
+            1 => fee = 0.03,
+            2 => fee = 0.07,
+            3 => fee = 0.18,
             _ => fee = 0.0,
         }
 
