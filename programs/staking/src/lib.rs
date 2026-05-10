@@ -1,7 +1,8 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{
-    transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked,
+    transfer_checked, Mint, SetAuthority, TokenAccount, TokenInterface, TransferChecked,
 };
+
 declare_id!("DAQsZPfBs2Qd88sTZEEMh9ecwqwRAY66WgXZ6AcaVKnU");
 #[program]
 pub mod staking {
@@ -15,6 +16,7 @@ pub mod staking {
         posr_tax_bps: u16,
     ) -> Result<()> {
         let pool = &mut ctx.accounts.pool;
+
         pool.authority = ctx.accounts.authority.key();
         pool.mint = ctx.accounts.mint.key();
         pool.vault = ctx.accounts.vault.key();
@@ -27,10 +29,13 @@ pub mod staking {
         pool.posr_tax_bps = posr_tax_bps;
         pool.market_status_pda = ctx.accounts.market_status_pda.key();
         pool.bump = ctx.bumps.pool;
+
         Ok(())
     }
 
     pub fn deposit_rewards(ctx: Context<DepositRewards>, amount: u64) -> Result<()> {
+        require!(amount > 0, StakeError::ZeroAmount);
+
         let cpi_accounts = TransferChecked {
             from: ctx.accounts.authority_token.to_account_info(),
             mint: ctx.accounts.mint.to_account_info(),
@@ -41,27 +46,26 @@ pub mod staking {
         transfer_checked(cpi_ctx, amount, ctx.accounts.mint.decimals)
     }
 
-    pub fn stake(ctx: Context<Stake>, amount: u64) -> Result<()> {
+    pub fn stake(ctx: Context<Stake>, amount: u64, index: u64) -> Result<()> {
         require!(amount > 0, StakeError::ZeroAmount);
-        require!(amount >= 100, StakeError::MinStake); // dust prevention
+        require!(amount >= 100, StakeError::MinStake);
 
         let pool = &mut ctx.accounts.pool;
         let position = &mut ctx.accounts.position;
         let user_index = &mut ctx.accounts.user_index;
         let clock = Clock::get()?;
 
-        let market_data = ctx.accounts.market_status.try_borrow_data()?;
-        let trading_day_index = u64::from_le_bytes(market_data[24..32].try_into().unwrap());
+        let trading_day_index = get_trading_day_index(&ctx.accounts.market_status)?;
 
         position.owner = ctx.accounts.owner.key();
         position.pool = pool.key();
         position.amount = amount;
         position.entry_trading_day = trading_day_index;
         position.last_claim_timestamp = clock.unix_timestamp;
-        position.index = user_index.next_index;
+        position.index = index;
         position.bump = ctx.bumps.position;
 
-        user_index.next_index += 1;
+        user_index.next_index = user_index.next_index.max(index + 1);
         pool.total_staked += amount;
 
         let cpi_accounts = TransferChecked {
@@ -79,8 +83,7 @@ pub mod staking {
         let pool = &ctx.accounts.pool;
         let clock = Clock::get()?;
 
-        let market_data = ctx.accounts.market_status.try_borrow_data()?;
-        let trading_day_index = u64::from_le_bytes(market_data[24..32].try_into().unwrap());
+        let trading_day_index = get_trading_day_index(&ctx.accounts.market_status)?;
 
         let gross_rewards =
             calculate_rewards(position, pool, clock.unix_timestamp, trading_day_index);
@@ -97,7 +100,7 @@ pub mod staking {
                 from: ctx.accounts.reward_vault.to_account_info(),
                 mint: ctx.accounts.mint.to_account_info(),
                 to: ctx.accounts.owner_token.to_account_info(),
-                authority: ctx.accounts.pool.to_account_info(),
+                authority: pool.to_account_info(),
             };
             transfer_checked(
                 CpiContext::new_with_signer(
@@ -115,7 +118,7 @@ pub mod staking {
                 from: ctx.accounts.reward_vault.to_account_info(),
                 mint: ctx.accounts.mint.to_account_info(),
                 to: ctx.accounts.posr_vault.to_account_info(),
-                authority: ctx.accounts.pool.to_account_info(),
+                authority: pool.to_account_info(),
             };
             transfer_checked(
                 CpiContext::new_with_signer(
@@ -132,13 +135,12 @@ pub mod staking {
     }
 
     pub fn unstake(ctx: Context<Unstake>) -> Result<()> {
-        let position = &mut ctx.accounts.position;
+        let position = &ctx.accounts.position;
         let pool = &mut ctx.accounts.pool;
         let clock = Clock::get()?;
 
-        let market_data = ctx.accounts.market_status.try_borrow_data()?;
-        let trading_day_index = u64::from_le_bytes(market_data[24..32].try_into().unwrap());
-        let current_state = market_data[8];
+        let current_state = get_market_state(&ctx.accounts.market_status)?;
+        let trading_day_index = get_trading_day_index(&ctx.accounts.market_status)?;
 
         let gross_rewards =
             calculate_rewards(position, pool, clock.unix_timestamp, trading_day_index);
@@ -151,18 +153,20 @@ pub mod staking {
 
         let net_rewards = gross_rewards.saturating_sub(penalty);
         let posr_tax = net_rewards * pool.posr_tax_bps as u64 / 10000;
-        let user_rewards = net_rewards - posr_tax;
+        let user_rewards = net_rewards.saturating_sub(posr_tax);
 
         pool.total_staked -= position.amount;
 
-        let signer_seeds: &[&[&[u8]]] = &[&[b"pool", pool.mint.as_ref(), &[pool.bump]]];
+        let pool_bump = pool.bump;
+        let pool_mint = pool.mint;
+        let signer_seeds: &[&[&[u8]]] = &[&[b"pool", pool_mint.as_ref(), &[pool_bump]]];
 
         // Return principal
         let cpi = TransferChecked {
             from: ctx.accounts.vault.to_account_info(),
             mint: ctx.accounts.mint.to_account_info(),
             to: ctx.accounts.owner_token.to_account_info(),
-            authority: ctx.accounts.pool.to_account_info(),
+            authority: pool.to_account_info(),
         };
         transfer_checked(
             CpiContext::new_with_signer(
@@ -180,7 +184,7 @@ pub mod staking {
                 from: ctx.accounts.reward_vault.to_account_info(),
                 mint: ctx.accounts.mint.to_account_info(),
                 to: ctx.accounts.owner_token.to_account_info(),
-                authority: ctx.accounts.pool.to_account_info(),
+                authority: pool.to_account_info(),
             };
             transfer_checked(
                 CpiContext::new_with_signer(
@@ -199,7 +203,7 @@ pub mod staking {
                 from: ctx.accounts.reward_vault.to_account_info(),
                 mint: ctx.accounts.mint.to_account_info(),
                 to: ctx.accounts.posr_vault.to_account_info(),
-                authority: ctx.accounts.pool.to_account_info(),
+                authority: pool.to_account_info(),
             };
             transfer_checked(
                 CpiContext::new_with_signer(
@@ -212,13 +216,26 @@ pub mod staking {
             )?;
         }
 
-        // Penalty stays in reward_vault for other stakers (implicit)
-
         Ok(())
     }
 }
 
-// --- Calculations ---
+// --- Raw byte helpers for cross-program market status ---
+
+fn get_market_state(market_status: &AccountInfo) -> Result<u8> {
+    let data = market_status.try_borrow_data()?;
+    require!(data.len() >= 9, StakeError::InvalidMarketStatus);
+    Ok(data[8])
+}
+
+fn get_trading_day_index(market_status: &AccountInfo) -> Result<u64> {
+    let data = market_status.try_borrow_data()?;
+    require!(data.len() >= 25, StakeError::InvalidMarketStatus);
+    // Layout: 8 byte disc + 1 byte state + 8 byte timestamp + 8 byte index
+    Ok(u64::from_le_bytes(data[17..25].try_into().unwrap()))
+}
+
+// --- Math ---
 
 fn calculate_rewards(
     position: &StakePosition,
@@ -253,11 +270,11 @@ fn calculate_multiplier(trading_days: u64, max_bps: u16) -> u64 {
     let max = max_bps as u64;
     let range = max.saturating_sub(base);
     let num = trading_days * range;
-    let den = trading_days + 60; // 60-day half-life
+    let den = trading_days + 60;
     base + (num / den)
 }
 
-// --- Accounts ---
+// --- Types ---
 
 #[account]
 pub struct StakePool {
@@ -291,18 +308,47 @@ pub struct UserStakeIndex {
     pub next_index: u64,
 }
 
+// --- Accounts ---
+
 #[derive(Accounts)]
 pub struct InitializePool<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
     pub mint: InterfaceAccount<'info, Mint>,
-    #[account(init, payer = authority, seeds = [b"pool", mint.key().as_ref()], bump, space = 8 + 256)]
+    #[account(
+        init,
+        payer = authority,
+        seeds = [b"pool", mint.key().as_ref()],
+        bump,
+        space = 8 + 256
+    )]
     pub pool: Account<'info, StakePool>,
-    #[account(init, payer = authority, seeds = [b"vault", pool.key().as_ref()], bump, token::mint = mint, token::authority = pool)]
+    #[account(
+        init,
+        payer = authority,
+        seeds = [b"vault", pool.key().as_ref()],
+        bump,
+        token::mint = mint,
+        token::authority = pool,
+    )]
     pub vault: InterfaceAccount<'info, TokenAccount>,
-    #[account(init, payer = authority, seeds = [b"rewards", pool.key().as_ref()], bump, token::mint = mint, token::authority = pool)]
+    #[account(
+        init,
+        payer = authority,
+        seeds = [b"rewards", pool.key().as_ref()],
+        bump,
+        token::mint = mint,
+        token::authority = pool,
+    )]
     pub reward_vault: InterfaceAccount<'info, TokenAccount>,
-    #[account(init, payer = authority, seeds = [b"posr", pool.key().as_ref()], bump, token::mint = mint, token::authority = pool)]
+    #[account(
+        init,
+        payer = authority,
+        seeds = [b"posr", pool.key().as_ref()],
+        bump,
+        token::mint = mint,
+        token::authority = pool,
+    )]
     pub posr_vault: InterfaceAccount<'info, TokenAccount>,
     /// CHECK: Crank oracle market status PDA
     pub market_status_pda: UncheckedAccount<'info>,
@@ -325,6 +371,7 @@ pub struct DepositRewards<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(index: u64)]
 pub struct Stake<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,
@@ -332,20 +379,31 @@ pub struct Stake<'info> {
     #[account(mut)]
     pub pool: Account<'info, StakePool>,
     #[account(
+        init_if_needed,
+        payer = owner,
+        seeds = [b"user_index", owner.key().as_ref()],
+        bump,
+        space = 8 + 8
+    )]
+    pub user_index: Account<'info, UserStakeIndex>,
+    #[account(
         init,
         payer = owner,
-        seeds = [b"position", pool.key().as_ref(), owner.key().as_ref(), user_index.next_index.to_le_bytes().as_ref()],
+        seeds = [
+            b"position",
+            pool.key().as_ref(),
+            owner.key().as_ref(),
+            &index.to_le_bytes(),
+        ],
         bump,
         space = 8 + 128
     )]
     pub position: Account<'info, StakePosition>,
-    #[account(init_if_needed, payer = owner, seeds = [b"user_index", owner.key().as_ref()], bump, space = 8 + 64)]
-    pub user_index: Account<'info, UserStakeIndex>,
     #[account(mut, token::mint = mint, token::authority = owner)]
     pub owner_token: InterfaceAccount<'info, TokenAccount>,
     #[account(mut, token::mint = mint, token::authority = pool)]
     pub vault: InterfaceAccount<'info, TokenAccount>,
-    /// CHECK: Market status PDA
+    /// CHECK: Crank oracle market status PDA (raw bytes)
     pub market_status: UncheckedAccount<'info>,
     pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
@@ -366,7 +424,7 @@ pub struct Claim<'info> {
     pub posr_vault: InterfaceAccount<'info, TokenAccount>,
     #[account(mut, token::mint = mint, token::authority = owner)]
     pub owner_token: InterfaceAccount<'info, TokenAccount>,
-    /// CHECK: Market status PDA
+    /// CHECK: Crank oracle market status PDA (raw bytes)
     pub market_status: UncheckedAccount<'info>,
     pub token_program: Interface<'info, TokenInterface>,
 }
@@ -388,7 +446,7 @@ pub struct Unstake<'info> {
     pub posr_vault: InterfaceAccount<'info, TokenAccount>,
     #[account(mut, token::mint = mint, token::authority = owner)]
     pub owner_token: InterfaceAccount<'info, TokenAccount>,
-    /// CHECK: Market status PDA
+    /// CHECK: Crank oracle market status PDA (raw bytes)
     pub market_status: UncheckedAccount<'info>,
     pub token_program: Interface<'info, TokenInterface>,
 }
@@ -401,4 +459,6 @@ pub enum StakeError {
     MinStake,
     #[msg("No rewards to claim")]
     NoRewards,
+    #[msg("Invalid market status account")]
+    InvalidMarketStatus,
 }
