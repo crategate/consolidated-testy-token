@@ -1,13 +1,12 @@
-use anchor_lang::{
-    prelude::*,
-    system_program::{create_account, CreateAccount},
-};
+use anchor_lang::prelude::*;
+use anchor_lang::system_program::{create_account, CreateAccount};
 use anchor_spl::{
     associated_token::AssociatedToken,
-    token_interface::{Mint, TokenAccount, TokenInterface, metadata_pointer},
+    token_interface::{Mint, TokenAccount, TokenInterface},
 };
 use spl_tlv_account_resolution::{
-    account::ExtraAccountMeta, seeds::Seed, state::ExtraAccountMetaList, solana_pubkey::Pubkey as SplPubkey
+    account::ExtraAccountMeta, seeds::Seed, solana_pubkey::Pubkey as SplPubkey,
+    state::ExtraAccountMetaList,
 };
 use spl_transfer_hook_interface::instruction::{ExecuteInstruction, TransferHookInstruction};
 
@@ -15,13 +14,8 @@ declare_id!("ACuGbED6m6PwyeU9x9eFPLGk8tu2snQhUe9mrWq44Y9N");
 
 #[error_code]
 pub enum MyError {
-    #[msg("The amount is too big")]
-    AmountTooBig,
-
-    #[msg("Failed to read SPY Oracle status! NYSEH can't transfer without this market data")]
+    #[msg("Failed to read market status oracle")]
     InvalidOracle,
-    #[msg("Borrowing and translating the spy data failed!!")]
-    InvalidBorrowSpy,
 }
 
 pub const CRANK_ORACLE_PROGRAM_ID: Pubkey = pubkey!("5BkqMghT4iAWbfJyNhJ5oSYBoAfBMD1SvHKtxMxzssRF");
@@ -29,42 +23,40 @@ pub const CRANK_ORACLE_PROGRAM_ID: Pubkey = pubkey!("5BkqMghT4iAWbfJyNhJ5oSYBoAf
 #[program]
 pub mod coin_mint {
     use super::*;
-      pub fn initialize_extra_account_meta_list(
+
+    pub fn initialize_extra_account_meta_list(
         ctx: Context<InitializeExtraAccountMetaList>,
     ) -> Result<()> {
-    let (market_status_pda, _) = Pubkey::find_program_address(
-        &[b"market_status"],
-        &CRANK_ORACLE_PROGRAM_ID,
-    );
+        let (market_status_pda, _) =
+            Pubkey::find_program_address(&[b"market_status"], &CRANK_ORACLE_PROGRAM_ID);
+
         let account_metas = vec![
             ExtraAccountMeta::new_with_seeds(
                 &[Seed::Literal {
-                    bytes: "counter".as_bytes().to_vec(),
+                    bytes: b"counter".to_vec(),
                 }],
-                false, // is_signer
-                true,  // is_writable
-            ).unwrap(),
+                false,
+                true,
+            )
+            .unwrap(),
             ExtraAccountMeta::new_with_pubkey(
-                // devnet 
                 &SplPubkey::from(market_status_pda.to_bytes()),
                 false,
                 false,
-            ).unwrap()
+            )
+            .unwrap(),
         ];
 
-        // calculate account size
         let account_size = ExtraAccountMetaList::size_of(account_metas.len()).unwrap() as u64;
-        // calculate minimum required lamports
         let lamports = Rent::get()?.minimum_balance(account_size as usize);
-
         let mint = ctx.accounts.mint.key();
+
         let signer_seeds: &[&[&[u8]]] = &[&[
             b"extra-account-metas",
-            &mint.as_ref(),
+            mint.as_ref(),
             &[ctx.bumps.extra_account_meta_list],
         ]];
 
-        // create ExtraAccountMetaList account
         create_account(
             CpiContext::new(
                 ctx.accounts.system_program.to_account_info(),
@@ -79,59 +71,35 @@ pub mod coin_mint {
             ctx.program_id,
         )?;
 
-        // initialize ExtraAccountMetaList account with extra accounts
         ExtraAccountMetaList::init::<ExecuteInstruction>(
             &mut ctx.accounts.extra_account_meta_list.try_borrow_mut_data()?,
             &account_metas,
-        ).unwrap();
+        )
+        .unwrap();
 
         Ok(())
     }
 
-    pub fn transfer_hook(ctx: Context<TransferHook>, amount: u64) -> Result<()> {
-        let fee;
-
-
-        let oracle_data = ctx.accounts.oracle.try_borrow_data().map_err(|_| error!(MyError::InvalidOracle))?;
-
-        let market_status = MarketStatus::try_deserialize(&mut &oracle_data[..]).map_err(|_| error!(MyError::InvalidOracle))?;
-
-
-        match market_status.current_state {
-            0 => fee = 0.0,
-            1 => fee = 0.03,
-            2 => fee = 0.07,
-            3 => fee = 0.18,
-            _ => fee = 0.0,
-        }
-
+    pub fn transfer_hook(ctx: Context<TransferHook>, _amount: u64) -> Result<()> {
+        // No-op: variable fees removed. Counter kept for analytics.
         let counter = &mut ctx.accounts.counter_account;
         counter.counter += 1;
-       // ctx.accounts.counter_account.counter.checked_add(1).unwrap();
-
-        msg!("The NYSEH token has transfered {} times, current fee: {} percent", counter.counter, fee * 100.0);
-
+        msg!("NYSEH transfer #{}", counter.counter);
         Ok(())
     }
 
-    // fallback instruction handler as workaround to anchor instruction discriminator check
     pub fn fallback<'info>(
         program_id: &Pubkey,
         accounts: &'info [AccountInfo<'info>],
         data: &[u8],
     ) -> Result<()> {
         let instruction = TransferHookInstruction::unpack(data).unwrap();
-
-        // match instruction discriminator to transfer hook interface execute instruction  
-        // token2022 program CPIs this instruction on token transfer
         match instruction {
             TransferHookInstruction::Execute { amount } => {
                 let amount_bytes = amount.to_le_bytes();
-
-                // invoke custom transfer hook instruction on our program
                 __private::__global::transfer_hook(program_id, accounts, &amount_bytes)
             }
-            _ => return Err(ProgramError::InvalidInstructionData.into()),
+            _ => Err(ProgramError::InvalidInstructionData.into()),
         }
     }
 }
@@ -140,65 +108,29 @@ pub mod coin_mint {
 pub struct InitializeExtraAccountMetaList<'info> {
     #[account(mut)]
     payer: Signer<'info>,
-
-    /// CHECK: ExtraAccountMetaList Account, must use these seeds
-    #[account(
-        mut,
-        seeds = [b"extra-account-metas", mint.key().as_ref()], 
-        bump
-    )]
+    #[account(mut, seeds = [b"extra-account-metas", mint.key().as_ref()], bump)]
     pub extra_account_meta_list: AccountInfo<'info>,
     pub mint: InterfaceAccount<'info, Mint>,
-    #[account(
-        init_if_needed,
-        seeds = [b"counter"], 
-        bump,
-        payer = payer,
-        space = 16
-    )]
+    #[account(init_if_needed, seeds = [b"counter"], bump, payer = payer, space = 16)]
     pub counter_account: Account<'info, CounterAccount>,
     pub token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
 }
 
-// Order of accounts matters for this struct.
-// The first 4 accounts are the accounts required for token transfer (source, mint, destination, owner)
-// Remaining accounts are the extra accounts required from the ExtraAccountMetaList account
-// These accounts are provided via CPI to this program from the token2022 program
 #[derive(Accounts)]
 pub struct TransferHook<'info> {
-    #[account(
-        token::mint = mint, 
-        token::authority = owner,
-    )]
+    #[account(token::mint = mint, token::authority = owner)]
     pub source_token: InterfaceAccount<'info, TokenAccount>,
     pub mint: InterfaceAccount<'info, Mint>,
-    #[account(
-        token::mint = mint,
-    )]
+    #[account(token::mint = mint)]
     pub destination_token: InterfaceAccount<'info, TokenAccount>,
-    /// CHECK: source token account owner, can be SystemAccount or PDA owned by another program
     pub owner: UncheckedAccount<'info>,
-    /// CHECK: ExtraAccountMetaList Account,
-    #[account(
-        seeds = [b"extra-account-metas", mint.key().as_ref()], 
-        bump
-    )]
+    #[account(seeds = [b"extra-account-metas", mint.key().as_ref()], bump)]
     pub extra_account_meta_list: UncheckedAccount<'info>,
-    #[account(
-        mut,
-        seeds = [b"counter"],
-        bump
-    )]
+    #[account(mut, seeds = [b"counter"], bump)]
     pub counter_account: Account<'info, CounterAccount>,
-    /// CHECK: PDA account which updates from the crank script
-    pub oracle: UncheckedAccount<'info>
-}
-#[account]
-pub struct MarketStatus {
-    pub current_state: u8,
-    pub last_updated_timestamp: i64,
+    pub oracle: UncheckedAccount<'info>,
 }
 
 #[account]

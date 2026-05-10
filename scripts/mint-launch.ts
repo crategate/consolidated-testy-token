@@ -22,7 +22,6 @@ import {
     LENGTH_SIZE,
     createTransferCheckedWithTransferHookInstruction,
     createInitializeMetadataPointerInstruction,
-    createInitializeTransferFeeConfigInstruction
 } from "@solana/spl-token";
 import { createInitializeInstruction, pack, type TokenMetadata } from "@solana/spl-token-metadata";
 import * as fs from "fs";
@@ -70,15 +69,10 @@ async function main() {
     const crankKeyData = JSON.parse(fs.readFileSync(crankKeypairPath, "utf-8"));
     const oracleCrankProgramId = Keypair.fromSecretKey(new Uint8Array(crankKeyData)).publicKey;
 
-    const [feeAuthorityPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("fee_authority")],
-        oracleCrankProgramId
-    );
     const [marketStatusPda] = PublicKey.findProgramAddressSync(
         [Buffer.from("market_status")],
         oracleCrankProgramId
     );
-    const lottoVault = new PublicKey("J6J9SuxEfe9aiMLha7ERX3uQhHXaD4Y7bFkJYQGP4guR");
 
     // 4. Token Metadata Configuration
     const metadata: TokenMetadata = {
@@ -89,7 +83,7 @@ async function main() {
         additionalMetadata: [['description', 'combining concepts and learning the basics']],
     };
     const metadataLen = pack(metadata).length + TYPE_SIZE + LENGTH_SIZE;
-    const mintLen = getMintLen([ExtensionType.TransferHook, ExtensionType.MetadataPointer, ExtensionType.TransferFeeConfig]);
+    const mintLen = getMintLen([ExtensionType.TransferHook, ExtensionType.MetadataPointer]);
 
     const lamports = await connection.getMinimumBalanceForRentExemption(metadataLen + mintLen);
 
@@ -105,20 +99,6 @@ async function main() {
             lamports: lamports,
             programId: TOKEN_2022_PROGRAM_ID,
         }),
-        createInitializeTransferHookInstruction(
-            mint.publicKey,
-            wallet.publicKey,
-            program.programId,
-            TOKEN_2022_PROGRAM_ID
-        ),
-        createInitializeTransferFeeConfigInstruction(
-            mint.publicKey,
-            feeAuthorityPda,
-            lottoVault,
-            0, // Initial fee
-            BigInt(1900), // Max fee
-            TOKEN_2022_PROGRAM_ID
-        ),
         createInitializeMetadataPointerInstruction(
             mint.publicKey,
             wallet.publicKey,

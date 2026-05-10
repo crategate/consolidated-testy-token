@@ -8,10 +8,11 @@ skip-lint = false
 [programs.devnet]
 coin_mint = "ACuGbED6m6PwyeU9x9eFPLGk8tu2snQhUe9mrWq44Y9N"
 crank_oracle = "5BkqMghT4iAWbfJyNhJ5oSYBoAfBMD1SvHKtxMxzssRF"
+staking = "DAQsZPfBs2Qd88sTZEEMh9ecwqwRAY66WgXZ6AcaVKnU"
 
 [programs.localnet]
 testy_token = "Eb7SiNnSwCoKobhG8dDarPQxErqmnzK7kJ1SRW9vEpdS"
-
+staking = "DAQsZPfBs2Qd88sTZEEMh9ecwqwRAY66WgXZ6AcaVKnU"
 [registry]
 url = "https://api.apr.dev"
 
