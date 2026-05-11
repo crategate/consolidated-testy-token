@@ -209,7 +209,7 @@ pub struct PermissionlessCrank<'info> {
     #[account(address = quote_account.canonical_key(&default_queue()))]
     pub quote_account: Box<Account<'info, SwitchboardQuote>>,
     pub clock: Sysvar<'info, Clock>,
-    #[account(mut)]
+    #[account(mut, seeds = [b"market_status"], bump)]
     pub market_status: Account<'info, MarketStatus>,
     pub system_program: Program<'info, System>,
 }

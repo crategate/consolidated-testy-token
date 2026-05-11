@@ -18,17 +18,16 @@ pub enum MyError {
     InvalidOracle,
 }
 
-pub const CRANK_ORACLE_PROGRAM_ID: Pubkey = pubkey!("5BkqMghT4iAWbfJyNhJ5oSYBoAfBMD1SvHKtxMxzssRF");
-
 #[program]
 pub mod coin_mint {
     use super::*;
 
     pub fn initialize_extra_account_meta_list(
         ctx: Context<InitializeExtraAccountMetaList>,
+        crank_oracle_program_id: Pubkey,
     ) -> Result<()> {
         let (market_status_pda, _) =
-            Pubkey::find_program_address(&[b"market_status"], &CRANK_ORACLE_PROGRAM_ID);
+            Pubkey::find_program_address(&[b"market_status"], &crank_oracle_program_id);
 
         let account_metas = vec![
             ExtraAccountMeta::new_with_seeds(

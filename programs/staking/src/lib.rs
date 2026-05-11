@@ -10,11 +10,19 @@ pub mod staking {
 
     pub fn initialize_pool(
         ctx: Context<InitializePool>,
+        crank_oracle_program_id: Pubkey,
         base_apy_bps: u16,
         max_multiplier_bps: u16,
         penalty_bps: u16,
         posr_tax_bps: u16,
     ) -> Result<()> {
+        // Verify the passed PDA is correct
+        let (expected_pda, _) =
+            Pubkey::find_program_address(&[b"market_status"], &crank_oracle_program_id);
+        require!(
+            expected_pda == ctx.accounts.market_status_pda.key(),
+            StakeError::InvalidMarketStatus
+        );
         let pool = &mut ctx.accounts.pool;
 
         pool.authority = ctx.accounts.authority.key();

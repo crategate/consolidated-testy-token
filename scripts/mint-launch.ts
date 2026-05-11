@@ -27,6 +27,9 @@ import { createInitializeInstruction, pack, type TokenMetadata } from "@solana/s
 import * as fs from "fs";
 import * as path from "path";
 
+const crankKeypairPath = path.join(process.cwd(), "target", "deploy", "crank_oracle-keypair.json");
+const crankKeyData = JSON.parse(fs.readFileSync(crankKeypairPath, "utf-8"));
+const oracleCrankProgramId = Keypair.fromSecretKey(new Uint8Array(crankKeyData)).publicKey;
 async function main() {
     // 1. Setup Provider
     const provider = anchor.AnchorProvider.env();
@@ -142,7 +145,7 @@ async function main() {
     // ==========================================
     console.log("📝 Initializing Extra Account Meta List...");
     const initMetaListIx = await program.methods
-        .initializeExtraAccountMetaList()
+        .initializeExtraAccountMetaList(oracleCrankProgramId)
         .accountsPartial({
             mint: mint.publicKey,
             extraAccountMetaList: extraAccountMetaListPDA,
