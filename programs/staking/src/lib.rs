@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{
-    transfer_checked, Mint, SetAuthority, TokenAccount, TokenInterface, TransferChecked,
+    transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked,
 };
 
 declare_id!("DAQsZPfBs2Qd88sTZEEMh9ecwqwRAY66WgXZ6AcaVKnU");
