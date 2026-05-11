@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use switchboard_on_demand::prelude::rust_decimal::prelude::ToPrimitive;
 use switchboard_on_demand::{default_queue, SwitchboardQuote, SwitchboardQuoteExt};
 
-declare_id!("5BkqMghT4iAWbfJyNhJ5oSYBoAfBMD1SvHKtxMxzssRF");
+declare_id!("GsUHrYWJVUeMkDAFDRq2s8hJXwmg8fYCQjJ6ApbFK1as");
 
 #[error_code]
 pub enum CrankError {
@@ -49,7 +49,6 @@ pub mod crank_oracle {
         anchor_lang::system_program::transfer(cpi_ctx, amount)?;
         Ok(())
     }
-
     pub fn permissionless_crank(ctx: Context<PermissionlessCrank>) -> Result<()> {
         let quote_slot = ctx.accounts.quote_account.slot;
         let last_slot = ctx.accounts.bounty_config.last_crank_slot;
@@ -90,16 +89,18 @@ pub mod crank_oracle {
             CrankError::BountyExhausted
         );
 
-        let vault_seeds: &[&[&[u8]]] = &[&[b"bounty_vault", &[ctx.bumps.bounty_vault]]];
-        let cpi_ctx = CpiContext::new_with_signer(
-            ctx.accounts.system_program.to_account_info(),
-            anchor_lang::system_program::Transfer {
-                from: ctx.accounts.bounty_vault.to_account_info(),
-                to: ctx.accounts.cranker.to_account_info(),
-            },
-            vault_seeds,
-        );
-        anchor_lang::system_program::transfer(cpi_ctx, bounty)?;
+        // Manual lamport transfer from program-owned PDA
+        let vault_info = ctx.accounts.bounty_vault.to_account_info();
+        let cranker_info = ctx.accounts.cranker.to_account_info();
+
+        let mut vault_lamports = vault_info.try_borrow_mut_lamports()?;
+        let mut cranker_lamports = cranker_info.try_borrow_mut_lamports()?;
+
+        **vault_lamports -= bounty;
+        **cranker_lamports += bounty;
+
+        drop(vault_lamports);
+        drop(cranker_lamports);
 
         msg!(
             "Cranked by {}. Bounty paid: {} lamports. State: {}",
@@ -109,7 +110,6 @@ pub mod crank_oracle {
         );
         Ok(())
     }
-
     pub fn read_oracle_data(ctx: Context<ReadOracleData>) -> Result<()> {
         let feeds = &ctx.accounts.quote_account.feeds;
         require!(!feeds.is_empty(), CrankError::NoFeeds);

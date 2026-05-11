@@ -79,6 +79,10 @@ async function main() {
                 console.log(`🚀 Stale crank! Oracle slot ${quoteSlot} > last ${bountyConfig.lastCrankSlot}`);
 
                 const ixs = await queue.fetchManagedUpdateIxs(crossbar, [process.env.FEED_ID!], {
+                    variableOverrides: {
+                        MASSIVE_API_KEY: process.env.MASSIVE_API_KEY!,
+                        EARNINGSAPI_KEY: process.env.EARNINGSAPI_KEY!,
+                    },
                     payer: keypair.publicKey,
                 });
 
@@ -104,6 +108,7 @@ async function main() {
                 const sim = await connection.simulateTransaction(tx);
                 if (sim.value.err) {
                     console.error("Simulation failed:", sim.value.err);
+                    console.error(sim.value.logs?.join("\n") || "NO LOGS :(")
                     await sleep(sleepMs);
                     continue;
                 }

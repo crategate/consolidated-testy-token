@@ -3,7 +3,7 @@ use anchor_spl::token_interface::{
     transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked,
 };
 
-declare_id!("DAQsZPfBs2Qd88sTZEEMh9ecwqwRAY66WgXZ6AcaVKnU");
+declare_id!("8CzYeKYrQieo6wXsQZ4fJB1otLgUwHAf5L1R8Sht1LX1");
 #[program]
 pub mod staking {
     use super::*;

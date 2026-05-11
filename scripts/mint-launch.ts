@@ -77,7 +77,7 @@ async function main() {
     // 4. Token Metadata Configuration
     const metadata: TokenMetadata = {
         mint: mint.publicKey,
-        name: 'matching max now',
+        name: 'SANITYCHECK',
         symbol: 'anand',
         uri: 'https://copper-quick-koi-488.mypinata.cloud/ipfs/bafkreiblskodz5bwtelz4id437rnhsndtq3rfh7jjsgaj72wb55cgnbbea',
         additionalMetadata: [['description', 'combining concepts and learning the basics']],
@@ -103,6 +103,12 @@ async function main() {
             mint.publicKey,
             wallet.publicKey,
             mint.publicKey,
+            TOKEN_2022_PROGRAM_ID
+        ),
+        createInitializeTransferHookInstruction(
+            mint.publicKey,
+            wallet.publicKey,        // transfer hook authority
+            program.programId,       // your coin-mint program is the hook
             TOKEN_2022_PROGRAM_ID
         ),
         createInitializeMintInstruction(
