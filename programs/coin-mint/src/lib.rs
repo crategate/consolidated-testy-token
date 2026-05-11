@@ -108,6 +108,7 @@ pub mod coin_mint {
 pub struct InitializeExtraAccountMetaList<'info> {
     #[account(mut)]
     payer: Signer<'info>,
+    /// CHECK: extra account metas
     #[account(mut, seeds = [b"extra-account-metas", mint.key().as_ref()], bump)]
     pub extra_account_meta_list: AccountInfo<'info>,
     pub mint: InterfaceAccount<'info, Mint>,
@@ -125,11 +126,14 @@ pub struct TransferHook<'info> {
     pub mint: InterfaceAccount<'info, Mint>,
     #[account(token::mint = mint)]
     pub destination_token: InterfaceAccount<'info, TokenAccount>,
+    /// CHECK: owner
     pub owner: UncheckedAccount<'info>,
+    /// CHECK: extra account metas
     #[account(seeds = [b"extra-account-metas", mint.key().as_ref()], bump)]
     pub extra_account_meta_list: UncheckedAccount<'info>,
     #[account(mut, seeds = [b"counter"], bump)]
     pub counter_account: Account<'info, CounterAccount>,
+    /// CHECK: oracle
     pub oracle: UncheckedAccount<'info>,
 }
 

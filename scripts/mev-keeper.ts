@@ -74,9 +74,6 @@ async function main() {
                     quoteAccount: quoteAccount,
                     clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
                     marketStatus: marketStatusPda,
-                    mint: /* nyseh mint */,
-                    feeAuthority: /* fee_authority PDA */,
-                    tokenProgram: TOKEN_2022_PROGRAM_ID,
                     systemProgram: anchor.web3.SystemProgram.programId,
                 }).instruction();
 

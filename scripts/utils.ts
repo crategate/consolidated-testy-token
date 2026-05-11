@@ -677,9 +677,6 @@ export async function basicReadOracleIx(
             quoteAccount: quoteAccount,
             clock: SYSVAR_CLOCK_PUBKEY,        // was clockSysvar
             marketStatus: marketStatusPda,
-            mint: nysehMintAddress,
-            feeAuthority: feeAuthorityPda,
-            tokenProgram: TOKEN_2022_PROGRAM_ID,
         })
         .instruction();
 }

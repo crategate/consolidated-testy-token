@@ -404,6 +404,7 @@ pub struct Stake<'info> {
     #[account(mut, token::mint = mint, token::authority = pool)]
     pub vault: InterfaceAccount<'info, TokenAccount>,
     /// CHECK: Crank oracle market status PDA (raw bytes)
+    #[account(address = pool.market_status_pda)]
     pub market_status: UncheckedAccount<'info>,
     pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
@@ -425,6 +426,7 @@ pub struct Claim<'info> {
     #[account(mut, token::mint = mint, token::authority = owner)]
     pub owner_token: InterfaceAccount<'info, TokenAccount>,
     /// CHECK: Crank oracle market status PDA (raw bytes)
+    #[account(address = pool.market_status_pda)]
     pub market_status: UncheckedAccount<'info>,
     pub token_program: Interface<'info, TokenInterface>,
 }
@@ -447,6 +449,7 @@ pub struct Unstake<'info> {
     #[account(mut, token::mint = mint, token::authority = owner)]
     pub owner_token: InterfaceAccount<'info, TokenAccount>,
     /// CHECK: Crank oracle market status PDA (raw bytes)
+    #[account(address = pool.market_status_pda)]
     pub market_status: UncheckedAccount<'info>,
     pub token_program: Interface<'info, TokenInterface>,
 }
