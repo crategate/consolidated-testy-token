@@ -2,21 +2,28 @@ use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{
     transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked,
 };
-
+fn get_penalty_bps(current_state: u8, pool: &StakePool) -> u64 {
+    match current_state {
+        1 => pool.after_hours_penalty_bps as u64, // After hours: light penalty
+        2 => pool.closed_penalty_bps as u64,      // Closed: medium penalty
+        3 => pool.halted_penalty_bps as u64,      // Halted: severe penalty
+        _ => 0,                                   // Open (0): no penalty
+    }
+}
 declare_id!("8CzYeKYrQieo6wXsQZ4fJB1otLgUwHAf5L1R8Sht1LX1");
 #[program]
 pub mod staking {
     use super::*;
-
     pub fn initialize_pool(
         ctx: Context<InitializePool>,
         crank_oracle_program_id: Pubkey,
         base_apy_bps: u16,
         max_multiplier_bps: u16,
-        penalty_bps: u16,
         posr_tax_bps: u16,
+        after_hours_penalty_bps: u16,
+        closed_penalty_bps: u16,
+        halted_penalty_bps: u16,
     ) -> Result<()> {
-        // Verify the passed PDA is correct
         let (expected_pda, _) =
             Pubkey::find_program_address(&[b"market_status"], &crank_oracle_program_id);
         require!(
@@ -33,14 +40,15 @@ pub mod staking {
         pool.total_staked = 0;
         pool.base_apy_bps = base_apy_bps;
         pool.max_multiplier_bps = max_multiplier_bps;
-        pool.penalty_bps = penalty_bps;
         pool.posr_tax_bps = posr_tax_bps;
+        pool.after_hours_penalty_bps = after_hours_penalty_bps;
+        pool.closed_penalty_bps = closed_penalty_bps;
+        pool.halted_penalty_bps = halted_penalty_bps;
         pool.market_status_pda = ctx.accounts.market_status_pda.key();
         pool.bump = ctx.bumps.pool;
 
         Ok(())
     }
-
     pub fn deposit_rewards(ctx: Context<DepositRewards>, amount: u64) -> Result<()> {
         require!(amount > 0, StakeError::ZeroAmount);
 
@@ -92,17 +100,26 @@ pub mod staking {
         let clock = Clock::get()?;
 
         let trading_day_index = get_trading_day_index(&ctx.accounts.market_status)?;
+        let current_state = get_market_state(&ctx.accounts.market_status)?;
 
         let gross_rewards =
             calculate_rewards(position, pool, clock.unix_timestamp, trading_day_index);
         require!(gross_rewards > 0, StakeError::NoRewards);
 
-        let posr_tax = gross_rewards * pool.posr_tax_bps as u64 / 10000;
-        let user_rewards = gross_rewards - posr_tax;
+        // 1. Tiered penalty based on market state
+        let penalty_bps = get_penalty_bps(current_state, pool);
+        let penalty = gross_rewards * penalty_bps / 10000;
+        let after_penalty = gross_rewards.saturating_sub(penalty);
+
+        // 2. POSR tax (5%) on the remainder
+        let posr_tax = after_penalty * pool.posr_tax_bps as u64 / 10000;
+        let user_rewards = after_penalty.saturating_sub(posr_tax);
+
         position.last_claim_timestamp = clock.unix_timestamp;
 
         let signer_seeds: &[&[&[u8]]] = &[&[b"pool", pool.mint.as_ref(), &[pool.bump]]];
 
+        // Transfer net rewards to user
         if user_rewards > 0 {
             let cpi = TransferChecked {
                 from: ctx.accounts.reward_vault.to_account_info(),
@@ -121,6 +138,7 @@ pub mod staking {
             )?;
         }
 
+        // Transfer POSR tax
         if posr_tax > 0 {
             let cpi = TransferChecked {
                 from: ctx.accounts.reward_vault.to_account_info(),
@@ -139,9 +157,12 @@ pub mod staking {
             )?;
         }
 
+        // TODO: Penalty redistribution. Currently the penalty amount remains in
+        // reward_vault, increasing long-term pool capacity. For active distribution
+        // to stakers, add a penalty_vault and a pro-rata distribution instruction.
+
         Ok(())
     }
-
     pub fn unstake(ctx: Context<Unstake>) -> Result<()> {
         let position = &ctx.accounts.position;
         let pool = &mut ctx.accounts.pool;
@@ -153,17 +174,14 @@ pub mod staking {
         let gross_rewards =
             calculate_rewards(position, pool, clock.unix_timestamp, trading_day_index);
 
-        let penalty = if current_state != 1 {
-            gross_rewards * pool.penalty_bps as u64 / 10000
-        } else {
-            0
-        };
+        let penalty_bps = get_penalty_bps(current_state, pool);
+        let penalty = gross_rewards * penalty_bps / 10000;
+        let after_penalty = gross_rewards.saturating_sub(penalty);
 
-        let net_rewards = gross_rewards.saturating_sub(penalty);
-        let posr_tax = net_rewards * pool.posr_tax_bps as u64 / 10000;
-        let user_rewards = net_rewards.saturating_sub(posr_tax);
+        let posr_tax = after_penalty * pool.posr_tax_bps as u64 / 10000;
+        let user_rewards = after_penalty.saturating_sub(posr_tax);
 
-        pool.total_staked -= position.amount;
+        pool.total_staked = pool.total_staked.saturating_sub(position.amount);
 
         let pool_bump = pool.bump;
         let pool_mint = pool.mint;
@@ -223,6 +241,8 @@ pub mod staking {
                 ctx.accounts.mint.decimals,
             )?;
         }
+
+        // TODO: Distribute penalty to long-term stakers. See note in claim().
 
         Ok(())
     }
@@ -298,6 +318,11 @@ pub struct StakePool {
     pub posr_tax_bps: u16,
     pub market_status_pda: Pubkey,
     pub bump: u8,
+    // Penalty tiers (basis points)
+    pub after_hours_penalty_bps: u16,
+    pub closed_penalty_bps: u16,
+    pub halted_penalty_bps: u16,
+    pub accrued_reward_per_share: u128,
 }
 
 #[account]
@@ -309,6 +334,7 @@ pub struct StakePosition {
     pub last_claim_timestamp: i64,
     pub index: u64,
     pub bump: u8,
+    pub reward_debt: u128,
 }
 
 #[account]
@@ -445,9 +471,9 @@ pub struct Unstake<'info> {
     pub owner: Signer<'info>,
     pub mint: InterfaceAccount<'info, Mint>,
     #[account(mut, has_one = mint)]
-    pub pool: Account<'info, StakePool>,
+    pub pool: Box<Account<'info, StakePool>>,
     #[account(mut, has_one = owner, has_one = pool, close = owner)]
-    pub position: Account<'info, StakePosition>,
+    pub position: Box<Account<'info, StakePosition>>,
     #[account(mut, token::mint = mint, token::authority = pool)]
     pub vault: InterfaceAccount<'info, TokenAccount>,
     #[account(mut, token::mint = mint, token::authority = pool)]
@@ -461,7 +487,6 @@ pub struct Unstake<'info> {
     pub market_status: UncheckedAccount<'info>,
     pub token_program: Interface<'info, TokenInterface>,
 }
-
 #[error_code]
 pub enum StakeError {
     #[msg("Amount must be greater than zero")]
