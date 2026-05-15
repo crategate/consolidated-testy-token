@@ -28,3 +28,5 @@ crank = "npx ts-node ./scripts/managedUpdate.ts --feedId 0xaf3a39b12f5c052d81eb8
 init = "npx ts-node ./scripts/initialize.ts && npx ts-node ./scripts/init-bounty.ts"
 mint = "npx ts-node scripts/mint-launch.ts"
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+set-oracle = "npx ts-node ./scripts/set-oracle-state.ts"
+test-staking = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/staking.ts"

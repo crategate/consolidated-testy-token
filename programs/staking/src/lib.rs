@@ -2,55 +2,139 @@ use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{
     transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked,
 };
-fn get_penalty_bps(current_state: u8, pool: &StakePool) -> u64 {
-    match current_state {
-        1 => pool.after_hours_penalty_bps as u64, // After hours: light penalty
-        2 => pool.closed_penalty_bps as u64,      // Closed: medium penalty
-        3 => pool.halted_penalty_bps as u64,      // Halted: severe penalty
-        _ => 0,                                   // Open (0): no penalty
-    }
-}
+
+// =============================================================================
+// NYSEH STAKING PROGRAM — COMPLETE IMPLEMENTATION
+// =============================================================================
+//
+// ARCHITECTURE OVERVIEW
+// ---------------------
+// This program manages a SINGLE global staking pool per token mint. All users
+// stake into this pool. The pool tracks aggregate state and owns vault accounts
+// that hold everyone's funds.
+//
+// REWARD MODEL: Pure Multiplier-Weighted Distribution (No Time-Based Yield)
+// ------------------------------------------------------------------------
+// There is NO automatic yield accrual over time. Rewards come exclusively from:
+//   1. Penalties paid by users who claim/unstake during non-market-open hours
+//   2. External deposits (AMM revenue, admin deposits, etc.)
+//
+// The multiplier (1.0x → 3.0x logarithmic) determines your SHARE of rewards.
+// Longer lock = higher multiplier = bigger slice of the penalty/AMM pie.
+//
+// MASTERCHEF DISTRIBUTION (O(1) per user, no iteration needed):
+//   - Global index: accrued_reward_per_share (scaled by 1e12)
+//   - User debt:    reward_debt (scaled by 1e12) — prevents double-claiming
+//   - User claim:   (user_weight * global_index / 1e12) - user_debt
+//   - New debt set:  user_weight * global_index / 1e12
+//
+// WEIGHT CALCULATION:
+//   weight = staked_amount * multiplier / 10_000
+//   multiplier = 10_000 + (trading_days * (max_multiplier - 10_000)) / (trading_days + 60)
+//
+// PENALTY TIERS (applied when claiming/unstaking during non-open hours):
+//   - State 0 (Open):      0 bps — no penalty
+//   - State 1 (After):     configurable (e.g., 500 = 5%)
+//   - State 2 (Closed):    configurable (e.g., 1500 = 15%)
+//   - State 3 (Halted):    configurable (e.g., 3000 = 30%)
+//
+// POSR TAX: 5% on all claims and unstakes → goes to protocol-owned reserve
+//
+// USER STORIES
+// ------------
+// [Alice stakes 1000 NYSEH on Day 5, market open]
+//   → stake() creates position with entry_trading_day=5, amount=1000
+//   → weight = 1000 * 1.0x = 1000 (multiplier starts at base)
+//   → tokens move from Alice's wallet → pool vault
+//   → pool.total_staked += 1000, pool.total_weighted_stake += 1000
+//
+// [10 days later, Alice claims, market is open]
+//   → claim() reads state=0, penalty_bps=0
+//   → trading_days = 15 - 5 - 1 = 9, multiplier ≈ 1.3x
+//   → weight = 1000 * 1.3x = 1300
+//   → penalty_share = (1300 * global_index / 1e12) - debt
+//   → penalty = 0 (market open), posr_tax = 5% of penalty_share
+//   → Alice receives 95% of penalty_share
+//
+// [Bob unstakes during after-hours (state 1)]
+//   → unstake() reads state=1, penalty_bps=500 (5%)
+//   → Bob's penalty_share calculated from his weight
+//   → 5% of penalty_share → penalty_vault (for future distribution)
+//   → 95% of remainder → Bob (after another 5% POSR tax)
+//   → principal returned, position account closed
+//
+// [Market opens next day — penalties distribute]
+//   → realize_penalties() called (by crank oracle or anyone)
+//   → tokens move from penalty_vault → reward_vault
+//   → global_index += (penalty_amount * 1e12) / total_weighted_stake
+//   → Alice's next claim includes her share of Bob's penalty
+// =============================================================================
+
 declare_id!("8CzYeKYrQieo6wXsQZ4fJB1otLgUwHAf5L1R8Sht1LX1");
+
 #[program]
 pub mod staking {
     use super::*;
+
+    // -------------------------------------------------------------------------
+    // INITIALIZE POOL
+    // Called ONCE by protocol admin. Creates the global pool and all vaults.
+    // -------------------------------------------------------------------------
     pub fn initialize_pool(
         ctx: Context<InitializePool>,
         crank_oracle_program_id: Pubkey,
-        base_apy_bps: u16,
-        max_multiplier_bps: u16,
-        posr_tax_bps: u16,
-        after_hours_penalty_bps: u16,
-        closed_penalty_bps: u16,
-        halted_penalty_bps: u16,
+        max_multiplier_bps: u16, // Cap for multiplier (e.g., 30000 = 3.0x)
+        posr_tax_bps: u16,       // Tax on claims/unstakes (e.g., 500 = 5%)
+        after_hours_penalty_bps: u16, // Penalty: state 1 (after hours)
+        closed_penalty_bps: u16, // Penalty: state 2 (market closed)
+        halted_penalty_bps: u16, // Penalty: state 3 (trading halted)
     ) -> Result<()> {
+        // SECURITY: Verify the passed market_status_pda matches what the crank
+        // oracle program would derive. Prevents initializing with a fake oracle.
         let (expected_pda, _) =
             Pubkey::find_program_address(&[b"market_status"], &crank_oracle_program_id);
         require!(
             expected_pda == ctx.accounts.market_status_pda.key(),
             StakeError::InvalidMarketStatus
         );
-        let pool = &mut ctx.accounts.pool;
 
+        let pool = &mut ctx.accounts.pool;
         pool.authority = ctx.accounts.authority.key();
         pool.mint = ctx.accounts.mint.key();
         pool.vault = ctx.accounts.vault.key();
         pool.reward_vault = ctx.accounts.reward_vault.key();
+        pool.penalty_vault = ctx.accounts.penalty_vault.key();
         pool.posr_vault = ctx.accounts.posr_vault.key();
         pool.total_staked = 0;
-        pool.base_apy_bps = base_apy_bps;
+        pool.total_weighted_stake = 0;
         pool.max_multiplier_bps = max_multiplier_bps;
         pool.posr_tax_bps = posr_tax_bps;
         pool.after_hours_penalty_bps = after_hours_penalty_bps;
         pool.closed_penalty_bps = closed_penalty_bps;
         pool.halted_penalty_bps = halted_penalty_bps;
+        pool.accrued_reward_per_share = 0;
         pool.market_status_pda = ctx.accounts.market_status_pda.key();
         pool.bump = ctx.bumps.pool;
 
+        msg!("Pool initialized for mint {}", pool.mint);
+        msg!(
+            "Max multiplier: {} bps, POSR tax: {} bps",
+            max_multiplier_bps,
+            posr_tax_bps
+        );
         Ok(())
     }
+
+    // -------------------------------------------------------------------------
+    // DEPOSIT REWARDS
+    // Called by admin or external programs (AMM) to seed reward_vault.
+    // These tokens become distributable via the MasterChef index.
+    // -------------------------------------------------------------------------
     pub fn deposit_rewards(ctx: Context<DepositRewards>, amount: u64) -> Result<()> {
         require!(amount > 0, StakeError::ZeroAmount);
+
+        // SECURITY: Only pool authority can deposit rewards
+        // (enforced by has_one = authority on pool account)
 
         let cpi_accounts = TransferChecked {
             from: ctx.accounts.authority_token.to_account_info(),
@@ -62,6 +146,11 @@ pub mod staking {
         transfer_checked(cpi_ctx, amount, ctx.accounts.mint.decimals)
     }
 
+    // -------------------------------------------------------------------------
+    // STAKE
+    // Called by user to lock tokens. Creates a new StakePosition PDA.
+    // Each stake transaction creates a separate position (index 0, 1, 2...).
+    // -------------------------------------------------------------------------
     pub fn stake(ctx: Context<Stake>, amount: u64, index: u64) -> Result<()> {
         require!(amount > 0, StakeError::ZeroAmount);
         require!(amount >= 100, StakeError::MinStake);
@@ -73,6 +162,7 @@ pub mod staking {
 
         let trading_day_index = get_trading_day_index(&ctx.accounts.market_status)?;
 
+        // Initialize position
         position.owner = ctx.accounts.owner.key();
         position.pool = pool.key();
         position.amount = amount;
@@ -81,9 +171,21 @@ pub mod staking {
         position.index = index;
         position.bump = ctx.bumps.position;
 
+        // Update user's next available index
         user_index.next_index = user_index.next_index.max(index + 1);
-        pool.total_staked += amount;
 
+        // Calculate initial weight (multiplier = 1.0x on day 0)
+        let current_multiplier = calculate_multiplier(0, pool.max_multiplier_bps);
+        let weight = (amount as u128 * current_multiplier as u128) / 10_000u128;
+
+        // Update pool aggregates
+        pool.total_staked = pool.total_staked.saturating_add(amount);
+        pool.total_weighted_stake = pool.total_weighted_stake.saturating_add(weight);
+
+        // Set reward debt so user doesn't claim past distributions
+        position.reward_debt = (weight * pool.accrued_reward_per_share) / 1_000_000_000_000u128;
+
+        // Transfer tokens from user to pool vault
         let cpi_accounts = TransferChecked {
             from: ctx.accounts.owner_token.to_account_info(),
             mint: ctx.accounts.mint.to_account_info(),
@@ -91,40 +193,61 @@ pub mod staking {
             authority: ctx.accounts.owner.to_account_info(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts);
-        transfer_checked(cpi_ctx, amount, ctx.accounts.mint.decimals)
+        transfer_checked(cpi_ctx, amount, ctx.accounts.mint.decimals)?;
+
+        msg!(
+            "Staked {} tokens, weight: {}, index: {}",
+            amount,
+            weight,
+            index
+        );
+        Ok(())
     }
 
+    // -------------------------------------------------------------------------
+    // CLAIM
+    // Called by user to collect rewards WITHOUT unstaking principal.
+    // Rewards = penalty_share - penalty - posr_tax.
+    // If market is NOT open, a tiered penalty is applied to the reward share.
+    // -------------------------------------------------------------------------
     pub fn claim(ctx: Context<Claim>) -> Result<()> {
         let position = &mut ctx.accounts.position;
-        let pool = &ctx.accounts.pool;
+        let pool = &mut ctx.accounts.pool;
         let clock = Clock::get()?;
 
         let trading_day_index = get_trading_day_index(&ctx.accounts.market_status)?;
         let current_state = get_market_state(&ctx.accounts.market_status)?;
 
-        let gross_rewards =
-            calculate_rewards(position, pool, clock.unix_timestamp, trading_day_index);
-        require!(gross_rewards > 0, StakeError::NoRewards);
+        // Calculate current weight based on elapsed trading days
+        let trading_days = trading_day_index
+            .saturating_sub(position.entry_trading_day)
+            .saturating_sub(1);
+        let current_multiplier = calculate_multiplier(trading_days, pool.max_multiplier_bps);
+        let weight = (position.amount as u128 * current_multiplier as u128) / 10_000u128;
 
-        // 1. Tiered penalty based on market state
+        // Calculate penalty share from MasterChef index
+        let accumulated = (weight * pool.accrued_reward_per_share) / 1_000_000_000_000u128;
+        let penalty_share = accumulated.saturating_sub(position.reward_debt);
+        position.reward_debt = accumulated;
+
+        // Apply tiered penalty based on market state
+        // (This is the penalty THE USER PAYS for claiming during non-open hours)
         let penalty_bps = get_penalty_bps(current_state, pool);
-        let penalty = gross_rewards * penalty_bps / 10000;
-        let after_penalty = gross_rewards.saturating_sub(penalty);
+        let penalty = penalty_share * penalty_bps as u128 / 10_000u128;
+        let after_penalty = penalty_share.saturating_sub(penalty);
 
-        // 2. POSR tax (5%) on the remainder
-        let posr_tax = after_penalty * pool.posr_tax_bps as u64 / 10000;
+        // Apply POSR tax (e.g., 5%)
+        let posr_tax = after_penalty * pool.posr_tax_bps as u128 / 10_000u128;
         let user_rewards = after_penalty.saturating_sub(posr_tax);
-
-        position.last_claim_timestamp = clock.unix_timestamp;
 
         let signer_seeds: &[&[&[u8]]] = &[&[b"pool", pool.mint.as_ref(), &[pool.bump]]];
 
-        // Transfer net rewards to user
-        if user_rewards > 0 {
+        // Send user's penalty to penalty_vault (for future distribution)
+        if penalty > 0 {
             let cpi = TransferChecked {
                 from: ctx.accounts.reward_vault.to_account_info(),
                 mint: ctx.accounts.mint.to_account_info(),
-                to: ctx.accounts.owner_token.to_account_info(),
+                to: ctx.accounts.penalty_vault.to_account_info(),
                 authority: pool.to_account_info(),
             };
             transfer_checked(
@@ -133,12 +256,12 @@ pub mod staking {
                     cpi,
                     signer_seeds,
                 ),
-                user_rewards,
+                penalty as u64,
                 ctx.accounts.mint.decimals,
             )?;
         }
 
-        // Transfer POSR tax
+        // Send POSR tax to posr_vault
         if posr_tax > 0 {
             let cpi = TransferChecked {
                 from: ctx.accounts.reward_vault.to_account_info(),
@@ -152,17 +275,45 @@ pub mod staking {
                     cpi,
                     signer_seeds,
                 ),
-                posr_tax,
+                posr_tax as u64,
                 ctx.accounts.mint.decimals,
             )?;
         }
 
-        // TODO: Penalty redistribution. Currently the penalty amount remains in
-        // reward_vault, increasing long-term pool capacity. For active distribution
-        // to stakers, add a penalty_vault and a pro-rata distribution instruction.
+        // Send net rewards to user
+        if user_rewards > 0 {
+            let cpi = TransferChecked {
+                from: ctx.accounts.reward_vault.to_account_info(),
+                mint: ctx.accounts.mint.to_account_info(),
+                to: ctx.accounts.owner_token.to_account_info(),
+                authority: pool.to_account_info(),
+            };
+            transfer_checked(
+                CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    cpi,
+                    signer_seeds,
+                ),
+                user_rewards as u64,
+                ctx.accounts.mint.decimals,
+            )?;
+        }
 
+        position.last_claim_timestamp = clock.unix_timestamp;
+        msg!(
+            "Claimed: {} (penalty: {}, posr: {})",
+            user_rewards,
+            penalty,
+            posr_tax
+        );
         Ok(())
     }
+
+    // -------------------------------------------------------------------------
+    // UNSTAKE
+    // Called by user to exit completely. Returns principal + net rewards.
+    // Position account is closed (rent refunded to user).
+    // -------------------------------------------------------------------------
     pub fn unstake(ctx: Context<Unstake>) -> Result<()> {
         let position = &ctx.accounts.position;
         let pool = &mut ctx.accounts.pool;
@@ -171,23 +322,35 @@ pub mod staking {
         let current_state = get_market_state(&ctx.accounts.market_status)?;
         let trading_day_index = get_trading_day_index(&ctx.accounts.market_status)?;
 
-        let gross_rewards =
-            calculate_rewards(position, pool, clock.unix_timestamp, trading_day_index);
+        // Calculate current weight
+        let trading_days = trading_day_index
+            .saturating_sub(position.entry_trading_day)
+            .saturating_sub(1);
+        let current_multiplier = calculate_multiplier(trading_days, pool.max_multiplier_bps);
+        let weight = (position.amount as u128 * current_multiplier as u128) / 10_000u128;
 
+        // Calculate penalty share
+        let accumulated = (weight * pool.accrued_reward_per_share) / 1_000_000_000_000u128;
+        let penalty_share = accumulated.saturating_sub(position.reward_debt);
+
+        // Apply tiered penalty
         let penalty_bps = get_penalty_bps(current_state, pool);
-        let penalty = gross_rewards * penalty_bps / 10000;
-        let after_penalty = gross_rewards.saturating_sub(penalty);
+        let penalty = penalty_share * penalty_bps as u128 / 10_000u128;
+        let after_penalty = penalty_share.saturating_sub(penalty);
 
-        let posr_tax = after_penalty * pool.posr_tax_bps as u64 / 10000;
+        // POSR tax
+        let posr_tax = after_penalty * pool.posr_tax_bps as u128 / 10_000u128;
         let user_rewards = after_penalty.saturating_sub(posr_tax);
 
+        // Update pool totals BEFORE closing position
         pool.total_staked = pool.total_staked.saturating_sub(position.amount);
+        pool.total_weighted_stake = pool.total_weighted_stake.saturating_sub(weight);
 
         let pool_bump = pool.bump;
         let pool_mint = pool.mint;
         let signer_seeds: &[&[&[u8]]] = &[&[b"pool", pool_mint.as_ref(), &[pool_bump]]];
 
-        // Return principal
+        // Return principal from vault
         let cpi = TransferChecked {
             from: ctx.accounts.vault.to_account_info(),
             mint: ctx.accounts.mint.to_account_info(),
@@ -204,6 +367,25 @@ pub mod staking {
             ctx.accounts.mint.decimals,
         )?;
 
+        // Send penalty to penalty_vault
+        if penalty > 0 {
+            let cpi = TransferChecked {
+                from: ctx.accounts.reward_vault.to_account_info(),
+                mint: ctx.accounts.mint.to_account_info(),
+                to: ctx.accounts.penalty_vault.to_account_info(),
+                authority: pool.to_account_info(),
+            };
+            transfer_checked(
+                CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    cpi,
+                    signer_seeds,
+                ),
+                penalty as u64,
+                ctx.accounts.mint.decimals,
+            )?;
+        }
+
         // Pay net rewards
         if user_rewards > 0 {
             let cpi = TransferChecked {
@@ -218,12 +400,12 @@ pub mod staking {
                     cpi,
                     signer_seeds,
                 ),
-                user_rewards,
+                user_rewards as u64,
                 ctx.accounts.mint.decimals,
             )?;
         }
 
-        // POSR tax
+        // Send POSR tax to posr_vault
         if posr_tax > 0 {
             let cpi = TransferChecked {
                 from: ctx.accounts.reward_vault.to_account_info(),
@@ -237,18 +419,79 @@ pub mod staking {
                     cpi,
                     signer_seeds,
                 ),
-                posr_tax,
+                posr_tax as u64,
                 ctx.accounts.mint.decimals,
             )?;
         }
 
-        // TODO: Distribute penalty to long-term stakers. See note in claim().
+        // Position account auto-closed by Anchor (close = owner in accounts struct)
+        msg!(
+            "Unstaked: {} principal, {} rewards (penalty: {}, posr: {})",
+            position.amount,
+            user_rewards,
+            penalty,
+            posr_tax
+        );
+        Ok(())
+    }
 
+    // -------------------------------------------------------------------------
+    // REALIZE PENALTIES
+    // Called when market opens (or by anyone) to distribute penalties.
+    // Moves tokens from penalty_vault to reward_vault and updates global index.
+    // Typically triggered by crank oracle on state transition 1/2 → 0.
+    // -------------------------------------------------------------------------
+    pub fn realize_penalties(ctx: Context<RealizePenalties>) -> Result<()> {
+        let pool = &mut ctx.accounts.pool;
+        let penalty_vault = &ctx.accounts.penalty_vault;
+
+        let penalty_amount = penalty_vault.amount;
+        require!(penalty_amount > 0, StakeError::NoRewards);
+        require!(pool.total_weighted_stake > 0, StakeError::NoRewards);
+
+        // Update MasterChef index: each weighted share gets more reward
+        pool.accrued_reward_per_share +=
+            (penalty_amount as u128 * 1_000_000_000_000u128) / pool.total_weighted_stake;
+
+        // Move tokens from penalty_vault to reward_vault
+        let signer_seeds: &[&[&[u8]]] = &[&[b"pool", pool.mint.as_ref(), &[pool.bump]]];
+        let cpi = TransferChecked {
+            from: penalty_vault.to_account_info(),
+            mint: ctx.accounts.mint.to_account_info(),
+            to: ctx.accounts.reward_vault.to_account_info(),
+            authority: pool.to_account_info(),
+        };
+        transfer_checked(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                cpi,
+                signer_seeds,
+            ),
+            penalty_amount,
+            ctx.accounts.mint.decimals,
+        )?;
+
+        msg!(
+            "Realized {} penalties. New index: {}",
+            penalty_amount,
+            pool.accrued_reward_per_share
+        );
         Ok(())
     }
 }
 
-// --- Raw byte helpers for cross-program market status ---
+// =============================================================================
+// HELPER FUNCTIONS
+// =============================================================================
+
+fn get_penalty_bps(current_state: u8, pool: &StakePool) -> u64 {
+    match current_state {
+        1 => pool.after_hours_penalty_bps as u64,
+        2 => pool.closed_penalty_bps as u64,
+        3 => pool.halted_penalty_bps as u64,
+        _ => 0,
+    }
+}
 
 fn get_market_state(market_status: &AccountInfo) -> Result<u8> {
     let data = market_status.try_borrow_data()?;
@@ -259,38 +502,7 @@ fn get_market_state(market_status: &AccountInfo) -> Result<u8> {
 fn get_trading_day_index(market_status: &AccountInfo) -> Result<u64> {
     let data = market_status.try_borrow_data()?;
     require!(data.len() >= 25, StakeError::InvalidMarketStatus);
-    // Layout: 8 byte disc + 1 byte state + 8 byte timestamp + 8 byte index
     Ok(u64::from_le_bytes(data[17..25].try_into().unwrap()))
-}
-
-// --- Math ---
-
-fn calculate_rewards(
-    position: &StakePosition,
-    pool: &StakePool,
-    now: i64,
-    current_trading_day: u64,
-) -> u64 {
-    let elapsed = (now - position.last_claim_timestamp) as u64;
-    if elapsed == 0 || position.amount == 0 {
-        return 0;
-    }
-
-    let trading_days = current_trading_day
-        .saturating_sub(position.entry_trading_day)
-        .saturating_sub(1);
-    let mult = calculate_multiplier(trading_days, pool.max_multiplier_bps);
-
-    let annual_secs: u64 = 31_536_000;
-    let amount = position.amount as u128;
-    let apy = pool.base_apy_bps as u128;
-    let m = mult as u128;
-    let e = elapsed as u128;
-
-    let num = amount * apy * m * e;
-    let den = 10_000u128 * 10_000u128 * annual_secs as u128;
-
-    (num / den) as u64
 }
 
 fn calculate_multiplier(trading_days: u64, max_bps: u16) -> u64 {
@@ -302,7 +514,9 @@ fn calculate_multiplier(trading_days: u64, max_bps: u16) -> u64 {
     base + (num / den)
 }
 
-// --- Types ---
+// =============================================================================
+// ACCOUNT STRUCTURES
+// =============================================================================
 
 #[account]
 pub struct StakePool {
@@ -310,19 +524,18 @@ pub struct StakePool {
     pub mint: Pubkey,
     pub vault: Pubkey,
     pub reward_vault: Pubkey,
+    pub penalty_vault: Pubkey,
     pub posr_vault: Pubkey,
     pub total_staked: u64,
-    pub base_apy_bps: u16,
+    pub total_weighted_stake: u128,
     pub max_multiplier_bps: u16,
-    pub penalty_bps: u16,
     pub posr_tax_bps: u16,
-    pub market_status_pda: Pubkey,
-    pub bump: u8,
-    // Penalty tiers (basis points)
     pub after_hours_penalty_bps: u16,
     pub closed_penalty_bps: u16,
     pub halted_penalty_bps: u16,
     pub accrued_reward_per_share: u128,
+    pub market_status_pda: Pubkey,
+    pub bump: u8,
 }
 
 #[account]
@@ -333,8 +546,8 @@ pub struct StakePosition {
     pub entry_trading_day: u64,
     pub last_claim_timestamp: i64,
     pub index: u64,
-    pub bump: u8,
     pub reward_debt: u128,
+    pub bump: u8,
 }
 
 #[account]
@@ -342,7 +555,9 @@ pub struct UserStakeIndex {
     pub next_index: u64,
 }
 
-// --- Accounts ---
+// =============================================================================
+// ACCOUNTS CONTEXTS (Anchor validation & security constraints)
+// =============================================================================
 
 #[derive(Accounts)]
 pub struct InitializePool<'info> {
@@ -354,7 +569,7 @@ pub struct InitializePool<'info> {
         payer = authority,
         seeds = [b"pool", mint.key().as_ref()],
         bump,
-        space = 8 + 256
+        space = 8 + 300
     )]
     pub pool: Account<'info, StakePool>,
     #[account(
@@ -378,13 +593,22 @@ pub struct InitializePool<'info> {
     #[account(
         init,
         payer = authority,
+        seeds = [b"penalties", pool.key().as_ref()],
+        bump,
+        token::mint = mint,
+        token::authority = pool,
+    )]
+    pub penalty_vault: InterfaceAccount<'info, TokenAccount>,
+    #[account(
+        init,
+        payer = authority,
         seeds = [b"posr", pool.key().as_ref()],
         bump,
         token::mint = mint,
         token::authority = pool,
     )]
     pub posr_vault: InterfaceAccount<'info, TokenAccount>,
-    /// CHECK: Crank oracle market status PDA
+    /// CHECK: Verified in instruction via find_program_address
     pub market_status_pda: UncheckedAccount<'info>,
     pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
@@ -437,7 +661,7 @@ pub struct Stake<'info> {
     pub owner_token: InterfaceAccount<'info, TokenAccount>,
     #[account(mut, token::mint = mint, token::authority = pool)]
     pub vault: InterfaceAccount<'info, TokenAccount>,
-    /// CHECK: Crank oracle market status PDA (raw bytes)
+    /// CHECK: Address verified by pool.market_status_pda constraint
     #[account(address = pool.market_status_pda)]
     pub market_status: UncheckedAccount<'info>,
     pub token_program: Interface<'info, TokenInterface>,
@@ -456,10 +680,12 @@ pub struct Claim<'info> {
     #[account(mut, token::mint = mint, token::authority = pool)]
     pub reward_vault: InterfaceAccount<'info, TokenAccount>,
     #[account(mut, token::mint = mint, token::authority = pool)]
+    pub penalty_vault: InterfaceAccount<'info, TokenAccount>,
+    #[account(mut, token::mint = mint, token::authority = pool)]
     pub posr_vault: InterfaceAccount<'info, TokenAccount>,
     #[account(mut, token::mint = mint, token::authority = owner)]
     pub owner_token: InterfaceAccount<'info, TokenAccount>,
-    /// CHECK: Crank oracle market status PDA (raw bytes)
+    /// CHECK: Address verified by pool.market_status_pda constraint
     #[account(address = pool.market_status_pda)]
     pub market_status: UncheckedAccount<'info>,
     pub token_program: Interface<'info, TokenInterface>,
@@ -479,14 +705,29 @@ pub struct Unstake<'info> {
     #[account(mut, token::mint = mint, token::authority = pool)]
     pub reward_vault: InterfaceAccount<'info, TokenAccount>,
     #[account(mut, token::mint = mint, token::authority = pool)]
+    pub penalty_vault: InterfaceAccount<'info, TokenAccount>,
+    #[account(mut, token::mint = mint, token::authority = pool)]
     pub posr_vault: InterfaceAccount<'info, TokenAccount>,
     #[account(mut, token::mint = mint, token::authority = owner)]
     pub owner_token: InterfaceAccount<'info, TokenAccount>,
-    /// CHECK: Crank oracle market status PDA (raw bytes)
+    /// CHECK: Address verified by pool.market_status_pda constraint
     #[account(address = pool.market_status_pda)]
     pub market_status: UncheckedAccount<'info>,
     pub token_program: Interface<'info, TokenInterface>,
 }
+
+#[derive(Accounts)]
+pub struct RealizePenalties<'info> {
+    #[account(mut, has_one = mint)]
+    pub pool: Account<'info, StakePool>,
+    pub mint: InterfaceAccount<'info, Mint>,
+    #[account(mut, token::mint = mint, token::authority = pool)]
+    pub penalty_vault: InterfaceAccount<'info, TokenAccount>,
+    #[account(mut, token::mint = mint, token::authority = pool)]
+    pub reward_vault: InterfaceAccount<'info, TokenAccount>,
+    pub token_program: Interface<'info, TokenInterface>,
+}
+
 #[error_code]
 pub enum StakeError {
     #[msg("Amount must be greater than zero")]
@@ -497,4 +738,7 @@ pub enum StakeError {
     NoRewards,
     #[msg("Invalid market status account")]
     InvalidMarketStatus,
+    #[msg("Insufficient rewards in vault")]
+    InsufficientRewards,
 }
+

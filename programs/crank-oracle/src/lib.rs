@@ -160,6 +160,18 @@ pub mod crank_oracle {
         state.last_updated_timestamp = 0;
         Ok(())
     }
+    // Add this instruction for testing ONLY — remove before mainnet
+    pub fn test_set_state(ctx: Context<TestSetState>, state: u8) -> Result<()> {
+        ctx.accounts.market_status.current_state = state;
+        ctx.accounts.market_status.last_updated_timestamp = Clock::get()?.unix_timestamp;
+        msg!("Test state set to: {}", state);
+        Ok(())
+    }
+}
+#[derive(Accounts)]
+pub struct TestSetState<'info> {
+    #[account(mut, seeds = [b"market_status"], bump)]
+    pub market_status: Account<'info, MarketStatus>,
 }
 
 #[derive(Accounts)]
