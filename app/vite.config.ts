@@ -10,4 +10,15 @@ export default defineConfig({
             '@types': path.resolve(__dirname, '../target/types'),
         },
     },
+    define: {
+        global: 'globalThis',
+    },
+    optimizeDeps: {
+        esbuildOptions: {
+            define: {
+                global: 'globalThis',
+            },
+        },
+        include: ['buffer'],
+    },
 });

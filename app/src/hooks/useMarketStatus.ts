@@ -4,7 +4,7 @@ import { PublicKey } from '@solana/web3.js';
 import { CRANK_PROGRAM_ID } from '../anchor/setup';
 
 const MARKET_STATUS_PDA = PublicKey.findProgramAddressSync(
-    [Buffer.from('market_status')],
+    [new TextEncoder().encode('market_status')],
     CRANK_PROGRAM_ID
 )[0];
 
@@ -22,7 +22,7 @@ interface UseMarketStatusReturn {
     refresh: () => void;
 }
 
-const MAX_STALENESS_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_STALENESS_MS = 5 * 60 * 1000;
 
 export function useMarketStatus(): UseMarketStatusReturn {
     const { connection } = useConnection();
@@ -44,9 +44,9 @@ export function useMarketStatus(): UseMarketStatusReturn {
             }
 
             // Layout: 8 byte disc + 1 byte state + 8 byte timestamp + 8 byte trading_day_index
-            const state = buf.readUInt8(8);
-            const timestamp = Number(buf.readBigInt64LE(9));
-            const tradingDay = Number(buf.readBigUInt64LE(17));
+            const state = buf[8];
+            const timestamp = Number(new BigInt64Array(buf.slice(9, 17).buffer)[0]);
+            const tradingDay = Number(new BigUint64Array(buf.slice(17, 25).buffer)[0]);
 
             setData({ state, timestamp, tradingDay });
             setError(null);
@@ -62,10 +62,10 @@ export function useMarketStatus(): UseMarketStatusReturn {
         const interval = setInterval(fetchStatus, 30000);
         return () => clearInterval(interval);
     }, [fetchStatus]);
-
     const stale = data
         ? Date.now() / 1000 - data.timestamp > MAX_STALENESS_MS / 1000
         : false;
 
     return { data, loading, error, stale, refresh: fetchStatus };
 }
+
