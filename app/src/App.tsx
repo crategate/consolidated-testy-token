@@ -1,17 +1,27 @@
+import { useWallet } from '@solana/wallet-adapter-react';
 import { MarketStatus } from './components/MarketStatus';
-// import { StakeForm } from './components/StakeForm';
-// import { Positions } from './components/Positions';
+import { PoolStats } from './components/PoolStats';
+import { WalletDashboard } from './components/WalletDashboard';
+import { NYSEH_MINT } from './config';
 
 function App() {
-    return (
-        <div className="app-shell">
-            <MarketStatus />
+    const { connected } = useWallet();
 
-            <main className="app-content">
-                {/* Staking UI layers on top here */}
-                {/* <StakeForm /> */}
-                {/* <Positions /> */}
-            </main>
+    return (
+        <div className={`app-shell ${connected ? 'has-wallet' : ''}`}>
+            {connected && (
+                <section className="dashboard-section">
+                    <WalletDashboard mint={NYSEH_MINT} />
+                </section>
+            )}
+
+            <div className="market-status-wrapper">
+                <MarketStatus />
+            </div>
+
+            <section className="stats-section">
+                <PoolStats mint={NYSEH_MINT} />
+            </section>
         </div>
     );
 }
