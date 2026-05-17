@@ -43,10 +43,11 @@ export function useMarketStatus(): UseMarketStatusReturn {
                 throw new Error(`Market status account too small: ${buf.length} bytes (expected ≥25)`);
             }
 
-            // Layout: 8 byte disc + 1 byte state + 8 byte timestamp + 8 byte trading_day_index
-            const state = buf[8];
-            const timestamp = Number(new BigInt64Array(buf.slice(9, 17).buffer)[0]);
-            const tradingDay = Number(new BigUint64Array(buf.slice(17, 25).buffer)[0]);
+            // DataView correctly handles Buffer views AND Uint8Array copies
+            const view = new DataView(buf.buffer, buf.byteOffset);
+            const state = view.getUint8(8);
+            const timestamp = Number(view.getBigInt64(9, true));   // little-endian
+            const tradingDay = Number(view.getBigUint64(17, true)); // little-endian
 
             setData({ state, timestamp, tradingDay });
             setError(null);
@@ -62,10 +63,10 @@ export function useMarketStatus(): UseMarketStatusReturn {
         const interval = setInterval(fetchStatus, 30000);
         return () => clearInterval(interval);
     }, [fetchStatus]);
+
     const stale = data
-        ? Date.now() / 1000 - data.timestamp > MAX_STALENESS_MS / 1000
+        ? (Date.now() / 1000) - data.timestamp > (MAX_STALENESS_MS / 1000)
         : false;
 
     return { data, loading, error, stale, refresh: fetchStatus };
 }
-
