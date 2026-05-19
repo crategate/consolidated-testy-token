@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import { useReadOnlyStakingProgram } from './useReadOnlyProgram';
-
+import { STAKING_PROGRAM_ID } from '../anchor/setup';
 export interface PoolStats {
     totalStaked: number;
     totalSupply: number;
@@ -25,9 +25,8 @@ export function usePoolStats(mint: PublicKey | null) {
         try {
             const [poolPda] = PublicKey.findProgramAddressSync(
                 [Buffer.from('pool'), mint.toBuffer()],
-                program.programId
+                STAKING_PROGRAM_ID
             );
-
             console.log('PoolStats: fetching pool at', poolPda.toBase58());
 
             // Try to fetch pool account - use try/catch since fetchNullable doesn't exist

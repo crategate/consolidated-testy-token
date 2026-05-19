@@ -1,8 +1,8 @@
 import { useCallback } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
-import { useStakingProgram, CRANK_PROGRAM_ID } from '../anchor/setup';
+import { useStakingProgram, STAKING_PROGRAM_ID, CRANK_PROGRAM_ID } from '../anchor/setup';
 import { PublicKey, SystemProgram, } from '@solana/web3.js';
-import BN from 'bn.js';
+import BN from 'bn.js'
 import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';
 
 export function useStake(mint: PublicKey | null) {
@@ -17,11 +17,11 @@ export function useStake(mint: PublicKey | null) {
 
         const [poolPda] = PublicKey.findProgramAddressSync(
             [Buffer.from('pool'), mint.toBuffer()],
-            program.programId
+            STAKING_PROGRAM_ID
         );
         const [userIndexPda] = PublicKey.findProgramAddressSync(
             [Buffer.from('user_index'), publicKey.toBuffer()],
-            program.programId
+            STAKING_PROGRAM_ID
         );
 
         const userIndex = await (program.account as any).userStakeIndex?.fetchNullable(userIndexPda);
@@ -32,8 +32,7 @@ export function useStake(mint: PublicKey | null) {
             poolPda.toBuffer(),
             publicKey.toBuffer(),
             new BN(index).toArrayLike(Buffer, 'le', 8),
-        ], program.programId);
-
+        ], STAKING_PROGRAM_ID);
         const [vaultPda] = PublicKey.findProgramAddressSync([
             Buffer.from('vault'),
             poolPda.toBuffer(),
@@ -44,9 +43,12 @@ export function useStake(mint: PublicKey | null) {
             [Buffer.from('market_status')],
             CRANK_PROGRAM_ID
         );
-
         const stakeAmount = new BN(Number(amount) * 1e9); // assumes 9 decimals
-
+        console.log("Program ID used for PDAs :", STAKING_PROGRAM_ID.toBase58());
+        console.log("Program ID from IDL/tx   :", program.programId.toBase58());
+        console.log("Pool PDA                 :", poolPda.toBase58());
+        console.log("Position PDA             :", positionPda.toBase58());
+        console.log("Index                    :", index);
         const tx = await program.methods
             .stake(stakeAmount, new BN(index))
             .accounts({

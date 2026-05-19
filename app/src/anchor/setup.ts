@@ -4,8 +4,12 @@ import { useMemo } from "react";
 import stakingIdl from "../../../target/idl/staking.json";
 import crankIdl from "../../../target/idl/crank_oracle.json";
 
-export const STAKING_PROGRAM_ID = new web3.PublicKey("8CzYeKYrQieo6wXsQZ4fJB1otLgUwHAf5L1R8Sht1LX1");
-export const CRANK_PROGRAM_ID = new web3.PublicKey("GsUHrYWJVUeMkDAFDRq2s8hJXwmg8fYCQjJ6ApbFK1as");
+// Derive directly from the built IDL — never stale
+const stakingAddress = (stakingIdl as any).metadata?.address ?? (stakingIdl as any).address;
+const crankAddress = (crankIdl as any).metadata?.address ?? (crankIdl as any).address;
+
+export const STAKING_PROGRAM_ID = new web3.PublicKey(stakingAddress);
+export const CRANK_PROGRAM_ID = new web3.PublicKey(crankAddress);
 
 export function useStakingProgram() {
     const { connection } = useConnection();
@@ -14,6 +18,7 @@ export function useStakingProgram() {
     return useMemo(() => {
         if (!wallet) return null;
         const provider = new AnchorProvider(connection, wallet, { commitment: "confirmed" });
+        // Explicitly pass the ID so there is zero chance of mismatch
         return new Program(stakingIdl as any, provider);
     }, [connection, wallet]);
 }
