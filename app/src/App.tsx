@@ -9,6 +9,12 @@ function App() {
 
     return (
         <div className={`app-shell ${connected ? 'has-wallet' : ''}`}>
+            {!connected && (
+                <section className="dashboard-section">
+                    <WalletDashboard mint={NYSEH_MINT} />
+                </section>
+            )}
+
             {connected && (
                 <section className="dashboard-section">
                     <WalletDashboard mint={NYSEH_MINT} />

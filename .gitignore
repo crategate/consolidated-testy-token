@@ -6,4 +6,5 @@ node_modules
 test-ledger
 .yarn
 .env
+**/*.env
 repomix-output.xml

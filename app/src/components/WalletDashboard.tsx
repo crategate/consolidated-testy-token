@@ -10,14 +10,17 @@ interface WalletDashboardProps {
 }
 
 export const WalletDashboard: React.FC<WalletDashboardProps> = ({ mint }) => {
-    const { publicKey, connected } = useWallet();
+    const { publicKey, connected, connecting } = useWallet();
 
     if (!connected) {
         return (
             <div className="wallet-dashboard connect-prompt">
                 <h2>Connect Wallet</h2>
                 <p>Connect your wallet to stake NYSEH and view your positions.</p>
-                <WalletMultiButton />
+                <div className="wallet-button-wrapper">
+                    <WalletMultiButton />
+                </div>
+                {connecting && <p className="connecting-text">Connecting...</p>}
             </div>
         );
     }
@@ -29,7 +32,9 @@ export const WalletDashboard: React.FC<WalletDashboardProps> = ({ mint }) => {
                 <code className="wallet-pk">
                     {publicKey?.toBase58().slice(0, 4)}…{publicKey?.toBase58().slice(-4)}
                 </code>
-                <WalletMultiButton />
+                <div className="wallet-button-wrapper">
+                    <WalletMultiButton />
+                </div>
             </div>
             <div className="dashboard-grid">
                 <StakeForm mint={mint} />

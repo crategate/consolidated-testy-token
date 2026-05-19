@@ -17,7 +17,10 @@ export function usePoolStats(mint: PublicKey | null) {
     const [loading, setLoading] = useState(false);
 
     const fetchStats = useCallback(async () => {
-        if (!connection || !mint || !program) return;
+        if (!connection || !mint || !program) {
+            console.log('PoolStats: missing deps', { connection: !!connection, mint: !!mint, program: !!program });
+            return;
+        }
         setLoading(true);
         try {
             const [poolPda] = PublicKey.findProgramAddressSync(
@@ -25,31 +28,56 @@ export function usePoolStats(mint: PublicKey | null) {
                 program.programId
             );
 
-            const pool = await (program.account as any).stakePool?.fetchNullable(poolPda);
+            console.log('PoolStats: fetching pool at', poolPda.toBase58());
 
+            // Try to fetch pool account - use try/catch since fetchNullable doesn't exist
+            let pool = null;
+            try {
+                pool = await (program.account as any).stakePool.fetch(poolPda);
+                console.log('PoolStats: pool fetched', pool);
+            } catch (e: any) {
+                console.log('PoolStats: pool not found or not initialized yet', e.message);
+            }
+
+            // Get mint info for supply and decimals
             const mintInfo = await connection.getParsedAccountInfo(mint);
             let supply = 0;
             let decimals = 9;
             if (mintInfo.value && 'parsed' in mintInfo.value.data) {
-                const parsed = mintInfo.value.data.parsed.info;
+                const parsed = (mintInfo.value.data as any).parsed.info;
                 supply = Number(parsed.supply);
                 decimals = Number(parsed.decimals);
+                console.log('PoolStats: mint info', { supply, decimals });
+            } else {
+                console.log('PoolStats: could not parse mint info');
             }
 
-            // Rough count of UserStakeIndex accounts (discriminator 8 + u64 8 = 16 bytes)
-            const userAccounts = await connection.getProgramAccounts(program.programId, {
-                filters: [{ dataSize: 16 }],
-                commitment: 'confirmed',
-            });
+            // Count user index accounts - UserStakeIndex is 8 (discriminator) + 8 (next_index u64) = 16 bytes
+            // But let's also check for position accounts which are larger
+            let userCount = 0;
+            try {
+                const userAccounts = await connection.getProgramAccounts(program.programId, {
+                    filters: [
+                        { dataSize: 16 }, // UserStakeIndex accounts
+                    ],
+                    commitment: 'confirmed',
+                });
+                userCount = userAccounts.length;
+                console.log('PoolStats: found users', userCount);
+            } catch (e) {
+                console.log('PoolStats: error counting users', e);
+            }
+
+            const totalStaked = pool ? Number(pool.totalStaked) / 10 ** decimals : 0;
 
             setStats({
-                totalStaked: pool ? Number(pool.totalStaked) / 10 ** decimals : 0,
+                totalStaked,
                 totalSupply: supply / 10 ** decimals,
-                userCount: userAccounts.length,
+                userCount,
                 decimals,
             });
         } catch (e) {
-            console.error('Pool stats error:', e);
+            console.error('PoolStats error:', e);
         } finally {
             setLoading(false);
         }
