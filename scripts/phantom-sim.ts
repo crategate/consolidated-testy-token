@@ -8,7 +8,7 @@ import {
 
 async function main() {
     const connection = new Connection("https://api.devnet.solana.com");
-    const mint = new PublicKey("95N1n6nMBBeWeyvcKtChr6gRDfDYj6ACVg2Uc1Yf7cZB");
+    const mint = new PublicKey("4qd8TmWQjR6QVQtXCZjxgS3zcmQYzH2xyBPeYfjtCnwD");
     // Load the extra account meta list to see what accounts Phantom should be adding
     const coinMintId = new PublicKey("8kNySBN4Zjd8jnWgrE5LcafLNTT16Lhgwhna1tqyn8we");
     const [extraMetaPda] = PublicKey.findProgramAddressSync(
