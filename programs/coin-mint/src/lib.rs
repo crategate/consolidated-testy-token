@@ -9,7 +9,7 @@ use spl_tlv_account_resolution::{
     state::ExtraAccountMetaList,
 };
 use spl_transfer_hook_interface::instruction::{ExecuteInstruction, TransferHookInstruction};
-
+pub const CRANK_ORACLE_PROGRAM_ID: Pubkey = pubkey!("GsUHrYWJVUeMkDAFDRq2s8hJXwmg8fYCQjJ6ApbFK1as");
 declare_id!("8kNySBN4Zjd8jnWgrE5LcafLNTT16Lhgwhna1tqyn8we");
 
 #[error_code]
@@ -24,10 +24,9 @@ pub mod coin_mint {
 
     pub fn initialize_extra_account_meta_list(
         ctx: Context<InitializeExtraAccountMetaList>,
-        crank_oracle_program_id: Pubkey,
     ) -> Result<()> {
         let (market_status_pda, _) =
-            Pubkey::find_program_address(&[b"market_status"], &crank_oracle_program_id);
+            Pubkey::find_program_address(&[b"market_status"], &CRANK_ORACLE_PROGRAM_ID);
 
         let account_metas = vec![
             ExtraAccountMeta::new_with_seeds(

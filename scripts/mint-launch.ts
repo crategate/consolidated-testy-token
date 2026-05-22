@@ -80,8 +80,8 @@ async function main() {
     // 4. Token Metadata Configuration
     const metadata: TokenMetadata = {
         mint: mint.publicKey,
-        name: 'FRONTEND',
-        symbol: 'another',
+        name: 'BrokenTrans',
+        symbol: '5/22',
         uri: 'https://copper-quick-koi-488.mypinata.cloud/ipfs/bafkreiblskodz5bwtelz4id437rnhsndtq3rfh7jjsgaj72wb55cgnbbea',
         additionalMetadata: [['description', 'combining concepts and learning the basics']],
     };
@@ -145,7 +145,7 @@ async function main() {
     // ==========================================
     console.log("📝 Initializing Extra Account Meta List...");
     const initMetaListIx = await program.methods
-        .initializeExtraAccountMetaList(oracleCrankProgramId)
+        .initializeExtraAccountMetaList()
         .accountsPartial({
             mint: mint.publicKey,
             extraAccountMetaList: extraAccountMetaListPDA,

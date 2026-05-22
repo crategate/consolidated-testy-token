@@ -18,7 +18,7 @@ const queryClient = new QueryClient({
 });
 
 const wallets = [new SolflareWalletAdapter()];
-const endpoint = clusterApiUrl('devnet');
+const endpoint = import.meta.env.VITE_RPC_URL || 'https://api.devnet.solana.com';
 
 createRoot(document.getElementById('root')!).render(
     <StrictMode>
