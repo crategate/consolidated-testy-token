@@ -27,7 +27,7 @@ pub mod coin_mint {
         crank_oracle_program_id: Pubkey,
     ) -> Result<()> {
         let (market_status_pda, _) =
-            Pubkey::find_program_address(&[b"market_status"], &CRANK_ORACLE_PROGRAM_ID);
+            Pubkey::find_program_address(&[b"market_status"], &crank_oracle_program_id);
 
         let account_metas = vec![
             ExtraAccountMeta::new_with_seeds(
