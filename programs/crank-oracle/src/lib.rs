@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use switchboard_on_demand::prelude::rust_decimal::prelude::ToPrimitive;
 use switchboard_on_demand::{default_queue, SwitchboardQuote, SwitchboardQuoteExt};
 
-declare_id!("GsUHrYWJVUeMkDAFDRq2s8hJXwmg8fYCQjJ6ApbFK1as");
+declare_id!("8u3aceQ1FeRZH1tVSxeZX4q3G1q8tAK77MadwRj9yLKt");
 
 #[error_code]
 pub enum CrankError {
@@ -146,7 +146,7 @@ pub mod crank_oracle {
         market_status.last_updated_timestamp = Clock::get()?.unix_timestamp;
 
         msg!(
-            "Market state: {} | Timestamp: {}",
+            "Market state: {} |& Timestamp: {}",
             new_state,
             market_status.last_updated_timestamp
         );

@@ -32,7 +32,7 @@ const coinMintId = new PublicKey("8kNySBN4Zjd8jnWgrE5LcafLNTT16Lhgwhna1tqyn8we")
     }
 
     // Check the oracle PDA that should be in the meta list
-    const crankOracleId = new PublicKey("GsUHrYWJVUeMkDAFDRq2s8hJXwmg8fYCQjJ6ApbFK1as");
+    const crankOracleId = new PublicKey("8u3aceQ1FeRZH1tVSxeZX4q3G1q8tAK77MadwRj9yLKt");
     const [oraclePda] = PublicKey.findProgramAddressSync([Buffer.from("market_status")], crankOracleId);
     const oracleAcc = await connection.getAccountInfo(oraclePda);
     if (!oracleAcc) {

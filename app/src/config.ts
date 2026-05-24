@@ -21,5 +21,5 @@ export const NYSEH_MINT = getMint();
 // Crank program ID is always derived from the keypair file at build time
 // For the browser, we read it from an env var or use the devnet default
 export const CRANK_PROGRAM_ID = new PublicKey(
-    import.meta.env.VITE_CRANK_PROGRAM_ID || 'GsUHrYWJVUeMkDAFDRq2s8hJXwmg8fYCQjJ6ApbFK1as'
+    import.meta.env.VITE_CRANK_PROGRAM_ID || '8u3aceQ1FeRZH1tVSxeZX4q3G1q8tAK77MadwRj9yLKt'
 );

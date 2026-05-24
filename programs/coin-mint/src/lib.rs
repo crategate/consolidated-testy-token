@@ -9,8 +9,8 @@ use spl_tlv_account_resolution::{
     state::ExtraAccountMetaList,
 };
 use spl_transfer_hook_interface::instruction::{ExecuteInstruction, TransferHookInstruction};
-pub const CRANK_ORACLE_PROGRAM_ID: Pubkey = pubkey!("GsUHrYWJVUeMkDAFDRq2s8hJXwmg8fYCQjJ6ApbFK1as");
-declare_id!("8kNySBN4Zjd8jnWgrE5LcafLNTT16Lhgwhna1tqyn8we");
+pub const CRANK_ORACLE_PROGRAM_ID: Pubkey = pubkey!("8u3aceQ1FeRZH1tVSxeZX4q3G1q8tAK77MadwRj9yLKt");
+declare_id!("FDNMWJMXypMFLxZaFMt9Gq97Zh5bWnuwtVEW5HV8GGme");
 
 #[error_code]
 pub enum MyError {
@@ -24,6 +24,7 @@ pub mod coin_mint {
 
     pub fn initialize_extra_account_meta_list(
         ctx: Context<InitializeExtraAccountMetaList>,
+        crank_oracle_program_id: Pubkey,
     ) -> Result<()> {
         let (market_status_pda, _) =
             Pubkey::find_program_address(&[b"market_status"], &CRANK_ORACLE_PROGRAM_ID);

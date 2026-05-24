@@ -6,12 +6,11 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-coin_mint = "8kNySBN4Zjd8jnWgrE5LcafLNTT16Lhgwhna1tqyn8we"
-crank_oracle = "GsUHrYWJVUeMkDAFDRq2s8hJXwmg8fYCQjJ6ApbFK1as"
-staking = "8CzYeKYrQieo6wXsQZ4fJB1otLgUwHAf5L1R8Sht1LX1"
+coin_mint = "FDNMWJMXypMFLxZaFMt9Gq97Zh5bWnuwtVEW5HV8GGme"
+crank_oracle = "8u3aceQ1FeRZH1tVSxeZX4q3G1q8tAK77MadwRj9yLKt"
+staking = "7dTpc79c9GkQWkRH87WRE4y9YKDHkNvSKTMdS2fFWGkA"
 
 [programs.localnet]
-staking = "8CzYeKYrQieo6wXsQZ4fJB1otLgUwHAf5L1R8Sht1LX1"
 testy_token = "Eb7SiNnSwCoKobhG8dDarPQxErqmnzK7kJ1SRW9vEpdS"
 
 [registry]
@@ -22,17 +21,14 @@ cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-## update CRANK_ORACLE_PROGRAM_ID in mint
 bount = "npx ts-node ./scripts/mev-keeper.ts"
 crank = "npx ts-node ./scripts/managedUpdate.ts --feedId 0xaf3a39b12f5c052d81eb8c62bb86f4691fce2c2e0c88b39f83801978b6f203c3"
+debug-ho = "npx ts-node ./scripts/debug-hook.ts"
 init = "npx ts-node ./scripts/initialize.ts && npx ts-node ./scripts/init-bounty.ts"
 init-o = "npx ts-node ./scripts/initialize.ts"
-## DELETE coin mint nyseh in target/deploy first before mint script
 mint = "npx ts-node scripts/mint-launch.ts"
 phantom = "npx ts-node ./scripts/phantom-sim.ts"
 pool = "npx ts-node ./scripts/pool-init.ts"
-test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
-debug-ho = "npx ts-node ./scripts/debug-hook.ts"
-## use with "-- 2"
 set-oracle = "npx ts-node ./scripts/set-oracle-state.ts"
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
 test-staking = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/staking.ts"
