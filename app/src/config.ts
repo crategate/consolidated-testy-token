@@ -1,25 +1,36 @@
 import { PublicKey } from '@solana/web3.js';
 
-// Try to load from localStorage first (set after first successful connection),
-// fallback to environment variable, then to a prompt
-function getMint(): PublicKey {
-    const saved = localStorage.getItem('nyseh_mint');
-    if (saved) return new PublicKey(saved);
+export type DeploymentConfig = {
+    cluster?: string;
+    updatedAt?: string;
+    mint?: string;
+    stakingProgram?: string;
+    crankProgram?: string;
+    coinMintProgram?: string;
+    pool?: string;
+    vault?: string;
+    rewardVault?: string;
+    penaltyVault?: string;
+    posrVault?: string;
+    marketStatus?: string;
+};
 
-    const env = import.meta.env.VITE_NYSEH_MINT;
-    if (env) return new PublicKey(env);
+export type ResolvedDeployment = DeploymentConfig & {
+    mintKey: PublicKey;
+    marketStatusKey?: PublicKey;
+};
 
-    // Default: the mint from your local deployment
-    // This will fail gracefully if the pool isn't initialized yet
-    throw new Error(
-        'NYSEH mint not configured. Set VITE_NYSEH_MINT in .env or run mint-launch.ts first.'
-    );
+export function resolveDeployment(config: DeploymentConfig): ResolvedDeployment {
+    const mint = config.mint ?? import.meta.env.VITE_NYSEH_MINT;
+
+    if (!mint) {
+        throw new Error('No mint configured. Run anchor run mint, then refresh the app.');
+    }
+
+    return {
+        ...config,
+        mint,
+        mintKey: new PublicKey(mint),
+        marketStatusKey: config.marketStatus ? new PublicKey(config.marketStatus) : undefined,
+    };
 }
-
-export const NYSEH_MINT = getMint();
-
-// Crank program ID is always derived from the keypair file at build time
-// For the browser, we read it from an env var or use the devnet default
-export const CRANK_PROGRAM_ID = new PublicKey(
-    import.meta.env.VITE_CRANK_PROGRAM_ID || '8u3aceQ1FeRZH1tVSxeZX4q3G1q8tAK77MadwRj9yLKt'
-);

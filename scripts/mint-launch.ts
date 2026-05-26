@@ -26,6 +26,7 @@ import {
 import { createInitializeInstruction, pack, type TokenMetadata } from "@solana/spl-token-metadata";
 import * as fs from "fs";
 import * as path from "path";
+import { pubkey, writeDeploymentState } from "./deployment-state";
 
 const crankKeypairPath = path.join(process.cwd(), "target", "deploy", "crank_oracle-keypair.json");
 const crankKeyData = JSON.parse(fs.readFileSync(crankKeypairPath, "utf-8"));
@@ -76,6 +77,14 @@ async function main() {
         [Buffer.from("market_status")],
         oracleCrankProgramId
     );
+
+    writeDeploymentState({
+        cluster: "devnet",
+        mint: pubkey(mint.publicKey),
+        coinMintProgram: pubkey(program.programId),
+        crankProgram: pubkey(oracleCrankProgramId),
+        marketStatus: pubkey(marketStatusPda),
+    });
 
     // 4. Token Metadata Configuration
     const metadata: TokenMetadata = {

@@ -2,6 +2,7 @@ import * as anchor from "@coral-xyz/anchor";
 import * as fs from "fs";
 import * as path from "path";
 import { PublicKey, Keypair } from "@solana/web3.js";
+import { pubkey, writeDeploymentState } from "./deployment-state";
 
 async function main() {
     const provider = anchor.AnchorProvider.env();
@@ -87,6 +88,19 @@ async function main() {
     console.log("  Penalty Vault:", penaltyVaultPda.toBase58());
     console.log("  POSR Vault:", posrVaultPda.toBase58());
     console.log("  Market Status:", marketStatusPda.toBase58());
+
+    writeDeploymentState({
+        cluster: "devnet",
+        mint: pubkey(NYSEH_MINT),
+        stakingProgram: pubkey(stakingProgram.programId),
+        crankProgram: pubkey(CRANK_PROGRAM_ID),
+        pool: pubkey(poolPda),
+        vault: pubkey(vaultPda),
+        rewardVault: pubkey(rewardVaultPda),
+        penaltyVault: pubkey(penaltyVaultPda),
+        posrVault: pubkey(posrVaultPda),
+        marketStatus: pubkey(marketStatusPda),
+    });
 
     // ── 5. Initialize pool ──
     try {

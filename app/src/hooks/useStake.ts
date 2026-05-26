@@ -1,12 +1,11 @@
 import { useCallback } from 'react';
-import { SendTransactionError } from '@solana/web3.js';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { useStakingProgram, STAKING_PROGRAM_ID, CRANK_PROGRAM_ID } from '../anchor/setup';
 import { PublicKey, SystemProgram } from '@solana/web3.js';
 import BN from 'bn.js';
 import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';
 
-export function useStake(mint: PublicKey | null) {
+export function useStake(mint: PublicKey | null, marketStatusPda?: PublicKey) {
     const { publicKey } = useWallet();
     const { connection } = useConnection();
     const program = useStakingProgram();
@@ -29,10 +28,10 @@ export function useStake(mint: PublicKey | null) {
             [Buffer.from('vault'), poolPda.toBuffer()],
             STAKING_PROGRAM_ID
         );
-        const [marketStatus] = PublicKey.findProgramAddressSync(
+        const marketStatus = marketStatusPda ?? PublicKey.findProgramAddressSync(
             [Buffer.from('market_status')],
             CRANK_PROGRAM_ID
-        );
+        )[0];
 
         // Fetch user index to know which position index to create
         let userIndex = null;
@@ -120,7 +119,7 @@ export function useStake(mint: PublicKey | null) {
         );
 
         return signature;
-    }, [publicKey, program, mint, connection]);
+    }, [publicKey, program, mint, connection, marketStatusPda]);
 
     return { stake };
 }

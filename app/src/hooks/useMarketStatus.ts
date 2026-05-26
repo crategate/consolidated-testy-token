@@ -3,11 +3,6 @@ import { useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import { CRANK_PROGRAM_ID } from '../anchor/setup';
 
-const MARKET_STATUS_PDA = PublicKey.findProgramAddressSync(
-    [new TextEncoder().encode('market_status')],
-    CRANK_PROGRAM_ID
-)[0];
-
 interface MarketStatusData {
     state: number;
     timestamp: number;
@@ -24,7 +19,7 @@ interface UseMarketStatusReturn {
 
 const MAX_STALENESS_MS = 5 * 60 * 1000;
 
-export function useMarketStatus(): UseMarketStatusReturn {
+export function useMarketStatus(marketStatusPda?: PublicKey): UseMarketStatusReturn {
     const { connection } = useConnection();
     const [data, setData] = useState<MarketStatusData | null>(null);
     const [loading, setLoading] = useState(true);
@@ -33,7 +28,11 @@ export function useMarketStatus(): UseMarketStatusReturn {
     const fetchStatus = useCallback(async () => {
         if (!connection) return;
         try {
-            const accountInfo = await connection.getAccountInfo(MARKET_STATUS_PDA);
+            const fallbackPda = PublicKey.findProgramAddressSync(
+                [new TextEncoder().encode('market_status')],
+                CRANK_PROGRAM_ID
+            )[0];
+            const accountInfo = await connection.getAccountInfo(marketStatusPda ?? fallbackPda);
             if (!accountInfo) {
                 throw new Error('Market status PDA not found. Has the crank oracle been initialized?');
             }
@@ -56,7 +55,7 @@ export function useMarketStatus(): UseMarketStatusReturn {
         } finally {
             setLoading(false);
         }
-    }, [connection]);
+    }, [connection, marketStatusPda]);
 
     useEffect(() => {
         fetchStatus();

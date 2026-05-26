@@ -1,11 +1,9 @@
 import 'virtual:buffer-polyfill';
-
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
 import { SolflareWalletAdapter } from '@solana/wallet-adapter-wallets';
-import { clusterApiUrl } from '@solana/web3.js';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@solana/wallet-adapter-react-ui/styles.css';
 import './index.css';

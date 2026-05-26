@@ -3,14 +3,15 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { StakeForm } from './StakeForm';
 import { Positions } from './Positions';
-import { PublicKey } from '@solana/web3.js';
+import type { ResolvedDeployment } from '../config';
 
 interface WalletDashboardProps {
-    mint: PublicKey;
+    deployment: ResolvedDeployment;
 }
 
-export const WalletDashboard: React.FC<WalletDashboardProps> = ({ mint }) => {
+export const WalletDashboard: React.FC<WalletDashboardProps> = ({ deployment }) => {
     const { publicKey, connected, connecting } = useWallet();
+    const mint = deployment.mintKey;
 
     if (!connected) {
         return (
@@ -37,7 +38,7 @@ export const WalletDashboard: React.FC<WalletDashboardProps> = ({ mint }) => {
                 </div>
             </div>
             <div className="dashboard-grid">
-                <StakeForm mint={mint} />
+                <StakeForm mint={mint} marketStatusPda={deployment.marketStatusKey} />
                 <Positions mint={mint} />
             </div>
         </div>

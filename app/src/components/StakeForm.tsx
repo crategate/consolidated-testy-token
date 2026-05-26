@@ -6,10 +6,11 @@ import { getAccount, getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID } from
 
 interface StakeFormProps {
     mint: PublicKey;
+    marketStatusPda?: PublicKey;
 }
 
-export const StakeForm: React.FC<StakeFormProps> = ({ mint }) => {
-    const { stake } = useStake(mint);
+export const StakeForm: React.FC<StakeFormProps> = ({ mint, marketStatusPda }) => {
+    const { stake } = useStake(mint, marketStatusPda);
     const { publicKey } = useWallet();
     const { connection } = useConnection();
     const [amount, setAmount] = useState('');

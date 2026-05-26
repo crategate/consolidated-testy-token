@@ -1,5 +1,6 @@
 import React from 'react';
 import { useMarketStatus } from '../hooks/useMarketStatus.ts';
+import { PublicKey } from '@solana/web3.js';
 import './MarketStatus.css';
 
 const STATE_LABELS: Record<number, string> = {
@@ -16,8 +17,12 @@ const STATE_SUBTITLES: Record<number, string> = {
     3: 'Trading halted due to volatility. Severe penalties active.',
 };
 
-export const MarketStatus: React.FC = () => {
-    const { data, loading, error, stale } = useMarketStatus();
+interface MarketStatusProps {
+    marketStatusPda?: PublicKey;
+}
+
+export const MarketStatus: React.FC<MarketStatusProps> = ({ marketStatusPda }) => {
+    const { data, loading, error, stale } = useMarketStatus(marketStatusPda);
 
     const state = data?.state ?? 99;
     const label = STATE_LABELS[state] ?? 'Unknown';
