@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use switchboard_on_demand::prelude::rust_decimal::prelude::ToPrimitive;
 use switchboard_on_demand::{default_queue, SwitchboardQuote, SwitchboardQuoteExt};
 
-declare_id!("8u3aceQ1FeRZH1tVSxeZX4q3G1q8tAK77MadwRj9yLKt");
+declare_id!("BUA1NAZ311orEfyXAF3Zet3SECMxU66EDeSBe7hDbh81");
 
 #[error_code]
 pub enum CrankError {
@@ -137,7 +137,7 @@ pub mod crank_oracle {
             market_status.trading_day_index =
                 market_status.trading_day_index.checked_add(1).unwrap();
             msg!(
-                "Market closed. Trading day index: {}",
+                "Market closed. Trading day index:   {}",
                 market_status.trading_day_index
             );
         }

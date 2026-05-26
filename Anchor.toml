@@ -6,9 +6,9 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-coin_mint = "FDNMWJMXypMFLxZaFMt9Gq97Zh5bWnuwtVEW5HV8GGme"
-crank_oracle = "8u3aceQ1FeRZH1tVSxeZX4q3G1q8tAK77MadwRj9yLKt"
-staking = "7dTpc79c9GkQWkRH87WRE4y9YKDHkNvSKTMdS2fFWGkA"
+coin_mint = "7Fm2aYKH3aRBso3ADQXjFUDdzKHM5nZHAe2mooqvWBTY"
+crank_oracle = "BUA1NAZ311orEfyXAF3Zet3SECMxU66EDeSBe7hDbh81"
+staking = "Aqfb9mmAAuvJhUTxxVMCLckSQprXjYVAwW2XB79GTHfD"
 
 [programs.localnet]
 testy_token = "Eb7SiNnSwCoKobhG8dDarPQxErqmnzK7kJ1SRW9vEpdS"

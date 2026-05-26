@@ -9,8 +9,7 @@ use spl_tlv_account_resolution::{
     state::ExtraAccountMetaList,
 };
 use spl_transfer_hook_interface::instruction::{ExecuteInstruction, TransferHookInstruction};
-pub const CRANK_ORACLE_PROGRAM_ID: Pubkey = pubkey!("8u3aceQ1FeRZH1tVSxeZX4q3G1q8tAK77MadwRj9yLKt");
-declare_id!("FDNMWJMXypMFLxZaFMt9Gq97Zh5bWnuwtVEW5HV8GGme");
+declare_id!("7Fm2aYKH3aRBso3ADQXjFUDdzKHM5nZHAe2mooqvWBTY");
 
 #[error_code]
 pub enum MyError {
