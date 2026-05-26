@@ -5,8 +5,7 @@ use anchor_spl::{
     token_interface::{Mint, TokenAccount, TokenInterface},
 };
 use spl_tlv_account_resolution::{
-    account::ExtraAccountMeta, seeds::Seed, solana_pubkey::Pubkey as SplPubkey,
-    state::ExtraAccountMetaList,
+    account::ExtraAccountMeta, solana_pubkey::Pubkey as SplPubkey, state::ExtraAccountMetaList,
 };
 use spl_transfer_hook_interface::instruction::{ExecuteInstruction, TransferHookInstruction};
 declare_id!("7Fm2aYKH3aRBso3ADQXjFUDdzKHM5nZHAe2mooqvWBTY");
@@ -29,10 +28,8 @@ pub mod coin_mint {
             Pubkey::find_program_address(&[b"market_status"], &crank_oracle_program_id);
 
         let account_metas = vec![
-            ExtraAccountMeta::new_with_seeds(
-                &[Seed::Literal {
-                    bytes: b"counter".to_vec(),
-                }],
+            ExtraAccountMeta::new_with_pubkey(
+                &SplPubkey::from(ctx.accounts.counter_account.key().to_bytes()),
                 false,
                 true,
             )
