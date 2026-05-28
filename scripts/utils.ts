@@ -664,12 +664,6 @@ export async function basicReadOracleIx(
         program.programId
     );
 
-    const mintKeyPath = path.join(process.cwd(), "target", "deploy", "nyseh_token-keypair.json");
-    if (!fs.existsSync(mintKeyPath)) {
-        throw new Error("MINT KEYPAIR NOT FOUND. Run mint-launch.ts first.");
-    }
-    const keyData = JSON.parse(fs.readFileSync(mintKeyPath, "utf-8"));
-    const nysehMintAddress = Keypair.fromSecretKey(new Uint8Array(keyData)).publicKey;
 
     return await program.methods
         .readOracleData()
@@ -677,9 +671,6 @@ export async function basicReadOracleIx(
             quoteAccount: quoteAccount,
             clock: SYSVAR_CLOCK_PUBKEY,        // was clockSysvar
             marketStatus: marketStatusPda,
-            mint: nysehMintAddress,
-            feeAuthority: feeAuthorityPda,
-            tokenProgram: TOKEN_2022_PROGRAM_ID,
         })
         .instruction();
 }

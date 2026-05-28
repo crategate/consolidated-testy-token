@@ -1,0 +1,14 @@
+{
+  "cluster": "devnet",
+  "mint": "AXEyNKZUgm2oCJsnTr9CzeAALL1v7yap6wQHS6eAZUKC",
+  "stakingProgram": "Aqfb9mmAAuvJhUTxxVMCLckSQprXjYVAwW2XB79GTHfD",
+  "crankProgram": "BUA1NAZ311orEfyXAF3Zet3SECMxU66EDeSBe7hDbh81",
+  "coinMintProgram": "7Fm2aYKH3aRBso3ADQXjFUDdzKHM5nZHAe2mooqvWBTY",
+  "pool": "CYwS1sfMfnsrhtrLb9fXyiPrasXV5F4EnuG26uAqZ9FJ",
+  "vault": "C8hdmEV6mYg166S8NGRvq1rVjLGudvdqkXkVkZkRopHR",
+  "rewardVault": "9NcFXhfodDj4rJJDoE78XLiqsn8tuz6ZejpMon7eE5E9",
+  "penaltyVault": "9ESp1LQWSCybj9N7vNagAxZXB5Nz8skYt31aHUxbCNoB",
+  "posrVault": "9GqCBX64sRnp7JD8ibsF5WMtrmqgmuvJjUmDL9ZyoGQH",
+  "marketStatus": "C5RQfCpv5LyhSG8PsyzGJdo36kazuyj9JmWMVZ9YcYAQ",
+  "updatedAt": "2026-05-27T19:46:14.306Z"
+}

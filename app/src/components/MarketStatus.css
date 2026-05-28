@@ -1,0 +1,164 @@
+.market-status-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 1.5rem;
+  transition: background 1.2s ease, color 0.6s ease;
+  overflow: hidden;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+
+/* ── State Themes ── */
+.market-status-bg[data-market-state="0"] {
+  background: radial-gradient(ellipse at 50% 0%, #064e3b 0%, #020202 100%);
+  --accent: #4ade80;
+  --dot: #22c55e;
+  color: #ecfdf5;
+}
+
+.market-status-bg[data-market-state="1"] {
+  background: radial-gradient(ellipse at 50% 0%, #451a03 0%, #020202 100%);
+  --accent: #fbbf24;
+  --dot: #f59e0b;
+  color: #fffbeb;
+}
+
+.market-status-bg[data-market-state="2"] {
+  background: radial-gradient(ellipse at 50% 0%, #0f172a 0%, #020202 100%);
+  --accent: #94a3b8;
+  --dot: #64748b;
+  color: #f1f5f9;
+}
+
+.market-status-bg[data-market-state="3"] {
+  background: radial-gradient(ellipse at 50% 0%, #450a0a 0%, #020202 100%);
+  --accent: #f87171;
+  --dot: #ef4444;
+  color: #fef2f2;
+}
+
+.market-status-bg[data-market-state="99"] {
+  background: #0a0a0a;
+  --accent: #666;
+  --dot: #444;
+  color: #a3a3a3;
+}
+
+/* ── Animated Grid ── */
+.market-status-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+  background-size: 60px 60px;
+  mask-image: radial-gradient(circle at 50% 50%, black 20%, transparent 70%);
+  animation: gridDrift 20s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes gridDrift {
+  0% { transform: translateY(0) scale(1); opacity: 0.3; }
+  50% { opacity: 0.6; }
+  100% { transform: translateY(-30px) scale(1.05); opacity: 0.3; }
+}
+
+/* ── Header Content ── */
+.market-status-header {
+  position: relative;
+  z-index: 1;
+  max-width: 640px;
+  width: 100%;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 1rem;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: rgba(0,0,0,0.25);
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 1.5rem;
+  backdrop-filter: blur(6px);
+  color: var(--accent);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dot);
+  box-shadow: 0 0 10px var(--dot);
+  animation: pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.7); }
+}
+
+.status-pill.stale {
+  border-color: #ef4444;
+  color: #fca5a5;
+}
+
+.stale-badge {
+  margin-left: 0.25rem;
+  font-size: 0.65rem;
+  background: #ef4444;
+  color: white;
+  padding: 0.125rem 0.375rem;
+  border-radius: 4px;
+  font-weight: 700;
+}
+
+.status-title {
+  font-size: clamp(2.5rem, 10vw, 5.5rem);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  margin: 0 0 0.75rem;
+  line-height: 1.05;
+  text-wrap: balance;
+  color: inherit;
+}
+
+.status-detail {
+  font-size: clamp(1rem, 3.5vw, 1.25rem);
+  opacity: 0.9;
+  margin: 0 0 1.5rem;
+  line-height: 1.5;
+  text-wrap: balance;
+  font-weight: 400;
+}
+
+.status-meta {
+  font-size: 0.75rem;
+  opacity: 0.5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  margin: 0;
+}
+
+.status-error {
+  color: #ef4444;
+}
+
+/* ── Mobile Tweaks ── */
+@media (max-width: 480px) {
+  .market-status-bg {
+    padding: 1rem;
+  }
+  .status-pill {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.75rem;
+  }
+}

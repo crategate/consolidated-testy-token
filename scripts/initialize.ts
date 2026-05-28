@@ -4,6 +4,7 @@ import { Keypair, PublicKey } from "@solana/web3.js";
 import { myAnchorProgram } from "./utils"; // Reusing the repo's util file
 import * as fs from "fs";
 import * as path from "path";
+import { pubkey, writeDeploymentState } from "./deployment-state";
 async function main() {
     // 1. Load the program using the repo's existing utility
     const connection = new anchor.web3.Connection("https://api.devnet.solana.com");
@@ -38,6 +39,11 @@ async function main() {
         program.programId
     );
     console.log("Market Status PDA:", marketStatusPda.toBase58());
+    writeDeploymentState({
+        cluster: "devnet",
+        crankProgram: pubkey(program.programId),
+        marketStatus: pubkey(marketStatusPda),
+    });
 
     // 4. Build and send the initialization transaction
     try {
@@ -57,4 +63,3 @@ async function main() {
 }
 
 main().catch(console.error);
-

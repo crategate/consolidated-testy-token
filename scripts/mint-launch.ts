@@ -26,7 +26,11 @@ import {
 import { createInitializeInstruction, pack, type TokenMetadata } from "@solana/spl-token-metadata";
 import * as fs from "fs";
 import * as path from "path";
+import { pubkey, writeDeploymentState } from "./deployment-state";
 
+const crankKeypairPath = path.join(process.cwd(), "target", "deploy", "crank_oracle-keypair.json");
+const crankKeyData = JSON.parse(fs.readFileSync(crankKeypairPath, "utf-8"));
+const oracleCrankProgramId = Keypair.fromSecretKey(new Uint8Array(crankKeyData)).publicKey;
 async function main() {
     // 1. Setup Provider
     const provider = anchor.AnchorProvider.env();
@@ -74,11 +78,19 @@ async function main() {
         oracleCrankProgramId
     );
 
+    writeDeploymentState({
+        cluster: "devnet",
+        mint: pubkey(mint.publicKey),
+        coinMintProgram: pubkey(program.programId),
+        crankProgram: pubkey(oracleCrankProgramId),
+        marketStatus: pubkey(marketStatusPda),
+    });
+
     // 4. Token Metadata Configuration
     const metadata: TokenMetadata = {
         mint: mint.publicKey,
-        name: 'matching max now',
-        symbol: 'anand',
+        name: 'stakebug',
+        symbol: '5/27',
         uri: 'https://copper-quick-koi-488.mypinata.cloud/ipfs/bafkreiblskodz5bwtelz4id437rnhsndtq3rfh7jjsgaj72wb55cgnbbea',
         additionalMetadata: [['description', 'combining concepts and learning the basics']],
     };
@@ -105,6 +117,12 @@ async function main() {
             mint.publicKey,
             TOKEN_2022_PROGRAM_ID
         ),
+        createInitializeTransferHookInstruction(
+            mint.publicKey,
+            wallet.publicKey, // transfer hook authority
+            program.programId,       // your coin-mint program is the hook
+            TOKEN_2022_PROGRAM_ID
+        ),
         createInitializeMintInstruction(
             mint.publicKey,
             decimals,
@@ -128,7 +146,7 @@ async function main() {
         const sig1 = await sendAndConfirmTransaction(connection, initMintTx, [wallet.payer, mint], { skipPreflight: true, commitment: "confirmed" });
         console.log(`✅ Mint initialized! Signature: ${sig1}`);
     } catch (e) {
-        console.log("Mint already initialized or failed:", e);
+        console.log("Mint already initialized or failed:   ", e);
     }
 
     // ==========================================
@@ -136,7 +154,7 @@ async function main() {
     // ==========================================
     console.log("📝 Initializing Extra Account Meta List...");
     const initMetaListIx = await program.methods
-        .initializeExtraAccountMetaList()
+        .initializeExtraAccountMetaList(oracleCrankProgramId)
         .accountsPartial({
             mint: mint.publicKey,
             extraAccountMetaList: extraAccountMetaListPDA,

@@ -5,12 +5,10 @@ use anchor_spl::{
     token_interface::{Mint, TokenAccount, TokenInterface},
 };
 use spl_tlv_account_resolution::{
-    account::ExtraAccountMeta, seeds::Seed, solana_pubkey::Pubkey as SplPubkey,
-    state::ExtraAccountMetaList,
+    account::ExtraAccountMeta, solana_pubkey::Pubkey as SplPubkey, state::ExtraAccountMetaList,
 };
 use spl_transfer_hook_interface::instruction::{ExecuteInstruction, TransferHookInstruction};
-
-declare_id!("ACuGbED6m6PwyeU9x9eFPLGk8tu2snQhUe9mrWq44Y9N");
+declare_id!("7Fm2aYKH3aRBso3ADQXjFUDdzKHM5nZHAe2mooqvWBTY");
 
 #[error_code]
 pub enum MyError {
@@ -18,23 +16,20 @@ pub enum MyError {
     InvalidOracle,
 }
 
-pub const CRANK_ORACLE_PROGRAM_ID: Pubkey = pubkey!("5BkqMghT4iAWbfJyNhJ5oSYBoAfBMD1SvHKtxMxzssRF");
-
 #[program]
 pub mod coin_mint {
     use super::*;
 
     pub fn initialize_extra_account_meta_list(
         ctx: Context<InitializeExtraAccountMetaList>,
+        crank_oracle_program_id: Pubkey,
     ) -> Result<()> {
         let (market_status_pda, _) =
-            Pubkey::find_program_address(&[b"market_status"], &CRANK_ORACLE_PROGRAM_ID);
+            Pubkey::find_program_address(&[b"market_status"], &crank_oracle_program_id);
 
         let account_metas = vec![
-            ExtraAccountMeta::new_with_seeds(
-                &[Seed::Literal {
-                    bytes: b"counter".to_vec(),
-                }],
+            ExtraAccountMeta::new_with_pubkey(
+                &SplPubkey::from(ctx.accounts.counter_account.key().to_bytes()),
                 false,
                 true,
             )
@@ -108,6 +103,7 @@ pub mod coin_mint {
 pub struct InitializeExtraAccountMetaList<'info> {
     #[account(mut)]
     payer: Signer<'info>,
+    /// CHECK: extra account metas
     #[account(mut, seeds = [b"extra-account-metas", mint.key().as_ref()], bump)]
     pub extra_account_meta_list: AccountInfo<'info>,
     pub mint: InterfaceAccount<'info, Mint>,
@@ -125,11 +121,14 @@ pub struct TransferHook<'info> {
     pub mint: InterfaceAccount<'info, Mint>,
     #[account(token::mint = mint)]
     pub destination_token: InterfaceAccount<'info, TokenAccount>,
+    /// CHECK: owner
     pub owner: UncheckedAccount<'info>,
+    /// CHECK: extra account metas
     #[account(seeds = [b"extra-account-metas", mint.key().as_ref()], bump)]
     pub extra_account_meta_list: UncheckedAccount<'info>,
     #[account(mut, seeds = [b"counter"], bump)]
     pub counter_account: Account<'info, CounterAccount>,
+    /// CHECK: oracle
     pub oracle: UncheckedAccount<'info>,
 }
 
