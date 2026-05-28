@@ -6,7 +6,6 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-coin_mint = "7Fm2aYKH3aRBso3ADQXjFUDdzKHM5nZHAe2mooqvWBTY"
 crank_oracle = "BUA1NAZ311orEfyXAF3Zet3SECMxU66EDeSBe7hDbh81"
 staking = "Aqfb9mmAAuvJhUTxxVMCLckSQprXjYVAwW2XB79GTHfD"
 

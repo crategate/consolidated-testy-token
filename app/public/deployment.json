@@ -1,6 +1,6 @@
 {
   "cluster": "devnet",
-  "mint": "AXEyNKZUgm2oCJsnTr9CzeAALL1v7yap6wQHS6eAZUKC",
+  "mint": "FmLQhwGTNG9YB7wsfsYFTe2ZncngU3xuYSb6KQFdWzoo",
   "stakingProgram": "Aqfb9mmAAuvJhUTxxVMCLckSQprXjYVAwW2XB79GTHfD",
   "crankProgram": "BUA1NAZ311orEfyXAF3Zet3SECMxU66EDeSBe7hDbh81",
   "coinMintProgram": "7Fm2aYKH3aRBso3ADQXjFUDdzKHM5nZHAe2mooqvWBTY",
@@ -10,5 +10,5 @@
   "penaltyVault": "9ESp1LQWSCybj9N7vNagAxZXB5Nz8skYt31aHUxbCNoB",
   "posrVault": "9GqCBX64sRnp7JD8ibsF5WMtrmqgmuvJjUmDL9ZyoGQH",
   "marketStatus": "C5RQfCpv5LyhSG8PsyzGJdo36kazuyj9JmWMVZ9YcYAQ",
-  "updatedAt": "2026-05-27T19:46:14.306Z"
+  "updatedAt": "2026-05-28T20:07:29.158Z"
 }
