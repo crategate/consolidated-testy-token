@@ -39,7 +39,7 @@ export function usePositions(mint: PublicKey | null) {
                     Buffer.from('position'),
                     poolPda.toBuffer(),
                     publicKey.toBuffer(),
-                    new BN(userIndex).toArrayLike(Buffer, 'le', 8),
+                    new BN(userIndex).toArrayLike(Buffer, 'le', 8), // possibly change userIndex to i or userIndex.nextIndex
                 ], STAKING_PROGRAM_ID);
                 const pos = await (program.account as any).stakePosition?.fetchNullable(positionPda);
                 if (pos) {

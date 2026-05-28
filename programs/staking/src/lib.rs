@@ -629,7 +629,7 @@ pub struct DepositRewards<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(index: u64)]
+#[instruction(amount: u64, index: u64)]
 pub struct Stake<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,
@@ -741,4 +741,3 @@ pub enum StakeError {
     #[msg("Insufficient rewards in vault")]
     InsufficientRewards,
 }
-

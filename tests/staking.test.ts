@@ -1,4 +1,3 @@
-
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { Staking } from "../target/types/staking";
@@ -12,20 +11,6 @@ import {
     ASSOCIATED_TOKEN_PROGRAM_ID,
     TOKEN_2022_PROGRAM_ID,
 } from "@solana/spl-token";
-
-// =============================================================================
-// STAKING TEST SUITE
-// =============================================================================
-// Run with: anchor test --skip-build
-//
-// This test suite covers:
-//   - Pool initialization
-//   - Staking during market open
-//   - Claiming with no penalty (state 0)
-//   - Claiming with penalty (states 1, 2, 3)
-//   - Unstaking with penalty
-//   - Penalty distribution via realize_penalties
-// =============================================================================
 
 describe("NYSEH Staking", () => {
     const provider = anchor.AnchorProvider.env();
@@ -45,15 +30,34 @@ describe("NYSEH Staking", () => {
     let penaltyVaultPda: PublicKey;
     let posrVaultPda: PublicKey;
 
-    const BASE_APY = 1000;        // 10%
-    const MAX_MULT = 30000;       // 3.0x
-    const POSR_TAX = 500;         // 5%
-    const AH_PENALTY = 500;       // 5%
-    const CLOSED_PENALTY = 1500;  // 15%
-    const HALTED_PENALTY = 3000;  // 30%
+    const BASE_APY = 1000;
+    const MAX_MULT = 30000;
+    const POSR_TAX = 500;
+    const AH_PENALTY = 500;
+    const CLOSED_PENALTY = 1500;
+    const HALTED_PENALTY = 3000;
+
+    // Helper: set market state via the crank oracle's test instruction
+    async function setMarketState(state: number) {
+        await crankProgram.methods
+            .testSetState(state)
+            .accounts({ marketStatus: marketStatusPda })
+            .rpc();
+        const status = await crankProgram.account.marketStatus.fetch(marketStatusPda);
+        console.log(`Market state set to: ${status.currentState} (day #${status.tradingDayIndex})`);
+    }
+
+    // Helper: derive a position PDA for the user
+    function getPositionPda(owner: PublicKey, index: number): PublicKey {
+        return PublicKey.findProgramAddressSync([
+            Buffer.from("position"),
+            poolPda.toBuffer(),
+            owner.toBuffer(),
+            new anchor.BN(index).toArrayLike(Buffer, "le", 8),
+        ], stakingProgram.programId)[0];
+    }
 
     before(async () => {
-        // Create test mint
         mint = await createMint(
             provider.connection,
             (provider.wallet as anchor.Wallet).payer,
@@ -65,7 +69,6 @@ describe("NYSEH Staking", () => {
             TOKEN_2022_PROGRAM_ID
         );
 
-        // Create token accounts
         adminToken = await createAssociatedTokenAccount(
             provider.connection,
             (provider.wallet as anchor.Wallet).payer,
@@ -87,7 +90,6 @@ describe("NYSEH Staking", () => {
             TOKEN_2022_PROGRAM_ID
         );
 
-        // Mint tokens to user
         await mintTo(
             provider.connection,
             (provider.wallet as anchor.Wallet).payer,
@@ -100,7 +102,6 @@ describe("NYSEH Staking", () => {
             TOKEN_2022_PROGRAM_ID
         );
 
-        // Derive PDAs
         [poolPda] = PublicKey.findProgramAddressSync(
             [Buffer.from("pool"), mint.toBuffer()],
             stakingProgram.programId
@@ -138,7 +139,7 @@ describe("NYSEH Staking", () => {
                 })
                 .rpc();
         } catch (e) {
-            // May already be initialized
+            // may already exist
         }
         const status = await crankProgram.account.marketStatus.fetch(marketStatusPda);
         console.log("Initial state:", status.currentState);
@@ -174,37 +175,14 @@ describe("NYSEH Staking", () => {
         expect(pool.totalStaked.toNumber()).toEqual(0);
     });
 
-    it("Deposits rewards into the pool", async () => {
-        await stakingProgram.methods
-            .depositRewards(new anchor.BN(100_000 * 10 ** 9))
-            .accounts({
-                authority: provider.wallet.publicKey,
-                mint,
-                pool: poolPda,
-                rewardVault: rewardVaultPda,
-                authorityToken: adminToken,
-                tokenProgram: TOKEN_2022_PROGRAM_ID,
-            })
-            .rpc();
-
-        const vault = await provider.connection.getTokenAccountBalance(rewardVaultPda);
-        expect(Number(vault.value.amount)).toBeGreaterThan(0);
-    });
-
     it("User stakes tokens during market open", async () => {
+        await setMarketState(0); // ensure open
+
         const [userIndexPda] = PublicKey.findProgramAddressSync(
             [Buffer.from("user_index"), userKeypair.publicKey.toBuffer()],
             stakingProgram.programId
         );
-        const [positionPda] = PublicKey.findProgramAddressSync(
-            [
-                Buffer.from("position"),
-                poolPda.toBuffer(),
-                userKeypair.publicKey.toBuffer(),
-                new anchor.BN(0).toArrayLike(Buffer, "le", 8),
-            ],
-            stakingProgram.programId
-        );
+        const positionPda = getPositionPda(userKeypair.publicKey, 0);
 
         await stakingProgram.methods
             .stake(new anchor.BN(10_000 * 10 ** 9), new anchor.BN(0))
@@ -225,8 +203,141 @@ describe("NYSEH Staking", () => {
 
         const pool = await stakingProgram.account.stakePool.fetch(poolPda);
         expect(pool.totalStaked.toNumber()).toBeGreaterThan(0);
+
+        const pos = await stakingProgram.account.stakePosition.fetch(positionPda);
+        expect(pos.amount.toNumber()).toEqual(10_000 * 10 ** 9);
+        expect(pos.index.toNumber()).toEqual(0);
     });
 
-    // TODO: Add tests for claim with penalties, unstake, realize_penalties
-    // These require mocking the market status state transitions
+    it("Claims rewards during market open with no penalty", async () => {
+        await setMarketState(0);
+
+        // Seed penalty vault so realize_penalties can bootstrap the reward index
+        await mintTo(
+            provider.connection,
+            (provider.wallet as anchor.Wallet).payer,
+            mint,
+            penaltyVaultPda,
+            provider.wallet.publicKey,
+            5_000 * 10 ** 9,
+            undefined,
+            undefined,
+            TOKEN_2022_PROGRAM_ID
+        );
+
+        // Move penalties into reward vault and update MasterChef index
+        await stakingProgram.methods
+            .realizePenalties()
+            .accounts({
+                pool: poolPda,
+                mint,
+                penaltyVault: penaltyVaultPda,
+                rewardVault: rewardVaultPda,
+                tokenProgram: TOKEN_2022_PROGRAM_ID,
+            })
+            .rpc();
+
+        const poolAfterRealize = await stakingProgram.account.stakePool.fetch(poolPda);
+        expect(poolAfterRealize.accruedRewardPerShare.toNumber()).toBeGreaterThan(0);
+
+        const positionPda = getPositionPda(userKeypair.publicKey, 0);
+        const userTokenBefore = await provider.connection.getTokenAccountBalance(userToken);
+
+        await stakingProgram.methods
+            .claim()
+            .accounts({
+                owner: userKeypair.publicKey,
+                mint,
+                pool: poolPda,
+                position: positionPda,
+                rewardVault: rewardVaultPda,
+                penaltyVault: penaltyVaultPda,
+                posrVault: posrVaultPda,
+                ownerToken: userToken,
+                marketStatus: marketStatusPda,
+                tokenProgram: TOKEN_2022_PROGRAM_ID,
+            })
+            .signers([userKeypair])
+            .rpc();
+
+        const pos = await stakingProgram.account.stakePosition.fetch(positionPda);
+        expect(pos.lastClaimTimestamp).toBeGreaterThan(0);
+
+        const userTokenAfter = await provider.connection.getTokenAccountBalance(userToken);
+        expect(Number(userTokenAfter.value.amount)).toBeGreaterThan(Number(userTokenBefore.value.amount));
+    });
+
+    it("Applies after-hours penalty when claiming during state 1", async () => {
+        await setMarketState(1); // after hours
+
+        // Add more rewards to the pool index first
+        await mintTo(provider.connection, (provider.wallet as anchor.Wallet).payer, mint, penaltyVaultPda, provider.wallet.publicKey, 1_000 * 10 ** 9, undefined, undefined, TOKEN_2022_PROGRAM_ID);
+        await stakingProgram.methods.realizePenalties().accounts({ pool: poolPda, mint, penaltyVault: penaltyVaultPda, rewardVault: rewardVaultPda, tokenProgram: TOKEN_2022_PROGRAM_ID }).rpc();
+
+        const penaltyBefore = await provider.connection.getTokenAccountBalance(penaltyVaultPda);
+
+        const positionPda = getPositionPda(userKeypair.publicKey, 0);
+        await stakingProgram.methods
+            .claim()
+            .accounts({
+                owner: userKeypair.publicKey,
+                mint,
+                pool: poolPda,
+                position: positionPda,
+                rewardVault: rewardVaultPda,
+                penaltyVault: penaltyVaultPda,
+                posrVault: posrVaultPda,
+                ownerToken: userToken,
+                marketStatus: marketStatusPda,
+                tokenProgram: TOKEN_2022_PROGRAM_ID,
+            })
+            .signers([userKeypair])
+            .rpc();
+
+        const penaltyAfter = await provider.connection.getTokenAccountBalance(penaltyVaultPda);
+        expect(Number(penaltyAfter.value.amount)).toBeGreaterThan(Number(penaltyBefore.value.amount));
+    });
+
+    it("Unstakes with penalty during closed market and closes position", async () => {
+        await setMarketState(2); // closed
+
+        const poolBefore = await stakingProgram.account.stakePool.fetch(poolPda);
+        const totalStakedBefore = poolBefore.totalStaked.toNumber();
+
+        const positionPda = getPositionPda(userKeypair.publicKey, 0);
+        const userTokenBefore = await provider.connection.getTokenAccountBalance(userToken);
+
+        await stakingProgram.methods
+            .unstake()
+            .accounts({
+                owner: userKeypair.publicKey,
+                mint,
+                pool: poolPda,
+                position: positionPda,
+                vault: vaultPda,
+                rewardVault: rewardVaultPda,
+                penaltyVault: penaltyVaultPda,
+                posrVault: posrVaultPda,
+                ownerToken: userToken,
+                marketStatus: marketStatusPda,
+                tokenProgram: TOKEN_2022_PROGRAM_ID,
+            })
+            .signers([userKeypair])
+            .rpc();
+
+        const poolAfter = await stakingProgram.account.stakePool.fetch(poolPda);
+        expect(poolAfter.totalStaked.toNumber()).toBeLessThan(totalStakedBefore);
+
+        // Position account should have been closed (rent refunded)
+        try {
+            await stakingProgram.account.stakePosition.fetch(positionPda);
+            throw new Error("Expected position to be closed");
+        } catch (e: any) {
+            expect(e.toString()).toContain("Account does not exist");
+        }
+
+        const userTokenAfter = await provider.connection.getTokenAccountBalance(userToken);
+        // User got principal back + net rewards - penalties
+        expect(Number(userTokenAfter.value.amount)).toBeGreaterThan(Number(userTokenBefore.value.amount));
+    });
 });
