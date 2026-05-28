@@ -13,14 +13,12 @@ import {
     TOKEN_2022_PROGRAM_ID,
     getMintLen,
     createInitializeMintInstruction,
-    createInitializeTransferHookInstruction,
     ASSOCIATED_TOKEN_PROGRAM_ID,
     createAssociatedTokenAccountInstruction,
     createMintToInstruction,
     getAssociatedTokenAddressSync,
     TYPE_SIZE,
     LENGTH_SIZE,
-    createTransferCheckedWithTransferHookInstruction,
     createInitializeMetadataPointerInstruction,
 } from "@solana/spl-token";
 import { createInitializeInstruction, pack, type TokenMetadata } from "@solana/spl-token-metadata";
@@ -89,13 +87,13 @@ async function main() {
     // 4. Token Metadata Configuration
     const metadata: TokenMetadata = {
         mint: mint.publicKey,
-        name: 'stakebug',
-        symbol: '5/27',
+        name: 'hookless',
+        symbol: '5/28',
         uri: 'https://copper-quick-koi-488.mypinata.cloud/ipfs/bafkreiblskodz5bwtelz4id437rnhsndtq3rfh7jjsgaj72wb55cgnbbea',
         additionalMetadata: [['description', 'combining concepts and learning the basics']],
     };
     const metadataLen = pack(metadata).length + TYPE_SIZE + LENGTH_SIZE;
-    const mintLen = getMintLen([ExtensionType.TransferHook, ExtensionType.MetadataPointer]);
+    const mintLen = getMintLen([ExtensionType.MetadataPointer]);
 
     const lamports = await connection.getMinimumBalanceForRentExemption(metadataLen + mintLen);
 
@@ -115,12 +113,6 @@ async function main() {
             mint.publicKey,
             wallet.publicKey,
             mint.publicKey,
-            TOKEN_2022_PROGRAM_ID
-        ),
-        createInitializeTransferHookInstruction(
-            mint.publicKey,
-            wallet.publicKey, // transfer hook authority
-            program.programId,       // your coin-mint program is the hook
             TOKEN_2022_PROGRAM_ID
         ),
         createInitializeMintInstruction(
@@ -152,27 +144,27 @@ async function main() {
     // ==========================================
     // STEP 2: INITIALIZE EXTRA ACCOUNT META LIST
     // ==========================================
-    console.log("📝 Initializing Extra Account Meta List...");
-    const initMetaListIx = await program.methods
-        .initializeExtraAccountMetaList(oracleCrankProgramId)
-        .accountsPartial({
-            mint: mint.publicKey,
-            extraAccountMetaList: extraAccountMetaListPDA,
-            tokenProgram: TOKEN_2022_PROGRAM_ID,
-            counterAccount: counterPDA,
-        })
-        .instruction();
+    //  console.log("📝 Initializing Extra Account Meta List...");
+    //  const initMetaListIx = await program.methods
+    //      .initializeExtraAccountMetaList(oracleCrankProgramId)
+    //      .accountsPartial({
+    //          mint: mint.publicKey,
+    //          extraAccountMetaList: extraAccountMetaListPDA,
+    //          tokenProgram: TOKEN_2022_PROGRAM_ID,
+    //          counterAccount: counterPDA,
+    //      })
+    //      .instruction();
 
-    const initMetaTx = new Transaction().add(initMetaListIx);
+    //  const initMetaTx = new Transaction().add(initMetaListIx);
 
-    try {
-        const sig2 = await sendAndConfirmTransaction(connection, initMetaTx, [wallet.payer], { skipPreflight: true, commitment: "confirmed" });
-        console.log(`✅ Meta List initialized! Signature: ${sig2}`);
-    } catch (e) {
-        console.log("Meta list already initialized or failed:", e);
-    }
+    //  try {
+    //      const sig2 = await sendAndConfirmTransaction(connection, initMetaTx, [wallet.payer], { skipPreflight: true, commitment: "confirmed" });
+    //      console.log(`✅ Meta List initialized! Signature: ${sig2}`);
+    //  } catch (e) {
+    //      console.log("Meta list already initialized or failed:", e);
+    //  }
 
-    // ==========================================
+    //  // ==========================================
     // STEP 3: MINT TOKENS & TEST TRANSFER
     // ==========================================
     console.log("📝 Minting tokens and running test transfer...");
@@ -193,12 +185,12 @@ async function main() {
         const sig3 = await sendAndConfirmTransaction(connection, transferTx, [wallet.payer], { skipPreflight: true });
         console.log(`✅ Minted ${722} tokens to source wallet! Signature: ${sig3}`);
 
-        const transferIx = await createTransferCheckedWithTransferHookInstruction(
-            connection, sourceTokenAccount, mint.publicKey, destinationTokenAccount, wallet.publicKey, amountToTransfer, decimals, [], "confirmed", TOKEN_2022_PROGRAM_ID
-        );
+        //  const transferIx = await createTransferCheckedWithTransferHookInstruction(
+        //      connection, sourceTokenAccount, mint.publicKey, destinationTokenAccount, wallet.publicKey, amountToTransfer, decimals, [], "confirmed", TOKEN_2022_PROGRAM_ID
+        //  );
 
-        const sig4 = await sendAndConfirmTransaction(connection, new Transaction().add(transferIx), [wallet.payer], { skipPreflight: true });
-        console.log(`✅ Hook Transfer Successful! Signature: ${sig4}`);
+        //  const sig4 = await sendAndConfirmTransaction(connection, new Transaction().add(transferIx), [wallet.payer], { skipPreflight: true });
+        console.log(`✅ Hook Transfer Successful! Signature: ${sig3}`);
 
     } catch (e) {
         console.error("❌ Transfer Failed:", e);
