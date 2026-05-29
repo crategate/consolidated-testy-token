@@ -19,7 +19,10 @@ export function usePositions(mint: PublicKey | null) {
     const [loading, setLoading] = useState(false);
 
     const fetchPositions = useCallback(async () => {
-        if (!publicKey || !program || !mint) return;
+        if (!publicKey || !program || !mint) {
+            setPositions([]);
+            return;
+        }
         setLoading(true);
         try {
             const [poolPda] = PublicKey.findProgramAddressSync(
@@ -35,11 +38,12 @@ export function usePositions(mint: PublicKey | null) {
 
             const fetched: Position[] = [];
             for (let i = 0; i < nextIndex; i++) {
+                const indexBytes = new BN(i).toArrayLike(Buffer, 'le', 8);
                 const [positionPda] = PublicKey.findProgramAddressSync([
                     Buffer.from('position'),
                     poolPda.toBuffer(),
                     publicKey.toBuffer(),
-                    new BN(userIndex).toArrayLike(Buffer, 'le', 8), // possibly change userIndex to i or userIndex.nextIndex
+                    indexBytes,
                 ], STAKING_PROGRAM_ID);
                 const pos = await (program.account as any).stakePosition?.fetchNullable(positionPda);
                 if (pos) {

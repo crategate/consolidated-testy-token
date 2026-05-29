@@ -15,11 +15,15 @@ export const Positions: React.FC<PositionsProps> = ({ mint }) => {
     return (
         <div className="positions-list">
             <h3>Your Positions</h3>
+
+            <button className='claimCollect'>Collect Claims</button>
             {positions.map((pos) => (
                 <div key={pos.index} className="position-card">
                     <div><strong>Amount:</strong> {pos.amount / 1e9} NYSEH</div>
                     <div><strong>Entry Day:</strong> #{pos.entryTradingDay}</div>
                     <div><strong>Last Claim:</strong> {new Date(pos.lastClaimTimestamp * 1000).toLocaleDateString()}</div>
+
+                    <button className='unstake'>Exit Position</button>
                 </div>
             ))}
         </div>

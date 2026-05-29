@@ -38,11 +38,9 @@ export function useDeployment(): DeploymentState {
         }
 
         load();
-        const interval = setInterval(load, 10000);
 
         return () => {
             cancelled = true;
-            clearInterval(interval);
         };
     }, []);
 
