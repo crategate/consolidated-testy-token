@@ -67,9 +67,6 @@ export const Positions: React.FC<PositionsProps> = ({ mint, marketStatusPda }) =
                     {'tradingDays' in pos && pos.tradingDays > 0 && (
                         <div><strong>Trading Days Elapsed:</strong> {pos.tradingDays}</div>
                     )}
-                    {'multiplierDisplay' in pos && pos.multiplierDisplay !== '—' && (
-                        <div><strong>Current Multiplier:</strong> {pos.multiplierDisplay}x</div>
-                    )}
                     {'netRewardDisplay' in pos && pos.netRewardDisplay !== '—' ? (
                         <>
                             <div className="reward-line">
