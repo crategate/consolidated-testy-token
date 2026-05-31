@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { PublicKey, } from '@solana/web3.js';
+import { PublicKey } from '@solana/web3.js';
 import BN from 'bn.js';
 import { useStakingProgram, STAKING_PROGRAM_ID } from '../anchor/setup';
 
@@ -10,6 +10,7 @@ export interface Position {
     amount: number;
     entryTradingDay: number;
     lastClaimTimestamp: number;
+    rewardDebt: string; // u128 as string to keep precision
 }
 
 export function usePositions(mint: PublicKey | null) {
@@ -53,12 +54,13 @@ export function usePositions(mint: PublicKey | null) {
                         amount: Number(pos.amount),
                         entryTradingDay: Number(pos.entryTradingDay),
                         lastClaimTimestamp: Number(pos.lastClaimTimestamp),
+                        rewardDebt: pos.rewardDebt ? pos.rewardDebt.toString() : '0',
                     });
                 }
             }
             setPositions(fetched);
         } catch (e) {
-            console.error(e);
+            console.error('usePositions error:', e);
         } finally {
             setLoading(false);
         }

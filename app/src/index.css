@@ -412,3 +412,84 @@ code {
     position: relative;
     z-index: 10;
 }
+
+/* ── Claims Header ── */
+.claims-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: var(--code-bg);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    flex-wrap: wrap;
+}
+
+.claim-collect {
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    border: none;
+    background: var(--accent);
+    color: white;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    font-family: var(--sans);
+    font-size: 1rem;
+}
+
+.claim-collect:hover {
+    opacity: 0.9;
+}
+
+.claim-collect:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.grand-total {
+    font-size: 1rem;
+    color: var(--text-h);
+}
+
+.grand-total strong {
+    color: var(--accent);
+    font-size: 1.25rem;
+}
+
+/* ── Position Card Extras ── */
+.position-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.multiplier-badge {
+    background: var(--accent-bg);
+    color: var(--accent);
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.875rem;
+    font-weight: 700;
+}
+
+.reward-line {
+    margin-top: 0.25rem;
+    color: var(--text-h);
+    font-weight: 600;
+}
+
+.penalty-warning {
+    color: #ef4444;
+    font-size: 0.875rem;
+    margin-top: 0.25rem;
+}
+
+.posr-line {
+    color: var(--text);
+    font-size: 0.875rem;
+    margin-top: 0.25rem;
+    opacity: 0.8;
+}

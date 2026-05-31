@@ -84,8 +84,6 @@ export function usePoolStats(mint: PublicKey | null) {
 
     useEffect(() => {
         fetchStats();
-        const id = setInterval(fetchStats, 30000);
-        return () => clearInterval(id);
     }, [fetchStats]);
 
     return { stats, loading, refresh: fetchStats };
