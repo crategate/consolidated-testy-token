@@ -2,6 +2,8 @@ import React from 'react';
 import { usePositions } from '../hooks/usePositions';
 import { usePositionRewards } from '../hooks/usePositionRewards';
 import { useClaimAll } from '../hooks/useClaimAll';
+import { useMarketStatus } from '../hooks/useMarketStatus';
+import { useUnstake } from '../hooks/useUnstake';
 import { PublicKey } from '@solana/web3.js';
 
 interface PositionsProps {
@@ -11,8 +13,11 @@ interface PositionsProps {
 
 export const Positions: React.FC<PositionsProps> = ({ mint, marketStatusPda }) => {
     const { positions, loading: positionsLoading, refresh: refreshPositions } = usePositions(mint);
-    const { enriched, grandTotal } = usePositionRewards(mint, positions);
+    const { data: marketData } = useMarketStatus(marketStatusPda);
+    const { enriched, grandTotal } = usePositionRewards(mint, positions, marketStatusPda);
     const { claimAll, loading: claimLoading } = useClaimAll(mint, positions, marketStatusPda);
+    const { unstake, loadingIndex: unstakeLoadingIndex } = useUnstake(mint, marketStatusPda, marketData?.state);
+    const claimsOpen = marketData?.state === 0;
 
     const handleClaimAll = async () => {
         try {
@@ -21,6 +26,16 @@ export const Positions: React.FC<PositionsProps> = ({ mint, marketStatusPda }) =
             refreshPositions();
         } catch (e) {
             alert('Failed to collect claims: ' + (e as Error).message);
+        }
+    };
+
+    const handleUnstake = async (position: typeof positions[number]) => {
+        try {
+            const tx = await unstake(position);
+            alert(`Position exited successfully! Tx: ${tx}`);
+            refreshPositions();
+        } catch (e) {
+            alert('Failed to exit position: ' + (e as Error).message);
         }
     };
 
@@ -46,9 +61,9 @@ export const Positions: React.FC<PositionsProps> = ({ mint, marketStatusPda }) =
                 <button
                     className="claim-collect"
                     onClick={handleClaimAll}
-                    disabled={claimLoading || grandTotal <= 0}
+                    disabled={!claimsOpen || claimLoading || grandTotal <= 0}
                 >
-                    {claimLoading ? 'Collecting…' : 'Collect Claims'}
+                    {!claimsOpen ? 'Claim Available After Opening Bell' : claimLoading ? 'Collecting…' : 'Collect All Claims'}
                 </button>
                 <span className="grand-total">
                     Total available: <strong>{grandTotalDisplay} NYSEH</strong>
@@ -88,7 +103,13 @@ export const Positions: React.FC<PositionsProps> = ({ mint, marketStatusPda }) =
                     )}
                     <div><strong>Last Claim:</strong> {new Date(pos.lastClaimTimestamp * 1000).toLocaleDateString()}</div>
 
-                    <button className="unstake">Exit Position</button>
+                    <button
+                        className="unstake"
+                        onClick={() => handleUnstake(pos)}
+                        disabled={unstakeLoadingIndex === pos.index}
+                    >
+                        {unstakeLoadingIndex === pos.index ? 'Exiting…' : 'Exit Position'}
+                    </button>
                 </div>
             ))}
         </div>

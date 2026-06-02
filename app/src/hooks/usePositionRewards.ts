@@ -18,24 +18,18 @@ export interface EnrichedPosition extends Position {
     netRewardDisplay: string;
 }
 
-export function usePositionRewards(mint: PublicKey | null, positions: Position[]) {
+export function usePositionRewards(mint: PublicKey | null, positions: Position[], marketStatusPda?: PublicKey) {
     const { pool } = usePool(mint);
-    const { data: marketData } = useMarketStatus();
+    const { data: marketData } = useMarketStatus(marketStatusPda);
 
     const enriched: EnrichedPosition[] = useMemo(() => {
         if (!pool || !marketData || !positions.length) return [];
 
         const currentTradingDay = marketData.tradingDay;
-        const marketState = marketData.state;
         const maxMultiplierBps = Number(pool.maxMultiplierBps);
         const posrTaxBps = Number(pool.posrTaxBps);
         const accPerShare = new BN(pool.accruedRewardPerShare.toString());
         const SCALE = new BN(10).pow(new BN(12));
-
-        let penaltyBps = 0;
-        if (marketState === 1) penaltyBps = Number(pool.afterHoursPenaltyBps);
-        else if (marketState === 2) penaltyBps = Number(pool.closedPenaltyBps);
-        else if (marketState === 3) penaltyBps = Number(pool.haltedPenaltyBps);
 
         return positions.map(pos => {
             const amount = pos.amount;
@@ -47,23 +41,21 @@ export function usePositionRewards(mint: PublicKey | null, positions: Position[]
             const range = Math.max(0, maxMultiplierBps - base);
             const multiplier = base + Math.floor((tradingDays * range) / (tradingDays + 60));
 
-            // Weight = amount * multiplier / 10000
+            // Display weight previews the next checkpointed weight.
             const weight = Math.floor((amount * multiplier) / 10000);
 
-            // MasterChef math: (weight * accPerShare) / 1e12 - rewardDebt
-            const weightBN = new BN(weight);
+            // Claimable rewards use the on-chain checkpointed weight so older
+            // reward distributions are not re-counted as multipliers grow.
+            const weightBN = new BN(pos.currentWeight);
             const accumulated = weightBN.mul(accPerShare).div(SCALE);
             const rewardDebt = new BN(pos.rewardDebt);
             const gross = accumulated.gt(rewardDebt) ? accumulated.sub(rewardDebt) : new BN(0);
 
-            // Apply live penalty + POSR tax so users see what they'd actually receive
-            const penalty = gross.muln(penaltyBps).divn(10000);
-            const afterPenalty = gross.sub(penalty);
-            const posrTax = afterPenalty.muln(posrTaxBps).divn(10000);
-            const net = afterPenalty.sub(posrTax);
+            // Claims are market-open only. No tiered claim penalty is applied.
+            const posrTax = gross.muln(posrTaxBps).divn(10000);
+            const net = gross.sub(posrTax);
 
             const grossNum = parseFloat(gross.toString()) / 1e9;
-            const penaltyNum = parseFloat(penalty.toString()) / 1e9;
             const posrTaxNum = parseFloat(posrTax.toString()) / 1e9;
             const netNum = parseFloat(net.toString()) / 1e9;
 
@@ -74,8 +66,8 @@ export function usePositionRewards(mint: PublicKey | null, positions: Position[]
                 tradingDays,
                 weight,
                 grossRewardRaw: grossNum,
-                penaltyBps,
-                penaltyRaw: penaltyNum,
+                penaltyBps: 0,
+                penaltyRaw: 0,
                 posrTaxRaw: posrTaxNum,
                 netRewardRaw: netNum,
                 netRewardDisplay: `${netNum.toFixed(4)} NYSEH`,

@@ -26,10 +26,6 @@ export function useClaimAll(mint: PublicKey | null, positions: Position[], marke
                 [Buffer.from('rewards'), poolPda.toBuffer()],
                 STAKING_PROGRAM_ID
             );
-            const [penaltyVaultPda] = PublicKey.findProgramAddressSync(
-                [Buffer.from('penalties'), poolPda.toBuffer()],
-                STAKING_PROGRAM_ID
-            );
             const [posrVaultPda] = PublicKey.findProgramAddressSync(
                 [Buffer.from('posr'), poolPda.toBuffer()],
                 STAKING_PROGRAM_ID
@@ -41,7 +37,7 @@ export function useClaimAll(mint: PublicKey | null, positions: Position[], marke
             const ownerToken = getAssociatedTokenAddressSync(mint, publicKey, false, TOKEN_2022_PROGRAM_ID);
 
             const tx = new Transaction();
-            const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+            const { blockhash } = await connection.getLatestBlockhash('confirmed');
             tx.recentBlockhash = blockhash;
             tx.feePayer = publicKey;
 
@@ -54,7 +50,6 @@ export function useClaimAll(mint: PublicKey | null, positions: Position[], marke
                         pool: poolPda,
                         position: position.pda,
                         rewardVault: rewardVaultPda,
-                        penaltyVault: penaltyVaultPda,
                         posrVault: posrVaultPda,
                         ownerToken,
                         marketStatus,
@@ -64,7 +59,7 @@ export function useClaimAll(mint: PublicKey | null, positions: Position[], marke
                 tx.add(ix);
             }
 
-            const signature = await program.provider.sendAndConfirm(tx);
+            const signature = await (program.provider as any).sendAndConfirm(tx);
             return signature;
         } catch (e: any) {
             console.error('Claim all error:', e);
