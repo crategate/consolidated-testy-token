@@ -43,11 +43,11 @@ export const StakeForm: React.FC<StakeFormProps> = ({ mint, marketStatusPda }) =
     return (
         <div className="stake-form">
             <h3>Stake NYSEH</h3>
-            <div style={{ fontSize: '0.875rem', opacity: 0.7, marginBottom: '0.5rem' }}>
+            <div className="mint-display">
                 Mint: <code>{mint.toBase58().slice(0, 8)}…{mint.toBase58().slice(-8)}</code>
             </div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text-h)' }}>
-                Balance: {balance !== null ? `${balance.toFixed(4)} NYSEH` : 'Loading…'}
+            <div className="balance-line">
+                {balance !== null ? balance.toFixed(4) : '—'} <span>NYSEH</span>
             </div>
             <p className="custodial-note">
                 Tokens move into the program vault and no longer appear in your wallet.

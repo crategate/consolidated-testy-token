@@ -39,7 +39,7 @@ export const WalletDashboard: React.FC<WalletDashboardProps> = ({ deployment }) 
             </div>
             <div className="dashboard-grid">
                 <StakeForm mint={mint} marketStatusPda={deployment.marketStatusKey} />
-                <Positions mint={mint} />
+                <Positions mint={mint} marketStatusPda={deployment.marketStatusKey} />
             </div>
         </div>
     );

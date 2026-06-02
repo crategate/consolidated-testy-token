@@ -30,7 +30,6 @@ describe("NYSEH Staking", () => {
     let penaltyVaultPda: PublicKey;
     let posrVaultPda: PublicKey;
 
-    const BASE_APY = 1000;
     const MAX_MULT = 30000;
     const POSR_TAX = 500;
     const AH_PENALTY = 500;
@@ -149,7 +148,6 @@ describe("NYSEH Staking", () => {
         await stakingProgram.methods
             .initializePool(
                 crankProgram.programId,
-                BASE_APY,
                 MAX_MULT,
                 POSR_TAX,
                 AH_PENALTY,
@@ -171,7 +169,7 @@ describe("NYSEH Staking", () => {
             .rpc();
 
         const pool = await stakingProgram.account.stakePool.fetch(poolPda);
-        expect(pool.baseApyBps).toEqual(BASE_APY);
+        expect(pool.maxMultiplierBps).toEqual(MAX_MULT);
         expect(pool.totalStaked.toNumber()).toEqual(0);
     });
 
@@ -251,7 +249,6 @@ describe("NYSEH Staking", () => {
                 pool: poolPda,
                 position: positionPda,
                 rewardVault: rewardVaultPda,
-                penaltyVault: penaltyVaultPda,
                 posrVault: posrVaultPda,
                 ownerToken: userToken,
                 marketStatus: marketStatusPda,
@@ -267,35 +264,34 @@ describe("NYSEH Staking", () => {
         expect(Number(userTokenAfter.value.amount)).toBeGreaterThan(Number(userTokenBefore.value.amount));
     });
 
-    it("Applies after-hours penalty when claiming during state 1", async () => {
+    it("Rejects claims outside market-open state", async () => {
         await setMarketState(1); // after hours
 
         // Add more rewards to the pool index first
         await mintTo(provider.connection, (provider.wallet as anchor.Wallet).payer, mint, penaltyVaultPda, provider.wallet.publicKey, 1_000 * 10 ** 9, undefined, undefined, TOKEN_2022_PROGRAM_ID);
         await stakingProgram.methods.realizePenalties().accounts({ pool: poolPda, mint, penaltyVault: penaltyVaultPda, rewardVault: rewardVaultPda, tokenProgram: TOKEN_2022_PROGRAM_ID }).rpc();
 
-        const penaltyBefore = await provider.connection.getTokenAccountBalance(penaltyVaultPda);
-
         const positionPda = getPositionPda(userKeypair.publicKey, 0);
-        await stakingProgram.methods
-            .claim()
-            .accounts({
-                owner: userKeypair.publicKey,
-                mint,
-                pool: poolPda,
-                position: positionPda,
-                rewardVault: rewardVaultPda,
-                penaltyVault: penaltyVaultPda,
-                posrVault: posrVaultPda,
-                ownerToken: userToken,
-                marketStatus: marketStatusPda,
-                tokenProgram: TOKEN_2022_PROGRAM_ID,
-            })
-            .signers([userKeypair])
-            .rpc();
-
-        const penaltyAfter = await provider.connection.getTokenAccountBalance(penaltyVaultPda);
-        expect(Number(penaltyAfter.value.amount)).toBeGreaterThan(Number(penaltyBefore.value.amount));
+        try {
+            await stakingProgram.methods
+                .claim()
+                .accounts({
+                    owner: userKeypair.publicKey,
+                    mint,
+                    pool: poolPda,
+                    position: positionPda,
+                    rewardVault: rewardVaultPda,
+                    posrVault: posrVaultPda,
+                    ownerToken: userToken,
+                    marketStatus: marketStatusPda,
+                    tokenProgram: TOKEN_2022_PROGRAM_ID,
+                })
+                .signers([userKeypair])
+                .rpc();
+            throw new Error("Expected claim to fail");
+        } catch (e: any) {
+            expect(e.toString()).toContain("Claims are only available");
+        }
     });
 
     it("Unstakes with penalty during closed market and closes position", async () => {
@@ -303,6 +299,7 @@ describe("NYSEH Staking", () => {
 
         const poolBefore = await stakingProgram.account.stakePool.fetch(poolPda);
         const totalStakedBefore = poolBefore.totalStaked.toNumber();
+        const posrBefore = await provider.connection.getTokenAccountBalance(posrVaultPda);
 
         const positionPda = getPositionPda(userKeypair.publicKey, 0);
         const userTokenBefore = await provider.connection.getTokenAccountBalance(userToken);
@@ -327,6 +324,8 @@ describe("NYSEH Staking", () => {
 
         const poolAfter = await stakingProgram.account.stakePool.fetch(poolPda);
         expect(poolAfter.totalStaked.toNumber()).toBeLessThan(totalStakedBefore);
+        const posrAfter = await provider.connection.getTokenAccountBalance(posrVaultPda);
+        expect(Number(posrAfter.value.amount)).toBeGreaterThan(Number(posrBefore.value.amount));
 
         // Position account should have been closed (rent refunded)
         try {

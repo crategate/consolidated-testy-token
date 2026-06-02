@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { PublicKey, } from '@solana/web3.js';
+import { PublicKey } from '@solana/web3.js';
 import BN from 'bn.js';
 import { useStakingProgram, STAKING_PROGRAM_ID } from '../anchor/setup';
 
@@ -10,6 +10,8 @@ export interface Position {
     amount: number;
     entryTradingDay: number;
     lastClaimTimestamp: number;
+    currentWeight: string; // u128 as string to keep precision
+    rewardDebt: string; // u128 as string to keep precision
 }
 
 export function usePositions(mint: PublicKey | null) {
@@ -35,30 +37,38 @@ export function usePositions(mint: PublicKey | null) {
             );
             const userIndex = await (program.account as any).userStakeIndex?.fetchNullable(userIndexPda);
             const nextIndex = userIndex ? Number(userIndex.nextIndex) : 0;
-
             const fetched: Position[] = [];
             for (let i = 0; i < nextIndex; i++) {
-                const indexBytes = new BN(i).toArrayLike(Buffer, 'le', 8);
-                const [positionPda] = PublicKey.findProgramAddressSync([
-                    Buffer.from('position'),
-                    poolPda.toBuffer(),
-                    publicKey.toBuffer(),
-                    indexBytes,
-                ], STAKING_PROGRAM_ID);
-                const pos = await (program.account as any).stakePosition?.fetchNullable(positionPda);
-                if (pos) {
-                    fetched.push({
-                        pda: positionPda,
-                        index: i,
-                        amount: Number(pos.amount),
-                        entryTradingDay: Number(pos.entryTradingDay),
-                        lastClaimTimestamp: Number(pos.lastClaimTimestamp),
-                    });
+                try {
+                    const indexBytes = new BN(i).toArrayLike(Buffer, 'le', 8);
+                    const [positionPda] = PublicKey.findProgramAddressSync([
+                        Buffer.from('position'),
+                        poolPda.toBuffer(),
+                        publicKey.toBuffer(),
+                        indexBytes,
+                    ], STAKING_PROGRAM_ID);
+
+                    const pos = await (program.account as any).stakePosition?.fetchNullable(positionPda);
+                    if (pos) {
+                        fetched.push({
+                            pda: positionPda,
+                            index: i,
+                            amount: Number(pos.amount),
+                            entryTradingDay: Number(pos.entryTradingDay),
+                            lastClaimTimestamp: Number(pos.lastClaimTimestamp),
+                            currentWeight: pos.currentWeight ? pos.currentWeight.toString() : pos.amount.toString(),
+                            rewardDebt: pos.rewardDebt ? pos.rewardDebt.toString() : '0',
+                        });
+                    }
+                } catch (e) {
+                    // Old positions have incompatible account data — skip them
+                    console.warn(`Skipping position ${i}: stale account data (pre-upgrade layout)`, e);
+                    continue;
                 }
             }
             setPositions(fetched);
         } catch (e) {
-            console.error(e);
+            console.error('usePositions error:', e);
         } finally {
             setLoading(false);
         }
