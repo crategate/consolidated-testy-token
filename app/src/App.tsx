@@ -19,7 +19,7 @@ function App() {
     return (
         <div className={`app-shell ${connected ? 'has-wallet' : ''}`}>
             {!connected && (
-                <section className="dashboard-section">
+                <section className="dashboard-section neon-glitch">
                     <WalletDashboard deployment={deployment} />
                 </section>
             )}

@@ -64,7 +64,6 @@ use anchor_spl::token_interface::{
 //   → principal returned, position account closed
 //
 // [Market opens next day — penalties distribute]
-//   → realize_penalties() called (by crank oracle or anyone)
 //   → tokens move from penalty_vault → reward_vault
 //   → global_index += (penalty_amount * 1e12) / total_weighted_stake
 //   → Alice's next claim includes her share of Bob's penalty
@@ -447,50 +446,6 @@ pub mod staking {
         );
         Ok(())
     }
-
-    // -------------------------------------------------------------------------
-    // REALIZE PENALTIES
-    // Called when market opens (or by anyone) to distribute penalties.
-    // Moves tokens from penalty_vault to reward_vault and updates global index.
-    // Typically triggered by crank oracle on state transition 1/2 → 0.
-    // -------------------------------------------------------------------------
-    pub fn realize_penalties(ctx: Context<RealizePenalties>) -> Result<()> {
-        let pool = &mut ctx.accounts.pool;
-        let penalty_vault = &ctx.accounts.penalty_vault;
-
-        let penalty_amount = penalty_vault.amount;
-        require!(penalty_amount > 0, StakeError::NoRewards);
-        require!(pool.total_weighted_stake > 0, StakeError::NoRewards);
-
-        // Update MasterChef index: each weighted share gets more reward
-        pool.accrued_reward_per_share +=
-            (penalty_amount as u128 * 1_000_000_000_000u128) / pool.total_weighted_stake;
-
-        // Move tokens from penalty_vault to reward_vault
-        let signer_seeds: &[&[&[u8]]] = &[&[b"pool", pool.mint.as_ref(), &[pool.bump]]];
-        let cpi = TransferChecked {
-            from: penalty_vault.to_account_info(),
-            mint: ctx.accounts.mint.to_account_info(),
-            to: ctx.accounts.reward_vault.to_account_info(),
-            authority: pool.to_account_info(),
-        };
-        transfer_checked(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                cpi,
-                signer_seeds,
-            ),
-            penalty_amount,
-            ctx.accounts.mint.decimals,
-        )?;
-
-        msg!(
-            "Realized {} penalties. New index: {}",
-            penalty_amount,
-            pool.accrued_reward_per_share
-        );
-        Ok(())
-    }
 }
 
 // =============================================================================
@@ -727,18 +682,6 @@ pub struct Unstake<'info> {
     /// CHECK: Address verified by pool.market_status_pda constraint
     #[account(address = pool.market_status_pda)]
     pub market_status: UncheckedAccount<'info>,
-    pub token_program: Interface<'info, TokenInterface>,
-}
-
-#[derive(Accounts)]
-pub struct RealizePenalties<'info> {
-    #[account(mut, has_one = mint)]
-    pub pool: Account<'info, StakePool>,
-    pub mint: InterfaceAccount<'info, Mint>,
-    #[account(mut, token::mint = mint, token::authority = pool)]
-    pub penalty_vault: InterfaceAccount<'info, TokenAccount>,
-    #[account(mut, token::mint = mint, token::authority = pool)]
-    pub reward_vault: InterfaceAccount<'info, TokenAccount>,
     pub token_program: Interface<'info, TokenInterface>,
 }
 
