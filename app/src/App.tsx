@@ -25,16 +25,16 @@ function App() {
             )}
 
             {connected && (
-                <section className="dashboard-section">
+                <section className="dashboard-section neon-glitch">
                     <WalletDashboard deployment={deployment} />
                 </section>
             )}
 
-            <div className="market-status-wrapper">
+            <div className="market-status-wrapper neon-glitch">
                 <MarketStatus marketStatusPda={deployment.marketStatusKey} />
             </div>
 
-            <section className="stats-section">
+            <section className="stats-section neon-glitch">
                 <PoolStats mint={deployment.mintKey} />
             </section>
         </div>

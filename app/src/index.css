@@ -151,7 +151,7 @@ body {
     inset: -1px;
     border-radius: inherit;
     pointer-events: none;
-    animation: neonGlitch 8s infinite;
+    animation: neonGlitch 4s infinite;
     border: 1px solid transparent;
 }
 
@@ -180,7 +180,7 @@ body {
             rgba(0, 240, 255, 0.1) 30%,
             rgba(211, 0, 249, 0.1) 70%,
             transparent 100%);
-    filter: blur(2px);
+    filter: blur(12px);
 }
 
 /* ─── App Shell ─── */
@@ -208,10 +208,71 @@ body {
 
 .connect-prompt {
     text-align: center;
-    padding: 4rem 2rem;
+    padding: 0 0 1em;
     background: var(--bg-elevated);
     border-radius: var(--radius-lg);
-    border: 1px solid var(--border-subtle);
+    border: 3px var(--neon-green);
+    box-shadow: 0 0px 7px var(--neon-cyan);
+    border-style: solid;
+}
+
+.connect-prompt::after {
+    content: "";
+    position: absolute;
+    inset: 33px;
+    border-radius: 25px;
+    background: conic-gradient(from 0deg at 50% 50%,
+            var(--neon-purple) 0deg,
+            var(--neon-amber) 70deg,
+            var(--neon-pink) 130deg,
+            var(--neon-cyan) 230deg,
+            var(--neon-purple) 360deg);
+    z-index: -1;
+    filter: blur(12px);
+    opacity: 0.8;
+    animation: spin 4s linear infinite;
+}
+
+@keyframes spin {
+
+    0% {}
+
+    90%,
+    100% {
+        opacity: 0;
+        transform: translate(0);
+    }
+
+    91% {
+        opacity: 0.6;
+        transform: translate(-1px, 1px);
+        box-shadow:
+            0 0 4px var(--neon-cyan),
+            0 0 12px rgba(0, 240, 255, 0.3),
+            2px 0 4px var(--neon-pink);
+    }
+
+    93% {
+        opacity: 0.3;
+        transform: translate(2px, -1px);
+        box-shadow:
+            0 0 2px var(--neon-purple),
+            -1px 0 4px var(--neon-green);
+    }
+
+    95% {
+        opacity: 0.8;
+        transform: translate(-1px, 0);
+        box-shadow:
+            0 0 6px var(--neon-cyan),
+            0 0 20px rgba(0, 240, 255, 0.2);
+    }
+
+    97% {
+        opacity: 0;
+        transform: translate(0);
+    }
+
 }
 
 .connect-prompt h2 {
