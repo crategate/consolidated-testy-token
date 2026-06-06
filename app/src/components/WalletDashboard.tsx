@@ -30,9 +30,6 @@ export const WalletDashboard: React.FC<WalletDashboardProps> = ({ deployment }) 
         <div className="wallet-dashboard">
             <div className="dashboard-header">
                 <span className="wallet-label">Connected</span>
-                <code className="wallet-pk">
-                    {publicKey?.toBase58().slice(0, 4)}…{publicKey?.toBase58().slice(-4)}
-                </code>
                 <div className="wallet-button-wrapper">
                     <WalletMultiButton />
                 </div>

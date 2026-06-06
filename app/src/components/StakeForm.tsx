@@ -44,7 +44,7 @@ export const StakeForm: React.FC<StakeFormProps> = ({ mint, marketStatusPda }) =
         <div className="stake-form">
             <h3>Stake NYSEH</h3>
             <div className="mint-display">
-                Mint: <code>{mint.toBase58().slice(0, 8)}…{mint.toBase58().slice(-8)}</code>
+                Mint: <br /><code>{mint.toBase58().slice(0, 8)}…{mint.toBase58().slice(-8)}</code>
             </div>
             <div className="balance-line">
                 {balance !== null ? balance.toFixed(4) : '—'} <span>NYSEH</span>
@@ -64,6 +64,6 @@ export const StakeForm: React.FC<StakeFormProps> = ({ mint, marketStatusPda }) =
             <button onClick={handleStake} disabled={loading || !amount || (balance !== null && Number(amount) > balance)}>
                 {loading ? 'Staking…' : 'Stake'}
             </button>
-        </div>
+        </div >
     );
 };
