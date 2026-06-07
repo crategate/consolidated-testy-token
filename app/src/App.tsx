@@ -7,6 +7,7 @@ import { useDeployment } from './hooks/useDeployment';
 function App() {
     const { connected } = useWallet();
     const { deployment, loading, error } = useDeployment();
+    const otc_status = true;
 
     if (loading) {
         return <div className="app-shell">Loading deployment...</div>;

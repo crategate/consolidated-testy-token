@@ -365,6 +365,21 @@ body {
     overflow: hidden;
 }
 
+@keyframes slide {
+
+    0% {
+        transform: translateX(50%);
+    }
+
+    100% {
+        transform: translateX(-50%);
+    }
+
+}
+
+
+.stake-card {}
+
 /* Subtle top accent line on light cards */
 .stake-form::before,
 .balance-display::before,
@@ -380,6 +395,8 @@ body {
             var(--neon-purple),
             var(--neon-pink));
     opacity: 0.6;
+    animation: slide 1.5s ease-in-out infinite;
+    animation-direction: alternate;
 }
 
 /* Stake Form specific */

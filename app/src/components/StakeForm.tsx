@@ -7,9 +7,10 @@ import { getAccount, getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID } from
 interface StakeFormProps {
     mint: PublicKey;
     marketStatusPda?: PublicKey;
+    onStakeSuccess?: () => void;
 }
 
-export const StakeForm: React.FC<StakeFormProps> = ({ mint, marketStatusPda }) => {
+export const StakeForm: React.FC<StakeFormProps> = ({ mint, marketStatusPda, onStakeSuccess }) => {
     const { stake } = useStake(mint, marketStatusPda);
     const { publicKey } = useWallet();
     const { connection } = useConnection();
@@ -33,6 +34,7 @@ export const StakeForm: React.FC<StakeFormProps> = ({ mint, marketStatusPda }) =
             alert(`Staked successfully! Tx: ${tx}`);
             setAmount('');
             setBalance(prev => prev !== null ? Math.max(0, prev - Number(amount)) : null);
+            onStakeSuccess?.()
         } catch (e) {
             alert('Stake failed: ' + (e as Error).message);
         } finally {
@@ -41,7 +43,7 @@ export const StakeForm: React.FC<StakeFormProps> = ({ mint, marketStatusPda }) =
     };
 
     return (
-        <div className="stake-form">
+        <div className="stake-form stake-card">
             <h3>Stake NYSEH</h3>
             <div className="mint-display">
                 Mint: <br /><code>{mint.toBase58().slice(0, 8)}…{mint.toBase58().slice(-8)}</code>

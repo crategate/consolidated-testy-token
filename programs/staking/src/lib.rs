@@ -69,7 +69,7 @@ use anchor_spl::token_interface::{
 //   → Alice's next claim includes her share of Bob's penalty
 // =============================================================================
 
-declare_id!("Aqfb9mmAAuvJhUTxxVMCLckSQprXjYVAwW2XB79GTHfD");
+declare_id!("3qCCL948HaJ7ssUNdSTH6igCCCWR3aHkZrroEN5N3gXp");
 
 #[program]
 pub mod staking {
