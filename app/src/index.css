@@ -53,6 +53,7 @@ body {
     font-family: var(--font-sans);
     min-height: 100svh;
     -webkit-font-smoothing: antialiased;
+    overflow-x: clip;
 }
 
 #root {
@@ -368,17 +369,19 @@ body {
 @keyframes slide {
 
     0% {
-        transform: translateX(50%);
+        transform: translateX(70%);
     }
 
     100% {
-        transform: translateX(-50%);
+        transform: translateX(-70%);
     }
 
 }
 
 
-.stake-card {}
+.stake-card {
+    max-height: 21em;
+}
 
 /* Subtle top accent line on light cards */
 .stake-form::before,
@@ -497,6 +500,11 @@ body {
     margin-top: 0;
 }
 
+.pos-contain {
+    max-height: 93vh;
+    overflow: scroll;
+}
+
 .positions-list h3 {
     color: var(--text-dark);
     margin: 0 0 1.25rem;
@@ -537,7 +545,7 @@ body {
 }
 
 .claim-collect:disabled {
-    opacity: 0.3;
+    opacity: 0.6;
     color: #fff;
     cursor: not-allowed;
     border-color: red;

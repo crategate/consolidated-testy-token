@@ -3,12 +3,14 @@ import { MarketStatus } from './components/MarketStatus';
 import { PoolStats } from './components/PoolStats';
 import { WalletDashboard } from './components/WalletDashboard';
 import { useDeployment } from './hooks/useDeployment';
+import { useMarketStatus } from './hooks/useMarketStatus.ts';
 
 function App() {
     const { connected } = useWallet();
     const { deployment, loading, error } = useDeployment();
     const otc_status = true;
 
+    const { data, stale } = useMarketStatus(deployment?.marketStatusKey);
     if (loading) {
         return <div className="app-shell">Loading deployment...</div>;
     }
@@ -24,6 +26,8 @@ function App() {
                     <WalletDashboard deployment={deployment} />
                 </section>
             )}
+
+
 
             {connected && (
                 <section className="dashboard-section neon-glitch">
