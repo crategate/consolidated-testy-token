@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use switchboard_on_demand::prelude::rust_decimal::prelude::ToPrimitive;
 use switchboard_on_demand::{default_queue, SwitchboardQuote, SwitchboardQuoteExt};
 
-declare_id!("BUA1NAZ311orEfyXAF3Zet3SECMxU66EDeSBe7hDbh81");
+declare_id!("4nJYhDFRJvWS667xBGNY5foS8MgEuhfw47RYkrsJSWkZ");
 
 #[error_code]
 pub enum CrankError {

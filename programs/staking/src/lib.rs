@@ -16,8 +16,8 @@ use anchor_spl::token_interface::{
 // REWARD MODEL: Pure Multiplier-Weighted Distribution (No Time-Based Yield)
 // ------------------------------------------------------------------------
 // There is NO automatic yield accrual over time. Rewards come exclusively from:
-//   1. Penalties paid by users who claim/unstake during non-market-open hours
-//   2. External deposits (AMM revenue, admin deposits, etc.)
+//   1. Penalties paid by users who claim during non-market-open hours
+//   2. External deposits (AMM revenue)
 //
 // The multiplier (1.0x → 3.0x logarithmic) determines your SHARE of rewards.
 // Longer lock = higher multiplier = bigger slice of the penalty/AMM pie.
@@ -69,7 +69,7 @@ use anchor_spl::token_interface::{
 //   → Alice's next claim includes her share of Bob's penalty
 // =============================================================================
 
-declare_id!("Aqfb9mmAAuvJhUTxxVMCLckSQprXjYVAwW2XB79GTHfD");
+declare_id!("JKHegwqjrDuFfQ2msscavMZJ1cok7D6to1SwkcPvxhj");
 
 #[program]
 pub mod staking {

@@ -1,14 +1,14 @@
 {
   "cluster": "devnet",
-  "mint": "FmLQhwGTNG9YB7wsfsYFTe2ZncngU3xuYSb6KQFdWzoo",
+  "mint": "FfRdJi6pzWjEgrWiXSbbq57ksdVAUEMKP1bai1zopB4S",
   "stakingProgram": "Aqfb9mmAAuvJhUTxxVMCLckSQprXjYVAwW2XB79GTHfD",
-  "crankProgram": "BUA1NAZ311orEfyXAF3Zet3SECMxU66EDeSBe7hDbh81",
+  "crankProgram": "4nJYhDFRJvWS667xBGNY5foS8MgEuhfw47RYkrsJSWkZ",
   "coinMintProgram": "7Fm2aYKH3aRBso3ADQXjFUDdzKHM5nZHAe2mooqvWBTY",
   "pool": "APH9SCez2EUn3QW59nYSLjis2fYaP8TPStv3pMi1qSon",
   "vault": "DGTNYuQaziGTb2zhkizef24bcHzB9Xb51Sx6r4G6MeFb",
   "rewardVault": "DqmUWR5LoWHdaX4s8pBPg4fCJ6D6XrDCASepqrfegBDK",
   "penaltyVault": "5nGc9REXF5LGbLSWFePmwbP1eH9i8fNRgVWpSQzRa2PK",
   "posrVault": "ByWaoLM1Y97wmZBz96SJbaZeHnFvdv8qGM1d2tYjWvsk",
-  "marketStatus": "C5RQfCpv5LyhSG8PsyzGJdo36kazuyj9JmWMVZ9YcYAQ",
-  "updatedAt": "2026-06-01T22:43:24.066Z"
+  "marketStatus": "9gw7A8MqSGK9gKVWyx2tYFyWMrvXyWzzHXjzz8mgFqHz",
+  "updatedAt": "2026-06-08T17:11:44.401Z"
 }

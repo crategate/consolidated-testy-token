@@ -1,6 +1,4 @@
 import * as anchor from "@coral-xyz/anchor";
-import { Program } from "@coral-xyz/anchor";
-import { CoinMint } from "../target/types/coin_mint";
 import {
     PublicKey,
     SystemProgram,
@@ -34,7 +32,7 @@ async function main() {
     const provider = anchor.AnchorProvider.env();
     anchor.setProvider(provider);
 
-    const program = anchor.workspace.CoinMint as Program<CoinMint>;
+    const program = oracleCrankProgramId;
     const wallet = provider.wallet as anchor.Wallet;
     const connection = provider.connection;
 
@@ -56,21 +54,6 @@ async function main() {
 
     const decimals = 9;
 
-    // 3. Setup PDAs & Addresses
-    const [extraAccountMetaListPDA] = PublicKey.findProgramAddressSync(
-        [Buffer.from("extra-account-metas"), mint.publicKey.toBuffer()],
-        program.programId
-    );
-
-    const [counterPDA] = PublicKey.findProgramAddressSync(
-        [Buffer.from("counter")],
-        program.programId
-    );
-
-    const crankKeypairPath = path.join(process.cwd(), "target", "deploy", "crank_oracle-keypair.json");
-    const crankKeyData = JSON.parse(fs.readFileSync(crankKeypairPath, "utf-8"));
-    const oracleCrankProgramId = Keypair.fromSecretKey(new Uint8Array(crankKeyData)).publicKey;
-
     const [marketStatusPda] = PublicKey.findProgramAddressSync(
         [Buffer.from("market_status")],
         oracleCrankProgramId
@@ -79,7 +62,6 @@ async function main() {
     writeDeploymentState({
         cluster: "devnet",
         mint: pubkey(mint.publicKey),
-        coinMintProgram: pubkey(program.programId),
         crankProgram: pubkey(oracleCrankProgramId),
         marketStatus: pubkey(marketStatusPda),
     });
@@ -140,32 +122,7 @@ async function main() {
     } catch (e) {
         console.log("Mint already initialized or failed:   ", e);
     }
-
-    // ==========================================
-    // STEP 2: INITIALIZE EXTRA ACCOUNT META LIST
-    // ==========================================
-    //  console.log("📝 Initializing Extra Account Meta List...");
-    //  const initMetaListIx = await program.methods
-    //      .initializeExtraAccountMetaList(oracleCrankProgramId)
-    //      .accountsPartial({
-    //          mint: mint.publicKey,
-    //          extraAccountMetaList: extraAccountMetaListPDA,
-    //          tokenProgram: TOKEN_2022_PROGRAM_ID,
-    //          counterAccount: counterPDA,
-    //      })
-    //      .instruction();
-
-    //  const initMetaTx = new Transaction().add(initMetaListIx);
-
-    //  try {
-    //      const sig2 = await sendAndConfirmTransaction(connection, initMetaTx, [wallet.payer], { skipPreflight: true, commitment: "confirmed" });
-    //      console.log(`✅ Meta List initialized! Signature: ${sig2}`);
-    //  } catch (e) {
-    //      console.log("Meta list already initialized or failed:", e);
-    //  }
-
-    //  // ==========================================
-    // STEP 3: MINT TOKENS & TEST TRANSFER
+    /// MINT TOKENS & TEST TRANSFER
     // ==========================================
     console.log("📝 Minting tokens and running test transfer...");
     const sourceTokenAccount = getAssociatedTokenAddressSync(mint.publicKey, wallet.publicKey, false, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);

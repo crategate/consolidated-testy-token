@@ -6,8 +6,9 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-crank_oracle = "BUA1NAZ311orEfyXAF3Zet3SECMxU66EDeSBe7hDbh81"
-staking = "Aqfb9mmAAuvJhUTxxVMCLckSQprXjYVAwW2XB79GTHfD"
+crank_oracle = "4nJYhDFRJvWS667xBGNY5foS8MgEuhfw47RYkrsJSWkZ"
+otc = "D4ykpxBETNEpioCtUMLh8VoRmbokANPx9pEg4v3GkQms"
+staking = "JKHegwqjrDuFfQ2msscavMZJ1cok7D6to1SwkcPvxhj"
 
 [programs.localnet]
 testy_token = "Eb7SiNnSwCoKobhG8dDarPQxErqmnzK7kJ1SRW9vEpdS"
