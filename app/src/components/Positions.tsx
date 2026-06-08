@@ -70,48 +70,50 @@ export const Positions: React.FC<PositionsProps> = ({ mint, marketStatusPda }) =
                 </span>
             </div>
 
-            {displayPositions.map((pos) => (
-                <div key={pos.index} className="position-card">
-                    <div className="position-row">
-                        <span><strong>Amount:</strong> {(pos.amount / 1e9).toFixed(2)} NYSEH</span>
-                        {'multiplierDisplay' in pos && pos.multiplierDisplay !== '—' && (
-                            <span className="multiplier-badge">{pos.multiplierDisplay}x</span>
+            <div className="pos-contain">
+                {displayPositions.map((pos) => (
+                    <div key={pos.index} className="position-card">
+                        <div className="position-row">
+                            <span><strong>{(pos.amount / 1e9).toFixed(2)} </strong> NYSEH</span>
+                            {'multiplierDisplay' in pos && pos.multiplierDisplay !== '—' && (
+                                <span className="multiplier-badge">{pos.multiplierDisplay}x</span>
+                            )}
+                        </div>
+                        <div><strong>Entry Day:</strong> #{pos.entryTradingDay}</div>
+                        {'tradingDays' in pos && pos.tradingDays > 0 && (
+                            <div><strong>Trading Days Elapsed:</strong> {pos.tradingDays}</div>
                         )}
-                    </div>
-                    <div><strong>Entry Day:</strong> #{pos.entryTradingDay}</div>
-                    {'tradingDays' in pos && pos.tradingDays > 0 && (
-                        <div><strong>Trading Days Elapsed:</strong> {pos.tradingDays}</div>
-                    )}
-                    {'netRewardDisplay' in pos && pos.netRewardDisplay !== '—' ? (
-                        <>
-                            <div className="reward-line">
-                                <strong>Available Reward:</strong> {pos.netRewardDisplay}
-                            </div>
-                            {'penaltyRaw' in pos && (pos as any).penaltyRaw > 0 && (
-                                <div className="penalty-warning">
-                                    ⚠️ Market penalty: –{(pos as any).penaltyRaw.toFixed(4)} NYSEH
+                        {'netRewardDisplay' in pos && pos.netRewardDisplay !== '—' ? (
+                            <>
+                                <div className="reward-line">
+                                    <strong>Available Reward:</strong> {pos.netRewardDisplay}
                                 </div>
-                            )}
-                            {'posrTaxRaw' in pos && (pos as any).posrTaxRaw > 0 && (
-                                <div className="posr-line">
-                                    Protocol tax: –{(pos as any).posrTaxRaw.toFixed(4)} NYSEH
-                                </div>
-                            )}
-                        </>
-                    ) : (
-                        <div>Calculating rewards…</div>
-                    )}
-                    <div><strong>Last Claim:</strong> {new Date(pos.lastClaimTimestamp * 1000).toLocaleDateString()}</div>
+                                {'penaltyRaw' in pos && (pos as any).penaltyRaw > 0 && (
+                                    <div className="penalty-warning">
+                                        ⚠️ Market penalty: –{(pos as any).penaltyRaw.toFixed(4)} NYSEH
+                                    </div>
+                                )}
+                                {'posrTaxRaw' in pos && (pos as any).posrTaxRaw > 0 && (
+                                    <div className="posr-line">
+                                        Protocol tax: –{(pos as any).posrTaxRaw.toFixed(4)} NYSEH
+                                    </div>
+                                )}
+                            </>
+                        ) : (
+                            <div>Calculating rewards…</div>
+                        )}
+                        <div><strong>Last Claim:</strong> {new Date(pos.lastClaimTimestamp * 1000).toLocaleDateString()}</div>
 
-                    <button
-                        className="unstake"
-                        onClick={() => handleUnstake(pos)}
-                        disabled={unstakeLoadingIndex === pos.index}
-                    >
-                        {unstakeLoadingIndex === pos.index ? 'Exiting…' : 'Exit Position'}
-                    </button>
-                </div>
-            ))}
-        </div>
+                        <button
+                            className="unstake"
+                            onClick={() => handleUnstake(pos)}
+                            disabled={unstakeLoadingIndex === pos.index}
+                        >
+                            {unstakeLoadingIndex === pos.index ? 'Exiting…' : 'Exit Position'}
+                        </button>
+                    </div>
+                ))}
+            </div>
+        </div >
     );
 };

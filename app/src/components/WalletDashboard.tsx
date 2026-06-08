@@ -3,6 +3,7 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { StakeForm } from './StakeForm';
 import { Positions } from './Positions';
+import { usePositions } from '../hooks/usePositions';
 import type { ResolvedDeployment } from '../config';
 
 interface WalletDashboardProps {
@@ -12,7 +13,7 @@ interface WalletDashboardProps {
 export const WalletDashboard: React.FC<WalletDashboardProps> = ({ deployment }) => {
     const { publicKey, connected, connecting } = useWallet();
     const mint = deployment.mintKey;
-
+    const { positions, refresh: refreshPositions } = usePositions(mint);
     if (!connected) {
         return (
             <div className="wallet-dashboard connect-prompt">
@@ -30,15 +31,12 @@ export const WalletDashboard: React.FC<WalletDashboardProps> = ({ deployment }) 
         <div className="wallet-dashboard">
             <div className="dashboard-header">
                 <span className="wallet-label">Connected</span>
-                <code className="wallet-pk">
-                    {publicKey?.toBase58().slice(0, 4)}…{publicKey?.toBase58().slice(-4)}
-                </code>
                 <div className="wallet-button-wrapper">
                     <WalletMultiButton />
                 </div>
             </div>
             <div className="dashboard-grid">
-                <StakeForm mint={mint} marketStatusPda={deployment.marketStatusKey} />
+                <StakeForm mint={mint} onStakeSuccess={refreshPositions} marketStatusPda={deployment.marketStatusKey} />
                 <Positions mint={mint} marketStatusPda={deployment.marketStatusKey} />
             </div>
         </div>
