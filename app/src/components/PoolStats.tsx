@@ -19,17 +19,17 @@ export const PoolStats: React.FC<PoolStatsProps> = ({ mint }) => {
 
     return (
         <div className="pool-stats">
-            <div className="stat">
+            <div className="stat neon-glitch">
                 <span className="stat-value">
                     {stats.totalStaked.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                 </span>
                 <span className="stat-label">Total Staked</span>
             </div>
-            <div className="stat">
+            <div className="stat neon-glitch time-shift">
                 <span className="stat-value">{pctStaked}%</span>
                 <span className="stat-label">Staked / Supply</span>
             </div>
-            <div className="stat">
+            <div className="stat neon-glitch time-shift2">
                 <span className="stat-value">{stats.userCount}</span>
                 <span className="stat-label">Stakers</span>
             </div>
