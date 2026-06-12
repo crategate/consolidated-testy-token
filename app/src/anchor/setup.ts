@@ -33,7 +33,3 @@ export function useCrankProgram() {
         return new Program(crankIdl as any, provider);
     }, [connection, wallet]);
 }
-
-console.log("STAKING_PROGRAM_ID:", STAKING_PROGRAM_ID.toBase58());
-console.log("CRANK_PROGRAM_ID:", CRANK_PROGRAM_ID.toBase58());
-console.log('RAW staking IDL:', JSON.stringify(stakingIdl, null, 2));

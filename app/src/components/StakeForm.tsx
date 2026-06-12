@@ -34,7 +34,7 @@ export const StakeForm: React.FC<StakeFormProps> = ({ mint, marketStatusPda, onS
             alert(`Staked successfully! Tx: ${tx}`);
             setAmount('');
             setBalance(prev => prev !== null ? Math.max(0, prev - Number(amount)) : null);
-            onStakeSuccess?.()
+            setTimeout(() => onStakeSuccess?.(), 2000);
         } catch (e) {
             alert('Stake failed: ' + (e as Error).message);
         } finally {

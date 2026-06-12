@@ -230,7 +230,7 @@ body {
 .connect-prompt::after {
     content: "";
     position: absolute;
-    inset: 33px;
+    inset: 11px;
     border-radius: 25px;
     background: conic-gradient(from 0deg at 50% 50%,
             var(--neon-purple) 0deg,
@@ -310,7 +310,7 @@ body {
     margin-bottom: 2rem;
     background: var(--bg-elevated);
     border-radius: var(--radius-md);
-    justify-content: space-around;
+    justify-content: end;
     padding: .3em 0;
     border: 1px solid var(--border-subtle);
 }
