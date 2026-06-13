@@ -109,9 +109,9 @@ async function main() {
                 CRANK_PROGRAM_ID,
                 30000,              // max multiplier 3.0x
                 500,                // POSR tax 5%
-                2000,                // after hours penalty 20%
-                3500,               // closed penalty 35%
-                5000,               // halted penalty 50%
+                400,                // after hours penalty 4%
+                800,               // closed penalty 8%
+                1800,               // halted penalty 18
             )
             .accounts({
                 authority: provider.wallet.publicKey,

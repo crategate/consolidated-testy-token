@@ -454,8 +454,8 @@ pub mod staking {
 
 fn get_principal_unstake_penalty_bps(current_state: u8) -> u64 {
     match current_state {
-        1 => 300,  // extended hours
-        2 => 700,  // market closed
+        1 => 400,  // extended hours
+        2 => 800,  // market closed
         3 => 1800, // trading halted
         _ => 0,
     }
