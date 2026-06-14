@@ -19,6 +19,7 @@ pub mod amm {
     use super::*;
 
     pub fn tonights_offers(ctx: Context<TonightsOffers>) -> Result<()> {
+        // executes at end of every trading day
         // analyze market performance
         //
         // determine offers available
@@ -31,15 +32,22 @@ pub mod amm {
     pub fn offer_claim(ctx: Context<OfferClaim>, amount: u8) -> Result<()> {
         // decrease # of offers available by amount
         // multiply amount * market price * discount
+        //
+        // claim should use largest offers available first for their amount,
+        // so a whale wallet doesn't take all availabl small offers...
+        //
         // create locked stake position for user
+        //
         //
         // set 80% for buybacks, 10% to stakers, 10% for favorable/discount buybacks
         Ok(())
     }
 
     pub fn dex_buyback(ctx: Context<CompletedOffers>) -> Result<()> {
-        // execute multiple buybacks over course of next trading day
+        // executes at start of every trading day
         // uses 80% of funds made from all last night's claimed offers
+        //
+        // set limit orders with 10% to catch dips
         Ok(())
     }
 }
