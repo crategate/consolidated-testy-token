@@ -18,23 +18,12 @@ declare_id!("6d4pTxfAeQdKYn6i9tgTspS6i6bi225MVdxe7pW7MghV");
 pub mod amm {
     use super::*;
 
-    pub fn tonights_offers(ctx: Context<TonightsOffers>) -> Result<()> {
-        // executes at end of every trading day
-        // analyze market performance
-        //
-        // determine offers available
-        // no more than 5% of total POSR
-        //
-        // build offer list & write to account
-        Ok(())
-    }
-
     pub fn offer_claim(ctx: Context<OfferClaim>, amount: u8) -> Result<()> {
         // decrease # of offers available by amount
         // multiply amount * market price * discount
         //
         // claim should use largest offers available first for their amount,
-        // so a whale wallet doesn't take all availabl small offers...
+        // so a whale wallet doesn't take all available small offers...
         //
         // create locked stake position for user
         //
@@ -51,41 +40,11 @@ pub mod amm {
         Ok(())
     }
 }
-
 #[account]
-pub struct Offer {
-    pub lot_size: u8,     // size in whole NYSEH tokens, 50, 100, 500, 1000, 5k, 10k
-    pub vesting_days: u8, // how many trading days to unlock
-    pub discount: u8,     // % bps discount from live DEX prices
-    pub index: u64,
-}
-#[account]
-pub struct OfferList {
-    pub owner: Pubkey,
-    pub big_offer: Offer,
-    pub big_amount: u16,
-    pub med_offer: Offer,
-    pub med_amount: u16,
-    pub sml_offer: Offer,
-    pub sml_amount: u16,
-}
-
-#[derive(Accounts)]
-pub struct TonightsOffers<'info> {
-    #[account(mut)]
-    pub owner: Signer<'info>,
-    pub mint: InterfaceAccount<'info, Mint>,
-    #[account(mut)]
-    pub authority: Signer<'info>,
-    #[account(
-        init,
-        payer = owner,
-        seeds = [b"tonights_offers", owner.key().as_ref()],
-        bump,
-        space = 39 + 8,
-    )]
-    pub offer_list: Account<'info, OfferList>,
-    pub system_program: Program<'info, System>,
+#[derive(InitSpace)]
+pub struct BuyBackVault {
+    pub authority: Pubkey,
+    pub vault_bump: u8,
 }
 #[derive(Accounts)]
 #[instruction(amount: u8)]
@@ -93,6 +52,14 @@ pub struct OfferClaim<'info> {
     pub mint: InterfaceAccount<'info, Mint>,
     #[account(mut)]
     pub owner: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"back_vault", owner.key().as_ref()],
+        bump
+    )]
+    pub bb_vault: Account<'info, BuyBackVault>,
+    pub token_program: Interface<'info, TokenInterface>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -100,4 +67,5 @@ pub struct CompletedOffers<'info> {
     pub mint: InterfaceAccount<'info, Mint>,
     #[account(mut)]
     pub owner: Signer<'info>,
+    pub system_program: Program<'info, System>,
 }

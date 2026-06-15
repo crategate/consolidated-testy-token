@@ -38,7 +38,7 @@ use anchor_spl::token_interface::{
 //   - State 2 (Closed):    configurable (e.g., 1500 = 15%)
 //   - State 3 (Halted):    configurable (e.g., 3000 = 30%)
 //
-// POSR TAX: 5% on all claims and unstakes → goes to protocol-owned reserve
+// POSR TAX: 5% on all claims and 1% on unstakes → goes to protocol-owned reserve
 //
 // USER STORIES
 // ------------
