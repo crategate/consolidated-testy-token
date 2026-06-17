@@ -3,6 +3,8 @@ use anchor_spl::token_interface::{
     transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked,
 };
 
+mod amm_stake;
+use amm_stake::create_amm_position;
 // =============================================================================
 // NYSEH STAKING PROGRAM — COMPLETE IMPLEMENTATION
 // =============================================================================

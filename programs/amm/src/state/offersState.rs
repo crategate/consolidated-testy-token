@@ -9,6 +9,7 @@ pub struct Offer {
     pub lot_size: u8,     // size in whole NYSEH tokens, 50, 100, 500, 1000, 5k, 10k
     pub vesting_days: u8, // how many trading days to unlock
     pub discount: u8,     // % bps discount from live DEX prices
+    pub remaining: u16,   // how how many units remained offered today
 }
 
 #[derive(InitSpace)]
@@ -18,11 +19,10 @@ pub struct OfferList {
     pub seed: u64,
 
     pub big_offer: Offer,
-    pub big_amount: u16, // number of this Offer remaining
+
     pub med_offer: Offer,
-    pub med_amount: u16,
+
     pub sml_offer: Offer,
-    pub sml_amount: u16,
     pub total_complete: u32, // total whole NYSEH tokens sold
 
     pub bump: u8,
