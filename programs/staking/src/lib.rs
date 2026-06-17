@@ -150,7 +150,7 @@ pub mod staking {
     // Called by user to lock tokens. Creates a new StakePosition PDA.
     // Each stake transaction creates a separate position (index 0, 1, 2...).
     // -------------------------------------------------------------------------
-    pub fn stake(ctx: Context<Stake>, amount: u64, index: u64) -> Result<()> {
+    pub fn stake(ctx: Context<Stake>, amount: u64, index: u64, days: u8) -> Result<()> {
         require!(amount > 0, StakeError::ZeroAmount);
         require!(amount >= 100, StakeError::MinStake);
 
@@ -168,6 +168,7 @@ pub mod staking {
         position.entry_trading_day = trading_day_index;
         position.last_claim_timestamp = clock.unix_timestamp;
         position.index = index;
+        position.days_to_unlock = days;
         position.bump = ctx.bumps.position;
 
         // Update user's next available index
@@ -304,6 +305,8 @@ pub mod staking {
         let pool = &mut ctx.accounts.pool;
         let current_state = get_market_state(&ctx.accounts.market_status)?;
         let trading_day_index = get_trading_day_index(&ctx.accounts.market_status)?;
+
+        require!(position.days_to_unlock < 1, Error::Vesting);
 
         // Settle pending rewards at the position's last applied weight.
         let old_weight = position.current_weight;
@@ -519,6 +522,8 @@ pub struct StakePosition {
     pub current_weight: u128,
     pub reward_debt: u128,
     pub bump: u8,
+
+    pub days_to_unlock: u8,
 }
 
 #[account]
@@ -600,7 +605,7 @@ pub struct DepositRewards<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(amount: u64, index: u64)]
+#[instruction(amount: u64, index: u64, days: u8)]
 pub struct Stake<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,
@@ -697,6 +702,8 @@ pub enum StakeError {
     InvalidMarketStatus,
     #[msg("Insufficient rewards in vault")]
     InsufficientRewards,
+    #[msg("some vesting days remain, cannot unlock position yet")]
+    Vesting,
     #[msg("Claims are only available while the market is open")]
     ClaimsClosed,
 }

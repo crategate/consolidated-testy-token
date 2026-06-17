@@ -76,7 +76,7 @@ export function useStake(mint: PublicKey | null, marketStatusPda?: PublicKey) {
         const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
 
         const tx = await program.methods
-            .stake(stakeAmount, new BN(index))
+            .stake(stakeAmount, new BN(index), 0)
             .accounts({
                 owner: publicKey,
                 mint,

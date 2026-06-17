@@ -26,6 +26,10 @@ pub struct Initialize<'info> {
         bump
     )]
     pub bb_vault: Account<'info, BuyBackVault>,
+
+    #[account(mint::token_program=token_program)]
+    pub sol_vault: InterfaceAccount<'info, Mint>,
+
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
