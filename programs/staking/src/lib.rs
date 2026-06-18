@@ -607,7 +607,7 @@ pub struct DepositRewards<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(amount: u64, index: u64, days: u8)]
+#[instruction(amount: u64, index: u64 )]
 pub struct Stake<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,

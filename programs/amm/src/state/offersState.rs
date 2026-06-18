@@ -1,8 +1,7 @@
 use anchor_lang::prelude::*;
 
 // each individual offer has index
-#[account]
-#[derive(InitSpace)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, InitSpace)]
 pub struct Offer {
     pub owner: Pubkey,
 
