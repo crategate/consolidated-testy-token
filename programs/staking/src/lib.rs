@@ -89,6 +89,7 @@ pub mod staking {
         after_hours_penalty_bps: u16, // Penalty: state 1 (after hours)
         closed_penalty_bps: u16, // Penalty: state 2 (market closed)
         halted_penalty_bps: u16, // Penalty: state 3 (trading halted)
+        amm_program: Pubkey,
     ) -> Result<()> {
         // SECURITY: Verify the passed market_status_pda matches what the crank
         // oracle program would derive. Prevents initializing with a fake oracle.
@@ -116,7 +117,9 @@ pub mod staking {
         pool.accrued_reward_per_share = 0;
         pool.market_status_pda = ctx.accounts.market_status_pda.key();
         pool.bump = ctx.bumps.pool;
+        pool.amm_program = amm_program;
 
+        msg!("Pool initialized with AMM program: {}", amm_program);
         msg!("Pool initialized for mint {}", pool.mint);
         msg!(
             "Max multiplier: {} bps, POSR tax: {} bps",
@@ -221,6 +224,9 @@ pub mod staking {
         let trading_day_index = get_trading_day_index(&ctx.accounts.market_status)?;
         let current_state = get_market_state(&ctx.accounts.market_status)?;
         require!(current_state == 0, StakeError::ClaimsClosed);
+
+        //reject if vesting
+        require!(position.days_to_unlock < 1, Error::Vesting);
 
         // Settle rewards at the last applied weight so a multiplier increase
         // only affects future reward distributions.
@@ -508,6 +514,7 @@ pub struct StakePool {
     pub halted_penalty_bps: u16,
     pub accrued_reward_per_share: u128,
     pub market_status_pda: Pubkey,
+    pub amm_program: Pubkey,
     pub bump: u8,
 }
 

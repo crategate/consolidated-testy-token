@@ -1,4 +1,7 @@
-use crate::{calculate_multiplier, get_trading_day_index, Stake, StakeError};
+use crate::{
+    calculate_multiplier, get_trading_day_index, Stake, StakeError, StakePool, StakePosition,
+    UserStakeIndex,
+};
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{
     transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked,
@@ -11,14 +14,20 @@ pub fn create_amm_position(
     days: u8,
 ) -> Result<()> {
     // Only callable via CPI from authorized AMM program
+    let amm_program_id = ctx.accounts.pool.amm_program;
     require!(
-        ctx.accounts.amm_program.key() == AUTHORIZED_AMM_PROGRAM,
+        ctx.accounts.amm_program.key() == amm_program_id,
+        CpiError::UnauthorizedAmm
+    );
+    require!(
+        ctx.accounts.amm_program.is_signer,
         CpiError::UnauthorizedAmm
     );
 
     require!(amount > 0, StakeError::ZeroAmount);
     require!(amount >= 100, StakeError::MinStake);
-
+    require!(days > 0, CpiError::InvalidVestingPeriod); // AMM positions MUST vest
+                                                        //
     let pool = &mut ctx.accounts.pool;
     let position = &mut ctx.accounts.position;
     let user_index = &mut ctx.accounts.user_index;
@@ -69,10 +78,27 @@ pub fn create_amm_position(
     );
     Ok(())
 }
+
+// mainnet release: remove before launch
+pub fn update_amm_program(ctx: Context<UpdateAmmProgram>, new_amm_program: Pubkey) -> Result<()> {
+    let pool = &mut ctx.accounts.pool;
+    pool.amm_program = new_amm_program;
+    msg!("Updated AMM program to: {}", new_amm_program);
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct UpdateAmmProgram<'info> {
+    #[account(mut, has_one = authority)]
+    pub pool: Account<'info, StakePool>,
+    pub authority: Signer<'info>,
+}
+
 #[derive(Accounts)]
 #[instruction(amount: u64, index: u64, days: u8)]
 pub struct CreateAmmPosition<'info> {
     /// CHECK: Verified below against authorized AMM program ID
+    #[account(mut)]
     pub amm_program: AccountInfo<'info>,
 
     #[account(mut)]
@@ -124,4 +150,6 @@ pub struct CreateAmmPosition<'info> {
 pub enum CpiError {
     #[msg("unauthorized vested amm stake...")]
     UnauthorizedAmm,
+    #[msg("positions must vest for at least 1 trading day")]
+    InvalidVestingPeriod,
 }
