@@ -62,10 +62,10 @@ pub fn create_amm_position(
 
     // Transfer tokens from user to pool vault
     let cpi_accounts = TransferChecked {
-        from: ctx.accounts.owner_token.to_account_info(),
+        from: ctx.accounts.source_token.to_account_info(),
         mint: ctx.accounts.mint.to_account_info(),
         to: ctx.accounts.vault.to_account_info(),
-        authority: ctx.accounts.owner.to_account_info(),
+        authority: ctx.accounts.amm_program.to_account_info(),
     };
     let cpi_ctx = CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts);
     transfer_checked(cpi_ctx, amount, ctx.accounts.mint.decimals)?;
@@ -79,7 +79,7 @@ pub fn create_amm_position(
     Ok(())
 }
 
-// mainnet release: remove before launch
+// mainnet release: remove before launch, won't need to update amm
 pub fn update_amm_program(ctx: Context<UpdateAmmProgram>, new_amm_program: Pubkey) -> Result<()> {
     let pool = &mut ctx.accounts.pool;
     pool.amm_program = new_amm_program;
@@ -107,7 +107,7 @@ pub struct CreateAmmPosition<'info> {
     pub mint: InterfaceAccount<'info, Mint>,
 
     #[account(mut)]
-    pub pool: Account<'info, StakePool>,
+    pub pool: Box<Account<'info, StakePool>>,
 
     #[account(
         init_if_needed,
@@ -116,7 +116,7 @@ pub struct CreateAmmPosition<'info> {
         bump,
         space = 8 + 8
     )]
-    pub user_index: Account<'info, UserStakeIndex>,
+    pub user_index: Box<Account<'info, UserStakeIndex>>,
 
     #[account(
         init,
@@ -130,14 +130,14 @@ pub struct CreateAmmPosition<'info> {
         bump,
         space = 8 + 160  // Adjust for new fields
     )]
-    pub position: Account<'info, StakePosition>,
+    pub position: Box<Account<'info, StakePosition>>,
 
     /// Where the NYSEH tokens come from (AMM's escrow/ATA, not buyer's wallet)
     #[account(mut, token::mint = mint, token::authority = amm_program)]
-    pub source_token: InterfaceAccount<'info, TokenAccount>,
+    pub source_token: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(mut, token::mint = mint, token::authority = pool)]
-    pub vault: InterfaceAccount<'info, TokenAccount>,
+    pub vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
     /// CHECK: Address verified by pool.market_status_pda constraint
     #[account(address = pool.market_status_pda)]

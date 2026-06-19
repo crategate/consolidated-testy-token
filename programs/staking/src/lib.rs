@@ -226,7 +226,7 @@ pub mod staking {
         require!(current_state == 0, StakeError::ClaimsClosed);
 
         //reject if vesting
-        require!(position.days_to_unlock < 1, Error::Vesting);
+        require!(position.days_to_unlock < 1, StakeError::Vesting);
 
         // Settle rewards at the last applied weight so a multiplier increase
         // only affects future reward distributions.
@@ -314,7 +314,7 @@ pub mod staking {
         let current_state = get_market_state(&ctx.accounts.market_status)?;
         let trading_day_index = get_trading_day_index(&ctx.accounts.market_status)?;
 
-        require!(position.days_to_unlock < 1, Error::Vesting);
+        require!(position.days_to_unlock < 1, StakeError::Vesting);
 
         // Settle pending rewards at the position's last applied weight.
         let old_weight = position.current_weight;
