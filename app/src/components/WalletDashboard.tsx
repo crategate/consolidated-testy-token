@@ -11,8 +11,10 @@ interface WalletDashboardProps {
 }
 
 export const WalletDashboard: React.FC<WalletDashboardProps> = ({ deployment }) => {
+    // @ts-ignore
     const { publicKey, connected, connecting } = useWallet();
     const mint = deployment.mintKey;
+    // @ts-ignore
     const { positions, refresh: refreshPositions } = usePositions(mint);
     if (!connected) {
         return (
