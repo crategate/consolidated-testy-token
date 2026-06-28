@@ -1,4 +1,3 @@
-import React from 'react';
 import { useMarketStatus } from '../hooks/useMarketStatus.ts';
 import { PublicKey } from '@solana/web3.js';
 import './MarketStatus.css';
@@ -21,7 +20,7 @@ interface MarketStatusProps {
     marketStatusPda?: PublicKey;
 }
 
-export const MarketStatus: React.FC<MarketStatusProps> = ({ marketStatusPda }) => {
+export function MarketStatus({ marketStatusPda }: MarketStatusProps) {
     const { data, loading, error, stale } = useMarketStatus(marketStatusPda);
 
     const state = data?.state ?? 99;

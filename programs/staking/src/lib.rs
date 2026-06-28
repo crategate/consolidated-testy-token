@@ -71,7 +71,7 @@ use amm_stake::create_amm_position;
 //   → Alice's next claim includes her share of Bob's penalty
 // =============================================================================
 
-declare_id!("JKHegwqjrDuFfQ2msscavMZJ1cok7D6to1SwkcPvxhj");
+declare_id!("8pg4vnWVu5EiiBdrBF3ck1STsMToqDQAezYwZLPt3PbY");
 
 #[program]
 pub mod staking {
@@ -498,6 +498,7 @@ fn calculate_multiplier(trading_days: u64, max_bps: u16) -> u64 {
 // =============================================================================
 
 #[account]
+#[derive(InitSpace)]
 pub struct StakePool {
     pub authority: Pubkey,
     pub mint: Pubkey,
@@ -554,7 +555,7 @@ pub struct InitializePool<'info> {
         payer = authority,
         seeds = [b"pool", mint.key().as_ref()],
         bump,
-        space = 8 + 300
+        space = 8 + StakePool::INIT_SPACE
     )]
     pub pool: Account<'info, StakePool>,
     #[account(
@@ -639,7 +640,7 @@ pub struct Stake<'info> {
             &index.to_le_bytes(),
         ],
         bump,
-        space = 8 + 160
+        space = 8 + StakePool::INIT_SPACE
     )]
     pub position: Account<'info, StakePosition>,
     #[account(mut, token::mint = mint, token::authority = owner)]

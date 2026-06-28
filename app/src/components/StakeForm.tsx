@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useStake } from '../hooks/useStake';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
@@ -10,7 +10,7 @@ interface StakeFormProps {
     onStakeSuccess?: () => void;
 }
 
-export const StakeForm: React.FC<StakeFormProps> = ({ mint, marketStatusPda, onStakeSuccess }) => {
+export function StakeForm({ mint, marketStatusPda, onStakeSuccess }: StakeFormProps) {
     const { stake } = useStake(mint, marketStatusPda);
     const { publicKey } = useWallet();
     const { connection } = useConnection();

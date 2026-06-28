@@ -1,3 +1,5 @@
+use core::str;
+
 use anchor_lang::prelude::*;
 
 // each individual offer has index
@@ -24,5 +26,20 @@ pub struct OfferList {
     pub sml_offer: Offer,
     pub total_complete: u32, // total whole NYSEH tokens sold
 
+    pub bump: u8,
+}
+#[account]
+#[derive(InitSpace)]
+pub struct AmmState {
+    pub authority: Pubkey,
+    pub nyseh_mint: Pubkey,
+    pub usdc_mint: Pubkey,
+    pub sol_vault: Pubkey,
+    pub usdc_vault: Pubkey,
+    pub offer_list: Pubkey,
+    pub market_status_pda: Pubkey,
+    pub crank_program: Pubkey,
+    pub total_sol_rn: u64,
+    pub total_usdc_proceeds: u64,
     pub bump: u8,
 }

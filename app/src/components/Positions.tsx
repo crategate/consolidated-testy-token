@@ -1,4 +1,3 @@
-import React from 'react';
 import { usePositions } from '../hooks/usePositions';
 import { usePositionRewards } from '../hooks/usePositionRewards';
 import { useClaimAll } from '../hooks/useClaimAll';
@@ -11,7 +10,7 @@ interface PositionsProps {
     marketStatusPda?: PublicKey;
 }
 
-export const Positions: React.FC<PositionsProps> = ({ mint, marketStatusPda }) => {
+export function Positions({ mint, marketStatusPda }: PositionsProps) {
     const { positions, loading: positionsLoading, refresh: refreshPositions } = usePositions(mint);
     const { data: marketData } = useMarketStatus(marketStatusPda);
     const { enriched, grandTotal } = usePositionRewards(mint, positions, marketStatusPda);

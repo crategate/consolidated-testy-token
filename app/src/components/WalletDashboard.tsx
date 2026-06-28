@@ -1,4 +1,3 @@
-import React from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { StakeForm } from './StakeForm';
@@ -10,7 +9,7 @@ interface WalletDashboardProps {
     deployment: ResolvedDeployment;
 }
 
-export const WalletDashboard: React.FC<WalletDashboardProps> = ({ deployment }) => {
+export function WalletDashboard({ deployment }: WalletDashboardProps) {
     // @ts-ignore
     const { publicKey, connected, connecting } = useWallet();
     const mint = deployment.mintKey;

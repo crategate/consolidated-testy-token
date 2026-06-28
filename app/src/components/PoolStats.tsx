@@ -1,4 +1,3 @@
-import React from 'react';
 import { usePoolStats } from '../hooks/usePoolStats';
 import { PublicKey } from '@solana/web3.js';
 
@@ -6,7 +5,7 @@ interface PoolStatsProps {
     mint: PublicKey;
 }
 
-export const PoolStats: React.FC<PoolStatsProps> = ({ mint }) => {
+export function PoolStats({ mint }: PoolStatsProps) {
     const { stats, loading } = usePoolStats(mint);
 
     if (loading || !stats) {

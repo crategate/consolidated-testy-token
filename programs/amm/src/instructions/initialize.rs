@@ -13,6 +13,8 @@ use crate::BuyBackVault;
 pub fn handler(ctx: Context<Initialize>) -> Result<()> {
     // initialize the POSR vault
     // during minting, % of coins will get stored here
+
+    // Needs accounts to hold sol and USDC which holds proceeds from the bulk AMM sales
     Ok(())
 }
 

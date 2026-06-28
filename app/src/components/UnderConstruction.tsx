@@ -7,7 +7,7 @@ export function UnderConstruction() {
 
             <p>NYSEH has rewards & penalties structured around the market status of the NYSE.</p>
 
-            <p>It uses a Switchboard Oracle to reliably read when the market is opend, closed, extended hours, or halted.</p>
+            <p>It uses a Switchboard Oracle to reliably read when the market is opened, closed, extended hours, or halted.</p>
 
             <p>Unlocking your tokens when the market is closed penalizes your principle. This tax gets distributed to the other holders. The longer you hold, the higher your payouts.</p>
 
