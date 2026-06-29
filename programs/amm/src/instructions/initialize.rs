@@ -1,37 +1,106 @@
+use crate::state::offersState::{AmmState, OfferList};
 use anchor_lang::prelude::*;
 use anchor_spl::{
     associated_token::AssociatedToken,
-    token_interface::{transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked},
+    token_interface::{Mint, TokenAccount, TokenInterface},
 };
 
-use crate::constants::*;
-use crate::error::*;
-use crate::instructions::*;
-use crate::state::*;
-use crate::BuyBackVault;
-
-pub fn handler(ctx: Context<Initialize>) -> Result<()> {
+pub fn handler(ctx: Context<InitializeAmm>) -> Result<()> {
     // initialize the POSR vault
     // during minting, % of coins will get stored here
 
-    // Needs accounts to hold sol and USDC which holds proceeds from the bulk AMM sales
+    let amm_state = &mut ctx.accounts.amm_state;
+    let offer_list = &mut ctx.accounts.offer_list;
+
+    amm_state.authority = ctx.accounts.authority.key();
+    amm_state.nyseh_mint = ctx.accounts.nyseh_mint.key();
+    amm_state.usdc_mint = ctx.accounts.usdc_mint.key();
+    amm_state.sol_vault = ctx.accounts.sol_vault.key();
+    amm_state.usdc_vault = ctx.accounts.usdc_vault.key();
+    amm_state.nyseh_vault = ctx.accounts.nyseh_vault.key();
+    amm_state.offer_list = ctx.accounts.offer_list.key();
+    amm_state.market_status_pda = ctx.accounts.market_status_pda.key();
+    amm_state.crank_program = ctx.accounts.crank_program.key();
+    amm_state.total_sol_rn = 0;
+    amm_state.total_usdc_proceeds = 0;
+    amm_state.bump = ctx.bumps.amm_state;
+
+    offer_list.owner = ctx.accounts.authority.key();
+    offer_list.seed = 0;
+    offer_list.total_complete = 0;
+    offer_list.bump = ctx.bumps.offer_list;
+
+    let empty_offer = crate::state::offersState::Offer {
+        owner: Pubkey::default(),
+        lot_size: 0,
+        vesting_days: 0,
+        discount: 0,
+        remaining: 0,
+    };
+    offer_list.big_offer = empty_offer;
+    offer_list.med_offer = empty_offer;
+    offer_list.sml_offer = empty_offer;
+    msg!("did initialize dat AMM for mint {}", amm_state.nyseh_mint);
     Ok(())
 }
 
 #[derive(Accounts)]
-pub struct Initialize<'info> {
+pub struct InitializeAmm<'info> {
     #[account(mut)]
-    pub owner: Signer<'info>,
+    pub authority: Signer<'info>,
+    pub nyseh_mint: InterfaceAccount<'info, Mint>,
+    pub usdc_mint: InterfaceAccount<'info, Mint>,
+    /// CHECK: sol vault pda to hold sol
     #[account(
-        mut,
-        seeds = [b"back_vault", owner.key().as_ref()],
-        bump
+        init,
+        payer = authority,
+        seeds = [b"amm_sol_vault", nyseh_mint.key().as_ref()],
+        bump,
+        space = 8,
     )]
-    pub bb_vault: Account<'info, BuyBackVault>,
+    pub sol_vault: AccountInfo<'info>,
+    #[account(
+        init,
+        payer = authority,
+        associated_token::mint = usdc_mint,
+        space = 8
+    )]
+    pub usdc_vault: InterfaceAccount<'info, TokenAccount>,
+    #[account(
+        init,
+        payer = authority,
+        associated_token::mint = nyseh_mint,
+        associated_token::authority = amm_state,
+    )]
+    pub nyseh_vault: AccountInfo<'info>,
 
-    #[account(mint::token_program=token_program)]
-    pub sol_vault: InterfaceAccount<'info, Mint>,
+    #[account(
+        init,
+        payer=authority,
+        seeds=[b"amm_state", nyseh_mint.key().as_ref()],
+        bump,
+        space = 8 + AmmState::INIT_SPACE,
+    )]
+    pub amm_state: Account<'info, AmmState>,
+    #[account(
+        init,
+        payer = authority,
+        seeds = [b"offer_list", nyseh_mint.key().as_ref()],
+        bump,
+        space = 8 + OfferList::INIT_SPACE,
+    )]
+    pub offer_list: Account<'info, OfferList>,
 
+    /// CHECK: verfiy seeds derive against crank
+    #[account(
+        seeds = [b"market_status"],
+        bump,
+        seeds::program = crank_program,
+    )]
+    pub market_status_pda: UncheckedAccount<'info>,
+
+    /// CHECK: stored for verification in makeOffers
+    pub crank_program: AccountInfo<'info>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
