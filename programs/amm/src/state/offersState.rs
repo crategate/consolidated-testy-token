@@ -36,10 +36,12 @@ pub struct AmmState {
     pub usdc_mint: Pubkey,
     pub sol_vault: Pubkey,
     pub usdc_vault: Pubkey,
+    pub nyseh_vault: Pubkey,
     pub offer_list: Pubkey,
     pub market_status_pda: Pubkey,
     pub crank_program: Pubkey,
     pub total_sol_rn: u64,
     pub total_usdc_proceeds: u64,
     pub bump: u8,
+    pub sol_vault_bump: u8,
 }

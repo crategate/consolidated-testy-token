@@ -19,6 +19,9 @@ declare_id!("HtdXAsisFb5BcW8N1ejbWURZB9WHEFPgHemFqBzHkY9z");
 pub mod amm {
     use super::*;
 
+    pub fn initialize_amm(ctx: Context<InitializeAmm>) -> Result<()> {
+        initialize::handler(ctx)
+    }
     pub fn offer_claim(ctx: Context<OfferClaim>, amount: u8) -> Result<()> {
         // decrease # of offers available by amount
         // multiply amount * market price * discount

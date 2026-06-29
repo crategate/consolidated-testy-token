@@ -18,12 +18,13 @@ pub fn handler(ctx: Context<InitializeAmm>) -> Result<()> {
     amm_state.sol_vault = ctx.accounts.sol_vault.key();
     amm_state.usdc_vault = ctx.accounts.usdc_vault.key();
     amm_state.nyseh_vault = ctx.accounts.nyseh_vault.key();
-    amm_state.offer_list = ctx.accounts.offer_list.key();
+    amm_state.offer_list = offer_list.key();
     amm_state.market_status_pda = ctx.accounts.market_status_pda.key();
     amm_state.crank_program = ctx.accounts.crank_program.key();
     amm_state.total_sol_rn = 0;
     amm_state.total_usdc_proceeds = 0;
     amm_state.bump = ctx.bumps.amm_state;
+    amm_state.sol_vault_bump = ctx.bumps.sol_vault;
 
     offer_list.owner = ctx.accounts.authority.key();
     offer_list.seed = 0;
@@ -40,7 +41,10 @@ pub fn handler(ctx: Context<InitializeAmm>) -> Result<()> {
     offer_list.big_offer = empty_offer;
     offer_list.med_offer = empty_offer;
     offer_list.sml_offer = empty_offer;
-    msg!("did initialize dat AMM for mint {}", amm_state.nyseh_mint);
+    msg!(
+        "did initialize the AMM empty state for mint {}",
+        amm_state.nyseh_mint
+    );
     Ok(())
 }
 
@@ -60,19 +64,17 @@ pub struct InitializeAmm<'info> {
     )]
     pub sol_vault: AccountInfo<'info>,
     #[account(
-        init,
-        payer = authority,
+        mut,
         associated_token::mint = usdc_mint,
-        space = 8
+        associated_token::authority = amm_state,
     )]
     pub usdc_vault: InterfaceAccount<'info, TokenAccount>,
     #[account(
-        init,
-        payer = authority,
+        mut,
         associated_token::mint = nyseh_mint,
         associated_token::authority = amm_state,
     )]
-    pub nyseh_vault: AccountInfo<'info>,
+    pub nyseh_vault: InterfaceAccount<'info, TokenAccount>,
 
     #[account(
         init,
