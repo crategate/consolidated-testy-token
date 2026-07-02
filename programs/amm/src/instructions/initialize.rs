@@ -21,7 +21,7 @@ pub fn handler(ctx: Context<InitializeAmm>) -> Result<()> {
     amm_state.offer_list = offer_list.key();
     amm_state.market_status_pda = ctx.accounts.market_status_pda.key();
     amm_state.crank_program = ctx.accounts.crank_program.key();
-    amm_state.total_sol_rn = 0;
+    amm_state.total_sol_proceeds = 0;
     amm_state.total_usdc_proceeds = 0;
     amm_state.bump = ctx.bumps.amm_state;
     amm_state.sol_vault_bump = ctx.bumps.sol_vault;

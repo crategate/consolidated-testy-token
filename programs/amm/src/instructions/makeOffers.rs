@@ -1,4 +1,4 @@
-use crate::state::offersState;
+use crate::state::offersState::{AmmState, MarketMetrics, Offer, OfferList};
 use crate::BuyBackVault;
 use anchor_lang::prelude::*;
 use anchor_spl::{
@@ -9,31 +9,31 @@ use anchor_spl::{
     },
 };
 
+const MAX_OFFER_PCT_BPS: u16 = 500;
+const MHS_BEAR_THRESHOLD: u64 = 35_00;
+
 #[derive(Accounts)]
 pub struct MakeOffers<'info> {
     #[account(mut)]
-    pub owner: Signer<'info>,
-    pub mint: InterfaceAccount<'info, Mint>,
-    #[account(mut)]
-    pub authority: Signer<'info>,
+    pub cranker: Signer<'info>,
+    #[account(mut, seeds = [b"amm_state", amm_state.nyseh_mint.as_ref()], bump = amm_state.bump,)]
+    pub amm_state: Account<'info, AmmState>,
+
     #[account(
-        init,
-        payer = owner,
-        seeds = [b"tonights_offers", owner.key().as_ref()],
-        bump,
-        space = 39 + 8,
+        mut,
+        seeds = [b"offer_list", amm_state.nyseh_mint.as_ref()],
+        bump = offer_list.bump,
     )]
-    pub offer_list: Account<'info, offersState::OfferList>,
+    pub offer_list: Account<'info, OfferList>,
     #[account(
-        init_if_needed,
-        payer = owner,
-        space = 8 + BuyBackVault::INIT_SPACE,
-        seeds = [b"back_vault", owner.key().as_ref()],
+        seeds = [b"market_status"],
+        seeds::program = amm_state.crank_program,
         bump
     )]
-    pub bb_vault: Account<'info, BuyBackVault>,
+    pub market_status: UncheckedAccount<'info>,
     pub associated_token_program: Program<'info, AssociatedToken>,
-    pub token_program: Interface<'info, TokenInterface>,
+    /// CHECK: live price oracle (mock for devnet, change before mainnet)
+    pub price_oracle: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
 }
 

@@ -41,6 +41,7 @@ pub mod amm {
         // uses 80% of funds made from all last night's claimed offers
         //
         // set limit orders with 10% to catch dips
+        // thes dip catching mechanism should be "always on", not just during trade hours
         Ok(())
     }
 }

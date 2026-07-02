@@ -40,8 +40,20 @@ pub struct AmmState {
     pub offer_list: Pubkey,
     pub market_status_pda: Pubkey,
     pub crank_program: Pubkey,
-    pub total_sol_rn: u64,
+    pub total_sol_proceeds: u64,
     pub total_usdc_proceeds: u64,
+    pub highest_buyback_basis: u64,
     pub bump: u8,
     pub sol_vault_bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct MarketMetrics {
+    pub day_index: u64,
+    pub price_samples: [u64; 5], // 5-day rolling price history
+    pub sample_head: u8,         // circular buffer index
+    pub treasury_sol: u64,
+    pub total_staked: u64,
+    pub total_supply: u64,
 }
