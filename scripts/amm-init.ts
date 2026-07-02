@@ -202,7 +202,9 @@ async function main() {
                 nysehVaultAta,               // to
                 provider.wallet.publicKey,   // authority (signer)
                 BigInt(transferAmount),      // amount
-                9                            // decimals
+                9,        // decimals
+                undefined,
+                TOKEN_2022_PROGRAM_ID
             );
 
             const tx = new Transaction().add(transferIx);

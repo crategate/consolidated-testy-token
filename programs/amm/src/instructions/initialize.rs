@@ -63,16 +63,18 @@ pub struct InitializeAmm<'info> {
         space = 8,
     )]
     pub sol_vault: AccountInfo<'info>,
+    /// CHECK: usdc vault
     #[account(
         mut,
-        associated_token::mint = usdc_mint,
-        associated_token::authority = amm_state,
+ //       associated_token::mint = usdc_mint,
+//        associated_token::authority = amm_state,
     )]
-    pub usdc_vault: InterfaceAccount<'info, TokenAccount>,
+    pub usdc_vault: AccountInfo<'info>,
+    /// CHECK: nyseh vault
     #[account(
         mut,
-        associated_token::mint = nyseh_mint,
-        associated_token::authority = amm_state,
+ //       associated_token::mint = nyseh_mint,
+ //       associated_token::authority = amm_state,
     )]
     pub nyseh_vault: InterfaceAccount<'info, TokenAccount>,
 
