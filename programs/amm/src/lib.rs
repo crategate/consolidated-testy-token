@@ -52,23 +52,6 @@ pub struct BuyBackVault {
     pub vault_bump: u8,
 }
 #[derive(Accounts)]
-#[instruction(amount: u8)]
-pub struct OfferClaim<'info> {
-    pub mint: InterfaceAccount<'info, Mint>,
-    #[account(mut)]
-    pub owner: Signer<'info>,
-    #[account(
-        mut,
-        seeds = [b"back_vault", owner.key().as_ref()],
-        bump
-    )]
-    pub bb_vault: Account<'info, BuyBackVault>,
-    pub associated_token_program: Program<'info, AssociatedToken>,
-    pub token_program: Interface<'info, TokenInterface>,
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
 pub struct CompletedOffers<'info> {
     pub mint: InterfaceAccount<'info, Mint>,
     #[account(mut)]

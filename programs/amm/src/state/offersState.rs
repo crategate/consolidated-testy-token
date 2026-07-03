@@ -5,11 +5,9 @@ use anchor_lang::prelude::*;
 // each individual offer has index
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, InitSpace)]
 pub struct Offer {
-    pub owner: Pubkey,
-
     pub lot_size: u8,     // size in whole NYSEH tokens, 50, 100, 500, 1000, 5k, 10k
     pub vesting_days: u8, // how many trading days to unlock
-    pub discount: u8,     // % bps discount from live DEX prices
+    pub discount_bps: u8, // % bps discount from live DEX prices
     pub remaining: u16,   // how how many units remained offered today
 }
 

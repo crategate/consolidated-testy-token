@@ -32,10 +32,9 @@ pub fn handler(ctx: Context<InitializeAmm>) -> Result<()> {
     offer_list.bump = ctx.bumps.offer_list;
 
     let empty_offer = crate::state::offersState::Offer {
-        owner: Pubkey::default(),
         lot_size: 0,
         vesting_days: 0,
-        discount: 0,
+        discount_bps: 0,
         remaining: 0,
     };
     offer_list.big_offer = empty_offer;
