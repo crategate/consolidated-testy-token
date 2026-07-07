@@ -1,5 +1,4 @@
 use crate::state::offersState::{AmmState, MarketMetrics, Offer, OfferList};
-use crate::BuyBackVault;
 use anchor_lang::prelude::*;
 use anchor_spl::{
     associated_token::AssociatedToken,
@@ -25,6 +24,7 @@ pub struct MakeOffers<'info> {
         bump = offer_list.bump,
     )]
     pub offer_list: Account<'info, OfferList>,
+    /// CHECK: market statusPDA
     #[account(
         seeds = [b"market_status"],
         seeds::program = amm_state.crank_program,
@@ -41,7 +41,7 @@ pub struct MakeOffers<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn make_offers(ctx: Context<MakeOffers>) -> Result<()> {
+pub fn handler(ctx: Context<MakeOffers>) -> Result<()> {
     // executes at end of every trading day analyze market performance
 
     let amm_state = &mut ctx.accounts.amm_state;

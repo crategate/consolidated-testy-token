@@ -32,15 +32,27 @@ pub struct AmmState {
     pub authority: Pubkey,
     pub nyseh_mint: Pubkey,
     pub usdc_mint: Pubkey,
+    // big main vault, initial supply and where fees/buybacks go
+    pub nyseh_vault: Pubkey,
+
+    // used for buybacks executed every trading day (following successful Offer Takes at night)
     pub sol_vault: Pubkey,
     pub usdc_vault: Pubkey,
-    pub nyseh_vault: Pubkey,
+
+    // buyback balances for dips (10% allocated from each Offer sale/completion)
+    pub sol_dip: Pubkey,
+    pub usdc_dip: Pubkey,
+
     pub offer_list: Pubkey,
     pub market_status_pda: Pubkey,
     pub crank_program: Pubkey,
+
     pub total_sol_proceeds: u64,
     pub total_usdc_proceeds: u64,
+
+    // AMM never offers bulk deals with price per share lower than this
     pub highest_buyback_basis: u64,
+
     pub bump: u8,
     pub sol_vault_bump: u8,
 }

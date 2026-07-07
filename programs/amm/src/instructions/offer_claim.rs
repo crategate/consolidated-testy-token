@@ -2,6 +2,7 @@
 
 use crate::state::offersState::{AmmState, Offer, OfferList};
 use anchor_lang::prelude::*;
+use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token_interface::{
     transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked,
 };
@@ -17,31 +18,32 @@ pub struct OfferClaim<'info> {
         seeds = [b"amm_state", amm_state.nyseh_mint.as_ref()],
         bump = amm_state.bump,
     )]
-    pub amm_state: Account<'info, AmmState>,
+    pub amm_state: Box<Account<'info, AmmState>>,
 
     #[account(
         mut,
         seeds = [b"offer_list", amm_state.nyseh_mint.as_ref()],
         bump = offer_list.bump,
     )]
-    pub offer_list: Account<'info, OfferList>,
+    pub offer_list: Box<Account<'info, OfferList>>,
 
-    pub nyseh_mint: InterfaceAccount<'info, Mint>,
+    pub nyseh_mint: Box<InterfaceAccount<'info, Mint>>,
+    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
 
     /// CHECK: Live DEX price oracle (same as make_offers uses)
     pub price_oracle: UncheckedAccount<'info>,
 
     /// Buyer's payment in USDC
     #[account(mut, token::mint = amm_state.usdc_mint, token::authority = buyer)]
-    pub buyer_usdc: InterfaceAccount<'info, TokenAccount>,
+    pub buyer_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
 
     /// AMM's USDC vault (proceeds)
     #[account(mut, address = amm_state.usdc_vault)]
-    pub amm_usdc_vault: InterfaceAccount<'info, TokenAccount>,
+    pub amm_usdc_vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
     /// Source: AMM's NYSEH reserve
     #[account(mut, address = amm_state.nyseh_vault)]
-    pub amm_nyseh_vault: InterfaceAccount<'info, TokenAccount>,
+    pub amm_nyseh_vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
     /// Where purchased NYSEH goes (buyer's ATA, then into staking position)
     #[account(
@@ -50,7 +52,7 @@ pub struct OfferClaim<'info> {
         associated_token::mint = nyseh_mint,
         associated_token::authority = buyer,
     )]
-    pub buyer_nyseh: InterfaceAccount<'info, TokenAccount>,
+    pub buyer_nyseh: Box<InterfaceAccount<'info, TokenAccount>>,
 
     /// CHECK: CPI into staking program to create locked position
     pub staking_program: AccountInfo<'info>,
@@ -60,15 +62,15 @@ pub struct OfferClaim<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn offer_claim(ctx: Context<OfferClaim>, tier: u8, units: u16) -> Result<()> {
+pub fn handler(ctx: Context<OfferClaim>, tier: u8, units: u16) -> Result<()> {
     let amm_state = &mut ctx.accounts.amm_state;
     let offer_list = &mut ctx.accounts.offer_list;
 
     // ── Select tier ──
-    let offer = match tier {
-        0 => &mut offer_list.sml_offer,
-        1 => &mut offer_list.med_offer,
-        2 => &mut offer_list.big_offer,
+    let mut offer = match tier {
+        0 => offer_list.sml_offer,
+        1 => offer_list.med_offer,
+        2 => offer_list.big_offer,
         _ => return err!(ErrorCode::InvalidTier),
     };
 
@@ -107,6 +109,7 @@ pub fn offer_claim(ctx: Context<OfferClaim>, tier: u8, units: u16) -> Result<()>
     // ...
 
     // ── Update offer remaining ──
+
     offer.remaining -= units;
     offer_list.total_complete += units as u32;
 

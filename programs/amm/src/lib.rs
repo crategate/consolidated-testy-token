@@ -22,7 +22,11 @@ pub mod amm {
     pub fn initialize_amm(ctx: Context<InitializeAmm>) -> Result<()> {
         initialize::handler(ctx)
     }
-    pub fn offer_claim(ctx: Context<OfferClaim>, amount: u8) -> Result<()> {
+    pub fn make_offers(ctx: Context<MakeOffers>) -> Result<()> {
+        make_offers::handler(ctx)
+    }
+
+    pub fn offer_claim(ctx: Context<OfferClaim>, tier: u8, units: u16) -> Result<()> {
         // decrease # of offers available by amount
         // multiply amount * market price * discount
         //
@@ -33,23 +37,18 @@ pub mod amm {
         //
         //
         // set 80% for buybacks, 10% to stakers, 10% for favorable/discount buybacks
-        Ok(())
+
+        offer_claim::handler(ctx, tier, units)
     }
 
-    pub fn dex_buyback(ctx: Context<CompletedOffers>) -> Result<()> {
+    pub fn dex_buyback(ctx: Context<DexBuyback>) -> Result<()> {
         // executes at start of every trading day
         // uses 80% of funds made from all last night's claimed offers
         //
         // set limit orders with 10% to catch dips
         // thes dip catching mechanism should be "always on", not just during trade hours
-        Ok(())
+        dex_buyback::handler(ctx)
     }
-}
-#[account]
-#[derive(InitSpace)]
-pub struct BuyBackVault {
-    pub authority: Pubkey,
-    pub vault_bump: u8,
 }
 #[derive(Accounts)]
 pub struct CompletedOffers<'info> {

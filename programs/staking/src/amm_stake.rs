@@ -11,7 +11,7 @@ pub fn create_amm_position(
     ctx: Context<CreateAmmPosition>,
     amount: u64,
     index: u64,
-    days: u8,
+    days_to_unlock: u8,
 ) -> Result<()> {
     // Only callable via CPI from authorized AMM program
     let amm_program_id = ctx.accounts.pool.amm_program;
@@ -26,8 +26,8 @@ pub fn create_amm_position(
 
     require!(amount > 0, StakeError::ZeroAmount);
     require!(amount >= 100, StakeError::MinStake);
-    require!(days > 0, CpiError::InvalidVestingPeriod); // AMM positions MUST vest
-                                                        //
+    require!(days_to_unlock > 0, CpiError::InvalidVestingPeriod); // AMM positions MUST vest
+                                                                  //
     let pool = &mut ctx.accounts.pool;
     let position = &mut ctx.accounts.position;
     let user_index = &mut ctx.accounts.user_index;
@@ -42,7 +42,7 @@ pub fn create_amm_position(
     position.entry_trading_day = trading_day_index;
     position.last_claim_timestamp = clock.unix_timestamp;
     position.index = index;
-    position.days_to_unlock = days;
+    position.days_to_unlock = days_to_unlock;
     position.bump = ctx.bumps.position;
 
     // Update user's next available index
@@ -95,7 +95,7 @@ pub struct UpdateAmmProgram<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(amount: u64, index: u64, days: u8)]
+#[instruction(amount: u64, index: u64, days_to_unlock: u8)]
 pub struct CreateAmmPosition<'info> {
     /// CHECK: Verified below against authorized AMM program ID
     #[account(mut)]

@@ -51,8 +51,40 @@ pub fn handler(ctx: Context<InitializeAmm>) -> Result<()> {
 pub struct InitializeAmm<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
-    pub nyseh_mint: InterfaceAccount<'info, Mint>,
-    pub usdc_mint: InterfaceAccount<'info, Mint>,
+    pub nyseh_mint: Box<InterfaceAccount<'info, Mint>>,
+    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
+    /// CHECK: nyseh vault
+    #[account(
+        init,
+        payer = authority,
+        associated_token::mint = nyseh_mint,
+        associated_token::authority = amm_state,
+    )]
+    pub nyseh_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    /// CHECK: usdc vault
+    #[account(
+        init,
+        payer= authority,
+       associated_token::mint = usdc_mint,
+        associated_token::authority = amm_state,
+    )]
+    pub usdc_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(
+        init,
+        payer = authority,
+        associated_token::mint = usdc_mint,
+        associated_token::authority = amm_state,
+    )]
+    pub usdc_dip: Box<InterfaceAccount<'info, TokenAccount>>,
+    /// CHECK: sol vault for buybacks on dips
+    #[account(
+        init,
+        payer = authority,
+        seeds = [b"amm_sol_dip", nyseh_mint.key().as_ref()],
+        bump,
+        space = 8,
+    )]
+    pub sol_dip: AccountInfo<'info>,
     /// CHECK: sol vault pda to hold sol
     #[account(
         init,
@@ -62,21 +94,6 @@ pub struct InitializeAmm<'info> {
         space = 8,
     )]
     pub sol_vault: AccountInfo<'info>,
-    /// CHECK: usdc vault
-    #[account(
-        mut,
- //       associated_token::mint = usdc_mint,
-//        associated_token::authority = amm_state,
-    )]
-    pub usdc_vault: AccountInfo<'info>,
-    /// CHECK: nyseh vault
-    #[account(
-        mut,
- //       associated_token::mint = nyseh_mint,
- //       associated_token::authority = amm_state,
-    )]
-    pub nyseh_vault: InterfaceAccount<'info, TokenAccount>,
-
     #[account(
         init,
         payer=authority,
@@ -84,7 +101,7 @@ pub struct InitializeAmm<'info> {
         bump,
         space = 8 + AmmState::INIT_SPACE,
     )]
-    pub amm_state: Account<'info, AmmState>,
+    pub amm_state: Box<Account<'info, AmmState>>,
     #[account(
         init,
         payer = authority,

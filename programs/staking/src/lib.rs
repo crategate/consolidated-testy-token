@@ -106,7 +106,7 @@ pub mod staking {
         pool.vault = ctx.accounts.vault.key();
         pool.reward_vault = ctx.accounts.reward_vault.key();
         pool.penalty_vault = ctx.accounts.penalty_vault.key();
-        pool.posr_vault = ctx.accounts.posr_vault.key();
+        pool.nyseh_vault = ctx.accounts.nyseh_vault.key();
         pool.total_staked = 0;
         pool.total_weighted_stake = 0;
         pool.max_multiplier_bps = max_multiplier_bps;
@@ -260,12 +260,12 @@ pub mod staking {
 
         let signer_seeds: &[&[&[u8]]] = &[&[b"pool", pool.mint.as_ref(), &[pool.bump]]];
 
-        // Send POSR tax to posr_vault
+        // Send POSR tax to the big AMM nyseh_vault
         if posr_tax > 0 {
             let cpi = TransferChecked {
                 from: ctx.accounts.reward_vault.to_account_info(),
                 mint: ctx.accounts.mint.to_account_info(),
-                to: ctx.accounts.posr_vault.to_account_info(),
+                to: ctx.accounts.nyseh_vault.to_account_info(),
                 authority: pool.to_account_info(),
             };
             transfer_checked(
@@ -415,7 +415,7 @@ pub mod staking {
             let cpi = TransferChecked {
                 from: ctx.accounts.reward_vault.to_account_info(),
                 mint: ctx.accounts.mint.to_account_info(),
-                to: ctx.accounts.posr_vault.to_account_info(),
+                to: ctx.accounts.nyseh_vault.to_account_info(),
                 authority: pool.to_account_info(),
             };
             transfer_checked(
@@ -433,7 +433,7 @@ pub mod staking {
             let cpi = TransferChecked {
                 from: ctx.accounts.vault.to_account_info(),
                 mint: ctx.accounts.mint.to_account_info(),
-                to: ctx.accounts.posr_vault.to_account_info(),
+                to: ctx.accounts.nyseh_vault.to_account_info(),
                 authority: pool.to_account_info(),
             };
             transfer_checked(
@@ -505,7 +505,7 @@ pub struct StakePool {
     pub vault: Pubkey,
     pub reward_vault: Pubkey,
     pub penalty_vault: Pubkey,
-    pub posr_vault: Pubkey,
+    pub nyseh_vault: Pubkey,
     pub total_staked: u64,
     pub total_weighted_stake: u128,
     pub max_multiplier_bps: u16,
@@ -593,7 +593,7 @@ pub struct InitializePool<'info> {
         token::mint = mint,
         token::authority = pool,
     )]
-    pub posr_vault: InterfaceAccount<'info, TokenAccount>,
+    pub nyseh_vault: InterfaceAccount<'info, TokenAccount>,
     /// CHECK: Verified in instruction via find_program_address
     pub market_status_pda: UncheckedAccount<'info>,
     pub token_program: Interface<'info, TokenInterface>,
@@ -665,8 +665,8 @@ pub struct Claim<'info> {
     pub position: Box<Account<'info, StakePosition>>,
     #[account(mut, token::mint = mint, token::authority = pool)]
     pub reward_vault: Box<InterfaceAccount<'info, TokenAccount>>,
-    #[account(mut, token::mint = mint, token::authority = pool)]
-    pub posr_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(mut, address= pool.nyseh_vault)]
+    pub nyseh_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, token::mint = mint, token::authority = owner)]
     pub owner_token: Box<InterfaceAccount<'info, TokenAccount>>,
     /// CHECK: Address verified by pool.market_status_pda constraint
@@ -690,8 +690,8 @@ pub struct Unstake<'info> {
     pub reward_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, token::mint = mint, token::authority = pool)]
     pub penalty_vault: Box<InterfaceAccount<'info, TokenAccount>>,
-    #[account(mut, token::mint = mint, token::authority = pool)]
-    pub posr_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(mut, address = pool.nyseh_vault)]
+    pub nyseh_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, token::mint = mint, token::authority = owner)]
     pub owner_token: Box<InterfaceAccount<'info, TokenAccount>>,
     /// CHECK: Address verified by pool.market_status_pda constraint
