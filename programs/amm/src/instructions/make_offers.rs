@@ -1,4 +1,4 @@
-use crate::state::offersState::{AmmState, MarketMetrics, Offer, OfferList};
+use crate::state::offersState::{AcceptedOffers, AmmState, MarketMetrics, Offer, OfferList};
 use anchor_lang::prelude::*;
 use anchor_spl::{
     associated_token::AssociatedToken,
@@ -31,8 +31,13 @@ pub struct MakeOffers<'info> {
         bump
     )]
     pub market_status: UncheckedAccount<'info>,
+
     #[account(mut, seeds = [b"metrics", amm_state.nyseh_mint.as_ref()], bump)]
     pub metrics: Account<'info, MarketMetrics>,
+
+    #[account(mut, seeds = [b"accepted_offers", amm_state.nyseh_mint.as_ref()], bump)]
+    pub accepted_offers: Account<'info, AcceptedOffers>,
+
     /// CHECK: nyse_vault for balance capping
     #[account(mut, address = amm_state.nyseh_vault)]
     pub nyseh_vault: AccountInfo<'info>,
@@ -48,6 +53,7 @@ pub fn handler(ctx: Context<MakeOffers>) -> Result<()> {
     let offer_list = &mut ctx.accounts.offer_list;
     let metrics = &mut ctx.accounts.metrics;
     let market_status = &ctx.accounts.market_status;
+    let accepted_offers = &ctx.accounts.accepted_offers;
     // determine offers available
     // no more than 5% of total POSR
     let caller = ctx.accounts.cranker.key();
@@ -68,33 +74,36 @@ pub fn handler(ctx: Context<MakeOffers>) -> Result<()> {
         ErrorCode::AlreadyConstructed
     );
     metrics.day_index = current_day;
-    let mhs = calculate_mhs(metrics)?;
-    msg!("the MHS today ({}) is calculated to {}", current_day, mhs);
+    let momentum = calculate_momentum_score(metrics);
+    let stake_health = calculate_stake_health(metrics);
+    let offer_aggression = offer_accepted_aggression(accepted_offers);
+    msg!(
+        "the stake health ({}) & momentum {} for today  {}",
+        stake_health,
+        momentum,
+        current_day,
+    );
     // build offer list & write to account
 
     Ok(())
 }
 
-fn calculate_mhs(metrics: &MarketMetrics) -> Result<u64> {
-    let treasury_ratio = if metrics.total_supply > 0 {
-        (metrics.treasury_sol * 100) / metrics.total_supply
-    } else {
-        0
-    };
-
-    let staking_ratio = if metrics.total_supply > 0 {
-        (metrics.total_staked * 100) / metrics.total_supply
-    } else {
-        0
-    };
-
-    let perf = calculate_performance_score(metrics);
-
-    Ok(((treasury_ratio * 40) + (staking_ratio * 30) + (perf * 30)) / 100)
+fn calculate_stake_health(metrics: &MarketMetrics) -> u8 {
+    //
+    // metric that uses staked shares / total deployed supply(supply NYSEH token NOT left in AMM_vault)
+    4 as u8
+}
+fn offer_accepted_aggression(accepted_offers: &AcceptedOffers) -> u8 {
+    // this metric will look at what % of each offer tier was accepted
+    // if offers aren't being accepted,
+    // discount should tick higher, and lot sizes/vesting days decrease
+    4 as u8
 }
 
-fn calculate_performance_score(metrics: &MarketMetrics) -> u64 {
-    let head = metrics.sample_head as usize;
+fn calculate_momentum_score(metrics: &MarketMetrics) -> u8 {
+    // trailing market performance metric of the NYSEH token
+    // should use moving average, current price, trade volume moving average, as well as individual trading day change
+    //let head = metrics.sample_head as usize;
     if metrics.price_samples[head] == 0 {
         return 50_00; // neutral
     }
@@ -112,7 +121,7 @@ fn calculate_performance_score(metrics: &MarketMetrics) -> u64 {
     let ret = ((metrics.price_samples[head] as i128 - old as i128) * 100) / old as i128;
     // Negative return = higher score (contrarian)
     let score = 50_00i128 - (ret * 100);
-    score.clamp(0, 100_00) as u64
+    score.clamp(0, 100_00) as u8
 }
 
 fn read_reference_price(price_oracle: &AccountInfo) -> Result<u64> {
@@ -126,6 +135,7 @@ fn empty_offer() -> Offer {
         vesting_days: 0,
         discount_bps: 0,
         remaining: 0,
+        total_offered: 0,
     }
 }
 

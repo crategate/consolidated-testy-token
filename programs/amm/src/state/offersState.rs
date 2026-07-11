@@ -2,13 +2,43 @@ use core::str;
 
 use anchor_lang::prelude::*;
 
+pub fn lot_sizer(tier: u8) -> u16 {
+    match tier {
+        0 => 0,
+        1 => 10,
+        2 => 25,
+        3 => 50,
+        4 => 100,
+        5 => 250,
+        6 => 500,
+        7 => 750,
+        8 => 1000,
+        9 => 2500,
+        10 => 5000,
+        11 => 7500,
+        12 => 10000,
+        13 => 15000,
+        14 => 20000,
+        15 => 50000,
+        16 => 100000,
+        17 => 250000,
+        18 => 500000,
+        19 => 1000000,
+        20 => 2500000,
+        21 => 5000000,
+        _ => 0,
+    }
+}
 // each individual offer has index
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, InitSpace)]
 pub struct Offer {
-    pub lot_size: u8,     // size in whole NYSEH tokens, 50, 100, 500, 1000, 5k, 10k
+    pub lot_size: u8, // size in whole NYSEH tokens, 50, 100, 500, 1000, 5k, 10k, translated
+    // with "lot sizer" function
     pub vesting_days: u8, // how many trading days to unlock
-    pub discount_bps: u8, // % bps discount from live DEX prices
-    pub remaining: u16,   // how how many units remained offered today
+    pub discount_bps: u8, // % bps discount from live DEX prices,
+    //                      (tenth percent resolution so 115 = 11.5%)
+    pub remaining: u8,     // how how many units remained offered today
+    pub total_offered: u8, // how many total of this offer to start with
 }
 
 #[derive(InitSpace)]
@@ -44,6 +74,7 @@ pub struct AmmState {
     pub usdc_dip: Pubkey,
 
     pub offer_list: Pubkey,
+    pub accepted_offers: Pubkey,
     pub market_status_pda: Pubkey,
     pub crank_program: Pubkey,
 
@@ -59,11 +90,25 @@ pub struct AmmState {
 
 #[account]
 #[derive(InitSpace)]
+pub struct AcceptedOffers {
+    #[max_len(5)]
+    pub big_offers_accepted: Vec<u8>, // stored as whole number % (0-100), last 5 offer instances
+    // should be 0 for days when no offers were available (bear cycle)
+    #[max_len(5)]
+    pub med_offers_accepted: Vec<u8>,
+    #[max_len(5)]
+    pub sml_offers_accepted: Vec<u8>,
+    // THESE and price_samples, and trailing stake health could be converted to sample_head
+    // circular buffer arrays to save CPU cycles
+    // when optimizing for mainnet.
+}
+#[account]
+#[derive(InitSpace)]
 pub struct MarketMetrics {
     pub day_index: u64,
-    pub price_samples: [u64; 5], // 5-day rolling price history
-    pub sample_head: u8,         // circular buffer index
+    pub price_samples: [u64; 5], // 5-trading-day rolling price history (TWAP of trading hours only)
     pub treasury_sol: u64,
     pub total_staked: u64,
     pub total_supply: u64,
+    pub trailing_stake_health: [u8; 5], // used to calculate stake health!
 }
