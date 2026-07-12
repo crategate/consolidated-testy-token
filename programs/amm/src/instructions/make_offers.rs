@@ -91,13 +91,19 @@ pub fn handler(ctx: Context<MakeOffers>) -> Result<()> {
 fn calculate_stake_health(metrics: &MarketMetrics) -> u8 {
     //
     // metric that uses staked shares / total deployed supply(supply NYSEH token NOT left in AMM_vault)
+    //
+    // and change in staking over time
     4 as u8
 }
-fn offer_accepted_aggression(accepted_offers: &AcceptedOffers) -> u8 {
+fn offer_accepted_aggression(accepted_offers: &AcceptedOffers) -> [u8; 3] {
     // this metric will look at what % of each offer tier was accepted
     // if offers aren't being accepted,
     // discount should tick higher, and lot sizes/vesting days decrease
-    4 as u8
+    let big_average5day: u8 = accepted_offers.big_offers_accepted.iter().sum::<u8>() / 5;
+    let med_average5day: u8 = accepted_offers.big_offers_accepted.iter().sum::<u8>() / 5;
+    let sml_average5day: u8 = accepted_offers.big_offers_accepted.iter().sum::<u8>() / 5;
+    [big_average5day, med_average5day, sml_average5day]
+    // these values should be updated at the END of an offer period (Beginning of next trading day)
 }
 
 fn calculate_momentum_score(metrics: &MarketMetrics) -> u8 {

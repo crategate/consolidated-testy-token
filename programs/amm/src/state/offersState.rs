@@ -91,13 +91,10 @@ pub struct AmmState {
 #[account]
 #[derive(InitSpace)]
 pub struct AcceptedOffers {
-    #[max_len(5)]
-    pub big_offers_accepted: Vec<u8>, // stored as whole number % (0-100), last 5 offer instances
+    pub big_offers_accepted: [u8; 5], // stored as whole number % (0-100), last 5 offer instances
     // should be 0 for days when no offers were available (bear cycle)
-    #[max_len(5)]
-    pub med_offers_accepted: Vec<u8>,
-    #[max_len(5)]
-    pub sml_offers_accepted: Vec<u8>,
+    pub med_offers_accepted: [u8; 5],
+    pub sml_offers_accepted: [u8; 5],
     // THESE and price_samples, and trailing stake health could be converted to sample_head
     // circular buffer arrays to save CPU cycles
     // when optimizing for mainnet.
@@ -110,5 +107,5 @@ pub struct MarketMetrics {
     pub treasury_sol: u64,
     pub total_staked: u64,
     pub total_supply: u64,
-    pub trailing_stake_health: [u8; 5], // used to calculate stake health!
+    pub trailing_stake_health: [u8; 5], // used to calculate stake health, simple whole number %
 }
