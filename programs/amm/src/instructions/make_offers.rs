@@ -95,15 +95,38 @@ fn calculate_stake_health(metrics: &MarketMetrics) -> u8 {
     // and change in staking over time
     4 as u8
 }
-fn offer_accepted_aggression(accepted_offers: &AcceptedOffers) -> [u8; 3] {
+fn offer_accepted_aggression(accepted: &AcceptedOffers) -> u16 {
     // this metric will look at what % of each offer tier was accepted
     // if offers aren't being accepted,
     // discount should tick higher, and lot sizes/vesting days decrease
-    let big_average5day: u8 = accepted_offers.big_offers_accepted.iter().sum::<u8>() / 5;
-    let med_average5day: u8 = accepted_offers.big_offers_accepted.iter().sum::<u8>() / 5;
-    let sml_average5day: u8 = accepted_offers.big_offers_accepted.iter().sum::<u8>() / 5;
-    [big_average5day, med_average5day, sml_average5day]
     // these values should be updated at the END of an offer period (Beginning of next trading day)
+    //
+    // Weighted by recency: day 0 (oldest) = 1x, day 4 (most recent) = 5x
+    const RECENCY_WEIGHTS: [u16; 5] = [1, 2, 3, 4, 5];
+
+    // Tier weights: big lots signal more conviction
+    const TIER_WEIGHTS: [u16; 3] = [1, 2, 4]; // sml, med, big
+
+    let tiers = [
+        &accepted.sml_offers_accepted,
+        &accepted.med_offers_accepted,
+        &accepted.big_offers_accepted,
+    ];
+
+    let mut total_weighted: u16 = 0;
+    let mut total_possible: u16 = 0;
+
+    for (tier_idx, tier_samples) in tiers.iter().enumerate() {
+        for (day_idx, &pct) in tier_samples.iter().enumerate() {
+            let weight = RECENCY_WEIGHTS[day_idx] * TIER_WEIGHTS[tier_idx];
+            total_weighted += (pct as u16) * weight;
+            total_possible += 100 * weight;
+        }
+    }
+
+    // Returns 0-10000 (basis points, 2 decimal precision)
+    // 0 = dead, 10000 = every offer cleared instantly for 5 days
+    (total_weighted * 10000) / total_possible
 }
 
 fn calculate_momentum_score(metrics: &MarketMetrics) -> u8 {

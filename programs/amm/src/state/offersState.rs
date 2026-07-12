@@ -88,6 +88,7 @@ pub struct AmmState {
     pub sol_vault_bump: u8,
 }
 
+// update beginning of trading day plz
 #[account]
 #[derive(InitSpace)]
 pub struct AcceptedOffers {
