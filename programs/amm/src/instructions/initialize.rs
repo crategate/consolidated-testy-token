@@ -36,6 +36,7 @@ pub fn handler(ctx: Context<InitializeAmm>) -> Result<()> {
         vesting_days: 0,
         discount_bps: 0,
         remaining: 0,
+        total_offered: 0,
     };
     offer_list.big_offer = empty_offer;
     offer_list.med_offer = empty_offer;

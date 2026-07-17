@@ -26,7 +26,7 @@ pub mod amm {
         make_offers::handler(ctx)
     }
 
-    pub fn offer_claim(ctx: Context<OfferClaim>, tier: u8, units: u16) -> Result<()> {
+    pub fn offer_claim(ctx: Context<OfferClaim>, tier: u8, units: u8) -> Result<()> {
         // decrease # of offers available by amount
         // multiply amount * market price * discount
         //

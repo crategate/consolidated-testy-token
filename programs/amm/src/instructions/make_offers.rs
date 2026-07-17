@@ -101,8 +101,7 @@ fn offer_accepted_aggression(accepted: &AcceptedOffers) -> u16 {
     // discount should tick higher, and lot sizes/vesting days decrease
     // these values should be updated at the END of an offer period (Beginning of next trading day)
     //
-    // Weighted by recency: day 0 (oldest) = 1x, day 4 (most recent) = 5x
-    const RECENCY_WEIGHTS: [u16; 5] = [1, 2, 3, 4, 5];
+    const RECENCY_WEIGHTS: [u16; 5] = [5, 6, 7, 8, 9];
 
     // Tier weights: big lots signal more conviction
     const TIER_WEIGHTS: [u16; 3] = [1, 2, 4]; // sml, med, big
@@ -133,24 +132,7 @@ fn calculate_momentum_score(metrics: &MarketMetrics) -> u8 {
     // trailing market performance metric of the NYSEH token
     // should use moving average, current price, trade volume moving average, as well as individual trading day change
     //let head = metrics.sample_head as usize;
-    if metrics.price_samples[head] == 0 {
-        return 50_00; // neutral
-    }
-    let tail = ((head + 5 - 4) % 5) as usize;
-    let old = if metrics.price_samples[tail] > 0 {
-        metrics.price_samples[tail]
-    } else {
-        metrics.price_samples[head]
-    };
-
-    if old == 0 {
-        return 50_00;
-    }
-
-    let ret = ((metrics.price_samples[head] as i128 - old as i128) * 100) / old as i128;
-    // Negative return = higher score (contrarian)
-    let score = 50_00i128 - (ret * 100);
-    score.clamp(0, 100_00) as u8
+    4
 }
 
 fn read_reference_price(price_oracle: &AccountInfo) -> Result<u64> {

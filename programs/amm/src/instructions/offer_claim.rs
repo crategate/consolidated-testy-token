@@ -62,7 +62,7 @@ pub struct OfferClaim<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler(ctx: Context<OfferClaim>, tier: u8, units: u16) -> Result<()> {
+pub fn handler(ctx: Context<OfferClaim>, tier: u8, units: u8) -> Result<()> {
     let amm_state = &mut ctx.accounts.amm_state;
     let offer_list = &mut ctx.accounts.offer_list;
 

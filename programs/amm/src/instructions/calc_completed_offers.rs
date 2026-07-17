@@ -8,8 +8,10 @@ use anchor_spl::{
     },
 };
 
+// Fires off at beginning of trade day.
+
 #[derive(Accounts)]
-pub struct DexBuyback<'info> {
+pub struct CalcCompletedOffers<'info> {
     #[account(mut)]
     pub cranker: Signer<'info>,
     #[account(mut, seeds = [b"amm_state", amm_state.nyseh_mint.as_ref()], bump = amm_state.bump,)]
@@ -21,30 +23,24 @@ pub struct DexBuyback<'info> {
         bump = offer_list.bump,
     )]
     pub offer_list: Account<'info, OfferList>,
-    #[account(
-        seeds = [b"market_status"],
-        seeds::program = amm_state.crank_program,
-        bump
-    )]
-    /// CHECK: market status PDA
-    pub market_status: UncheckedAccount<'info>,
     #[account(mut, seeds = [b"metrics", amm_state.nyseh_mint.as_ref()], bump)]
     pub metrics: Account<'info, MarketMetrics>,
     /// CHECK: nyse_vault for balance capping
-    #[account(mut, address = amm_state.nyseh_vault)]
-    pub nyseh_vault: AccountInfo<'info>,
-    /// CHECK: live price oracle (mock for devnet, change before mainnet)
-    pub price_oracle: UncheckedAccount<'info>,
-
     pub accepted_offers: Account<'info, AcceptedOffers>,
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
+pub fn handler(ctx: Context<CalcCompletedOffers>) -> Result<()> {
+    let after_offer_data = &mut ctx.accounts.accepted_offers;
+    let big_pct = ctx.accounts.offer_list.big_offer.
+
+    update_offer_sheet_records(accepted: &mut after_offer_data, big_pct: , med_pct, sml_pct);
+
     Ok(())
 }
-// Update our percentages of the AcceptedOffers account
-fn record_acceptance(accepted: &mut AcceptedOffers, big_pct: u8, med_pct: u8, sml_pct: u8) {
+
+// Update percentages of the AcceptedOffers account
+fn update_offer_sheet_records(accepted: &mut AcceptedOffers, big_pct: u8, med_pct: u8, sml_pct: u8) {
     accepted.big_offers_accepted.copy_within(1.., 0);
     accepted.big_offers_accepted[4] = big_pct;
 

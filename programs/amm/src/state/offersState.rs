@@ -2,7 +2,7 @@ use core::str;
 
 use anchor_lang::prelude::*;
 
-pub fn lot_sizer(tier: u8) -> u16 {
+pub fn lot_sizer(tier: u8) -> u32 {
     match tier {
         0 => 0,
         1 => 10,
