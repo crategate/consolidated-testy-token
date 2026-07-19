@@ -75,27 +75,27 @@ export function useStake(mint: PublicKey | null, marketStatusPda?: PublicKey) {
 
         const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
 
-        const tx = await program.methods
-            .stake(stakeAmount, new BN(index))
-            .accounts({
-                owner: publicKey,
-                mint,
-                pool: poolPda,
-                userIndex: userIndexPda,
-                position: positionPda,
-                ownerToken,
-                vault: vaultPda,
-                marketStatus,
-                tokenProgram: TOKEN_2022_PROGRAM_ID,
-                systemProgram: SystemProgram.programId,
-            })
-            .transaction();  // <-- build tx, don't send yet
+        //     const tx = await program.methods
+        //         .stake(stakeAmount, new BN(index), 0)
+        //         .accounts({
+        //             owner: publicKey,
+        //             mint,
+        //             pool: poolPda,
+        //             userIndex: userIndexPda,
+        //             position: positionPda,
+        //             ownerToken,
+        //             vault: vaultPda,
+        //             marketStatus,
+        //             tokenProgram: TOKEN_2022_PROGRAM_ID,
+        //             systemProgram: SystemProgram.programId,
+        //         })
+        //         .transaction();  // <-- build tx, don't send yet
 
-        tx.recentBlockhash = blockhash;
-        tx.feePayer = publicKey;
+        //     tx.recentBlockhash = blockhash;
+        //     tx.feePayer = publicKey;
 
         // Phantom will sign and send
-        const signature = await program.methods.stake(stakeAmount, new BN(index)).accounts({
+        const signature = await program.methods.stake(stakeAmount, new BN(index), 0).accounts({
             owner: publicKey,
             mint,
             pool: poolPda,

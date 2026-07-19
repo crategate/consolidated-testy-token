@@ -3,14 +3,15 @@ import { MarketStatus } from './components/MarketStatus';
 import { PoolStats } from './components/PoolStats';
 import { WalletDashboard } from './components/WalletDashboard';
 import { useDeployment } from './hooks/useDeployment';
-import { useMarketStatus } from './hooks/useMarketStatus.ts';
+//import { useMarketStatus } from './hooks/useMarketStatus.ts';
+import { UnderConstruction } from './components/UnderConstruction.tsx';
 
 function App() {
     const { connected } = useWallet();
     const { deployment, loading, error } = useDeployment();
-    const otc_status = true;
+    //   const otc_status = true;
 
-    const { data, stale } = useMarketStatus(deployment?.marketStatusKey);
+    //    const { data, stale } = useMarketStatus(deployment?.marketStatusKey);
     if (loading) {
         return <div className="app-shell">Loading deployment...</div>;
     }
@@ -21,19 +22,24 @@ function App() {
 
     return (
         <div className={`app-shell ${connected ? 'has-wallet' : ''}`}>
-            {!connected && (
-                <section className="dashboard-section neon-glitch">
-                    <WalletDashboard deployment={deployment} />
-                </section>
-            )}
+            <UnderConstruction />
+            {
+                !connected && (
+                    <section className="dashboard-section neon-glitch">
+                        <WalletDashboard deployment={deployment} />
+                    </section>
+                )
+            }
 
 
 
-            {connected && (
-                <section className="dashboard-section neon-glitch">
-                    <WalletDashboard deployment={deployment} />
-                </section>
-            )}
+            {
+                connected && (
+                    <section className="dashboard-section neon-glitch">
+                        <WalletDashboard deployment={deployment} />
+                    </section>
+                )
+            }
 
             <div className="market-status-wrapper neon-glitch">
                 <MarketStatus marketStatusPda={deployment.marketStatusKey} />
@@ -42,7 +48,7 @@ function App() {
             <section className="stats-section neon-glitch">
                 <PoolStats mint={deployment.mintKey} />
             </section>
-        </div>
+        </div >
     );
 }
 

@@ -8,6 +8,12 @@ type DeploymentState = {
     mint?: string;
     stakingProgram?: string;
     crankProgram?: string;
+    ammProgram?: string;
+    ammState?: string;
+    ammOfferList?: string;
+    ammSolVault?: string;
+    ammUsdcVault?: string;
+    ammNysehVault?: string;
     coinMintProgram?: string;
     pool?: string;
     vault?: string;

@@ -54,7 +54,17 @@ async function main() {
         NYSEH_MINT = new PublicKey(mintArg);
         console.log("Using mint from argument:", NYSEH_MINT.toBase58());
     }
+    const ammKeyPath = path.join(process.cwd(), "target", "deploy", "amm-keypair.json");
+    let AMM_PROGRAM_ID: PublicKey;
 
+    if (fs.existsSync(ammKeyPath)) {
+        const ammKeyData = JSON.parse(fs.readFileSync(ammKeyPath, "utf-8"));
+        const ammKeypair = Keypair.fromSecretKey(new Uint8Array(ammKeyData));
+        AMM_PROGRAM_ID = ammKeypair.publicKey;
+        console.log("AMM program:", AMM_PROGRAM_ID.toBase58());
+    } else {
+        throw new Error("amm-keypair.json not found. Run 'anchor build' first.");
+    }
     // ── 4. Derive all PDAs ──
     const [poolPda] = PublicKey.findProgramAddressSync(
         [Buffer.from("pool"), NYSEH_MINT.toBuffer()],
@@ -94,6 +104,7 @@ async function main() {
         mint: pubkey(NYSEH_MINT),
         stakingProgram: pubkey(stakingProgram.programId),
         crankProgram: pubkey(CRANK_PROGRAM_ID),
+        ammProgram: pubkey(AMM_PROGRAM_ID),
         pool: pubkey(poolPda),
         vault: pubkey(vaultPda),
         rewardVault: pubkey(rewardVaultPda),
@@ -102,6 +113,7 @@ async function main() {
         marketStatus: pubkey(marketStatusPda),
     });
 
+
     // ── 5. Initialize pool ──
     try {
         const tx = await stakingProgram.methods
@@ -109,9 +121,10 @@ async function main() {
                 CRANK_PROGRAM_ID,
                 30000,              // max multiplier 3.0x
                 500,                // POSR tax 5%
-                2000,                // after hours penalty 20%
-                3500,               // closed penalty 35%
-                5000,               // halted penalty 50%
+                400,                // after hours penalty 4%
+                800,               // closed penalty 8%
+                1800,               // halted penalty 18
+                AMM_PROGRAM_ID,
             )
             .accounts({
                 authority: provider.wallet.publicKey,

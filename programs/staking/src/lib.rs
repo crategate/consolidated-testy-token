@@ -3,6 +3,8 @@ use anchor_spl::token_interface::{
     transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked,
 };
 
+mod amm_stake;
+use amm_stake::create_amm_position;
 // =============================================================================
 // NYSEH STAKING PROGRAM — COMPLETE IMPLEMENTATION
 // =============================================================================
@@ -16,8 +18,8 @@ use anchor_spl::token_interface::{
 // REWARD MODEL: Pure Multiplier-Weighted Distribution (No Time-Based Yield)
 // ------------------------------------------------------------------------
 // There is NO automatic yield accrual over time. Rewards come exclusively from:
-//   1. Penalties paid by users who claim/unstake during non-market-open hours
-//   2. External deposits (AMM revenue, admin deposits, etc.)
+//   1. Penalties paid by users who claim during non-market-open hours
+//   2. External deposits (AMM revenue)
 //
 // The multiplier (1.0x → 3.0x logarithmic) determines your SHARE of rewards.
 // Longer lock = higher multiplier = bigger slice of the penalty/AMM pie.
@@ -38,7 +40,7 @@ use anchor_spl::token_interface::{
 //   - State 2 (Closed):    configurable (e.g., 1500 = 15%)
 //   - State 3 (Halted):    configurable (e.g., 3000 = 30%)
 //
-// POSR TAX: 5% on all claims and unstakes → goes to protocol-owned reserve
+// POSR TAX: 5% on all claims and 1% on unstakes → goes to protocol-owned reserve
 //
 // USER STORIES
 // ------------
@@ -69,7 +71,7 @@ use anchor_spl::token_interface::{
 //   → Alice's next claim includes her share of Bob's penalty
 // =============================================================================
 
-declare_id!("3qCCL948HaJ7ssUNdSTH6igCCCWR3aHkZrroEN5N3gXp");
+declare_id!("8pg4vnWVu5EiiBdrBF3ck1STsMToqDQAezYwZLPt3PbY");
 
 #[program]
 pub mod staking {
@@ -87,6 +89,7 @@ pub mod staking {
         after_hours_penalty_bps: u16, // Penalty: state 1 (after hours)
         closed_penalty_bps: u16, // Penalty: state 2 (market closed)
         halted_penalty_bps: u16, // Penalty: state 3 (trading halted)
+        amm_program: Pubkey,
     ) -> Result<()> {
         // SECURITY: Verify the passed market_status_pda matches what the crank
         // oracle program would derive. Prevents initializing with a fake oracle.
@@ -103,7 +106,7 @@ pub mod staking {
         pool.vault = ctx.accounts.vault.key();
         pool.reward_vault = ctx.accounts.reward_vault.key();
         pool.penalty_vault = ctx.accounts.penalty_vault.key();
-        pool.posr_vault = ctx.accounts.posr_vault.key();
+        pool.nyseh_vault = ctx.accounts.nyseh_vault.key();
         pool.total_staked = 0;
         pool.total_weighted_stake = 0;
         pool.max_multiplier_bps = max_multiplier_bps;
@@ -114,7 +117,9 @@ pub mod staking {
         pool.accrued_reward_per_share = 0;
         pool.market_status_pda = ctx.accounts.market_status_pda.key();
         pool.bump = ctx.bumps.pool;
+        pool.amm_program = amm_program;
 
+        msg!("Pool initialized with AMM program: {}", amm_program);
         msg!("Pool initialized for mint {}", pool.mint);
         msg!(
             "Max multiplier: {} bps, POSR tax: {} bps",
@@ -150,7 +155,7 @@ pub mod staking {
     // Called by user to lock tokens. Creates a new StakePosition PDA.
     // Each stake transaction creates a separate position (index 0, 1, 2...).
     // -------------------------------------------------------------------------
-    pub fn stake(ctx: Context<Stake>, amount: u64, index: u64) -> Result<()> {
+    pub fn stake(ctx: Context<Stake>, amount: u64, index: u64, days: u8) -> Result<()> {
         require!(amount > 0, StakeError::ZeroAmount);
         require!(amount >= 100, StakeError::MinStake);
 
@@ -168,6 +173,7 @@ pub mod staking {
         position.entry_trading_day = trading_day_index;
         position.last_claim_timestamp = clock.unix_timestamp;
         position.index = index;
+        position.days_to_unlock = days;
         position.bump = ctx.bumps.position;
 
         // Update user's next available index
@@ -219,6 +225,9 @@ pub mod staking {
         let current_state = get_market_state(&ctx.accounts.market_status)?;
         require!(current_state == 0, StakeError::ClaimsClosed);
 
+        //reject if vesting
+        require!(position.days_to_unlock < 1, StakeError::Vesting);
+
         // Settle rewards at the last applied weight so a multiplier increase
         // only affects future reward distributions.
         let old_weight = position.current_weight;
@@ -251,12 +260,12 @@ pub mod staking {
 
         let signer_seeds: &[&[&[u8]]] = &[&[b"pool", pool.mint.as_ref(), &[pool.bump]]];
 
-        // Send POSR tax to posr_vault
+        // Send POSR tax to the big AMM nyseh_vault
         if posr_tax > 0 {
             let cpi = TransferChecked {
                 from: ctx.accounts.reward_vault.to_account_info(),
                 mint: ctx.accounts.mint.to_account_info(),
-                to: ctx.accounts.posr_vault.to_account_info(),
+                to: ctx.accounts.nyseh_vault.to_account_info(),
                 authority: pool.to_account_info(),
             };
             transfer_checked(
@@ -304,6 +313,8 @@ pub mod staking {
         let pool = &mut ctx.accounts.pool;
         let current_state = get_market_state(&ctx.accounts.market_status)?;
         let trading_day_index = get_trading_day_index(&ctx.accounts.market_status)?;
+
+        require!(position.days_to_unlock < 1, StakeError::Vesting);
 
         // Settle pending rewards at the position's last applied weight.
         let old_weight = position.current_weight;
@@ -404,7 +415,7 @@ pub mod staking {
             let cpi = TransferChecked {
                 from: ctx.accounts.reward_vault.to_account_info(),
                 mint: ctx.accounts.mint.to_account_info(),
-                to: ctx.accounts.posr_vault.to_account_info(),
+                to: ctx.accounts.nyseh_vault.to_account_info(),
                 authority: pool.to_account_info(),
             };
             transfer_checked(
@@ -422,7 +433,7 @@ pub mod staking {
             let cpi = TransferChecked {
                 from: ctx.accounts.vault.to_account_info(),
                 mint: ctx.accounts.mint.to_account_info(),
-                to: ctx.accounts.posr_vault.to_account_info(),
+                to: ctx.accounts.nyseh_vault.to_account_info(),
                 authority: pool.to_account_info(),
             };
             transfer_checked(
@@ -454,8 +465,8 @@ pub mod staking {
 
 fn get_principal_unstake_penalty_bps(current_state: u8) -> u64 {
     match current_state {
-        1 => 300,  // extended hours
-        2 => 700,  // market closed
+        1 => 400,  // extended hours
+        2 => 800,  // market closed
         3 => 1800, // trading halted
         _ => 0,
     }
@@ -487,13 +498,14 @@ fn calculate_multiplier(trading_days: u64, max_bps: u16) -> u64 {
 // =============================================================================
 
 #[account]
+#[derive(InitSpace)]
 pub struct StakePool {
     pub authority: Pubkey,
     pub mint: Pubkey,
     pub vault: Pubkey,
     pub reward_vault: Pubkey,
     pub penalty_vault: Pubkey,
-    pub posr_vault: Pubkey,
+    pub nyseh_vault: Pubkey,
     pub total_staked: u64,
     pub total_weighted_stake: u128,
     pub max_multiplier_bps: u16,
@@ -503,6 +515,7 @@ pub struct StakePool {
     pub halted_penalty_bps: u16,
     pub accrued_reward_per_share: u128,
     pub market_status_pda: Pubkey,
+    pub amm_program: Pubkey,
     pub bump: u8,
 }
 
@@ -519,6 +532,8 @@ pub struct StakePosition {
     pub current_weight: u128,
     pub reward_debt: u128,
     pub bump: u8,
+
+    pub days_to_unlock: u8,
 }
 
 #[account]
@@ -540,7 +555,7 @@ pub struct InitializePool<'info> {
         payer = authority,
         seeds = [b"pool", mint.key().as_ref()],
         bump,
-        space = 8 + 300
+        space = 8 + StakePool::INIT_SPACE
     )]
     pub pool: Account<'info, StakePool>,
     #[account(
@@ -578,7 +593,7 @@ pub struct InitializePool<'info> {
         token::mint = mint,
         token::authority = pool,
     )]
-    pub posr_vault: InterfaceAccount<'info, TokenAccount>,
+    pub nyseh_vault: InterfaceAccount<'info, TokenAccount>,
     /// CHECK: Verified in instruction via find_program_address
     pub market_status_pda: UncheckedAccount<'info>,
     pub token_program: Interface<'info, TokenInterface>,
@@ -600,7 +615,7 @@ pub struct DepositRewards<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(amount: u64, index: u64)]
+#[instruction(amount: u64, index: u64 )]
 pub struct Stake<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,
@@ -625,7 +640,7 @@ pub struct Stake<'info> {
             &index.to_le_bytes(),
         ],
         bump,
-        space = 8 + 160
+        space = 8 + StakePool::INIT_SPACE
     )]
     pub position: Account<'info, StakePosition>,
     #[account(mut, token::mint = mint, token::authority = owner)]
@@ -650,8 +665,8 @@ pub struct Claim<'info> {
     pub position: Box<Account<'info, StakePosition>>,
     #[account(mut, token::mint = mint, token::authority = pool)]
     pub reward_vault: Box<InterfaceAccount<'info, TokenAccount>>,
-    #[account(mut, token::mint = mint, token::authority = pool)]
-    pub posr_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(mut, address= pool.nyseh_vault)]
+    pub nyseh_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, token::mint = mint, token::authority = owner)]
     pub owner_token: Box<InterfaceAccount<'info, TokenAccount>>,
     /// CHECK: Address verified by pool.market_status_pda constraint
@@ -675,8 +690,8 @@ pub struct Unstake<'info> {
     pub reward_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, token::mint = mint, token::authority = pool)]
     pub penalty_vault: Box<InterfaceAccount<'info, TokenAccount>>,
-    #[account(mut, token::mint = mint, token::authority = pool)]
-    pub posr_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(mut, address = pool.nyseh_vault)]
+    pub nyseh_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, token::mint = mint, token::authority = owner)]
     pub owner_token: Box<InterfaceAccount<'info, TokenAccount>>,
     /// CHECK: Address verified by pool.market_status_pda constraint
@@ -697,6 +712,8 @@ pub enum StakeError {
     InvalidMarketStatus,
     #[msg("Insufficient rewards in vault")]
     InsufficientRewards,
+    #[msg("some vesting days remain, cannot unlock position yet")]
+    Vesting,
     #[msg("Claims are only available while the market is open")]
     ClaimsClosed,
 }
