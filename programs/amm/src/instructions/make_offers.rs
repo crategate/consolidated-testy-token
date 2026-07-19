@@ -100,10 +100,13 @@ fn current_stake_ratio(metrics: &MarketMetrics) -> u8 {
     ((metrics.total_staked as u128 * 100) / metrics.total_supply as u128) as u8
 }
 
-// Stake health score, 0-100:
-//   base = current staking ratio (higher participation = healthier)
+// Stake health score, 0-100. NOTE: consumed INVERTED in make_offers.
+// A high/rising score reads as holder complacency (lower staker confidence in
+// near-term price), so it should TIGHTEN offers: smaller discounts, longer
+// vesting, fewer lots. A low/falling score makes offers more attractive, to
+// catch and reverse a downturn before the AMM goes dormant for days.
+//   base = current staking ratio
 //   adjustment = today's ratio vs 5-day trailing average, clamped to +/-20
-// Rising stake boosts the score (more/better offers); bleeding stake suppresses it.
 fn calculate_stake_health(metrics: &MarketMetrics) -> u8 {
     let current = current_stake_ratio(metrics) as i16;
     let trailing_avg = (metrics
