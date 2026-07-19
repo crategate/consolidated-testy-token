@@ -43,17 +43,7 @@ pub struct DexBuyback<'info> {
 pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
     Ok(())
 }
-// Update our percentages of the AcceptedOffers account
-fn record_acceptance(accepted: &mut AcceptedOffers, big_pct: u8, med_pct: u8, sml_pct: u8) {
-    accepted.big_offers_accepted.copy_within(1.., 0);
-    accepted.big_offers_accepted[4] = big_pct;
 
-    accepted.med_offers_accepted.copy_within(1.., 0);
-    accepted.med_offers_accepted[4] = med_pct;
-
-    accepted.sml_offers_accepted.copy_within(1.., 0);
-    accepted.sml_offers_accepted[4] = sml_pct;
-}
 #[error_code]
 pub enum ErrorCode {
     #[msg("Unauthorized caller")]

@@ -35,7 +35,7 @@ pub struct MakeOffers<'info> {
     #[account(mut, seeds = [b"metrics", amm_state.nyseh_mint.as_ref()], bump)]
     pub metrics: Account<'info, MarketMetrics>,
 
-    #[account(mut, seeds = [b"accepted_offers", amm_state.nyseh_mint.as_ref()], bump)]
+    #[account(seeds = [b"accepted_offers", amm_state.nyseh_mint.as_ref()], bump)]
     pub accepted_offers: Account<'info, AcceptedOffers>,
 
     /// CHECK: nyse_vault for balance capping
@@ -48,6 +48,7 @@ pub struct MakeOffers<'info> {
 
 pub fn handler(ctx: Context<MakeOffers>) -> Result<()> {
     // executes at end of every trading day analyze market performance
+    // build offers for the day
 
     let amm_state = &mut ctx.accounts.amm_state;
     let offer_list = &mut ctx.accounts.offer_list;
@@ -64,7 +65,7 @@ pub fn handler(ctx: Context<MakeOffers>) -> Result<()> {
     let market_data = market_status.try_borrow_data()?;
     require!(market_data.len() >= 25, ErrorCode::InvalidMarketStatus);
     let current_state = market_data[8];
-    let current_day = u64::from_le_bytes(market_data[16..25].try_into().unwrap());
+    let current_day = u64::from_le_bytes(market_data[17..25].try_into().unwrap());
     require!(
         current_state == 1 || current_state == 2,
         ErrorCode::InvalidMarketState
@@ -76,6 +77,7 @@ pub fn handler(ctx: Context<MakeOffers>) -> Result<()> {
     metrics.day_index = current_day;
     let momentum = calculate_momentum_score(metrics);
     let stake_health = calculate_stake_health(metrics);
+    record_stake_ratio(metrics);
     let offer_aggression = offer_accepted_aggression(accepted_offers);
     msg!(
         "the stake health ({}) & momentum {} for today  {}",
@@ -88,17 +90,42 @@ pub fn handler(ctx: Context<MakeOffers>) -> Result<()> {
     Ok(())
 }
 
+// Current staking participation as a whole %: staked / total_supply.
+// NOTE: per the metric's definition this should be staked / (supply NOT left in
+// AMM vault); uses total_supply until a live circulating figure is wired in.
+fn current_stake_ratio(metrics: &MarketMetrics) -> u8 {
+    if metrics.total_supply == 0 {
+        return 0;
+    }
+    ((metrics.total_staked as u128 * 100) / metrics.total_supply as u128) as u8
+}
+
+// Stake health score, 0-100:
+//   base = current staking ratio (higher participation = healthier)
+//   adjustment = today's ratio vs 5-day trailing average, clamped to +/-20
+// Rising stake boosts the score (more/better offers); bleeding stake suppresses it.
 fn calculate_stake_health(metrics: &MarketMetrics) -> u8 {
-    //
-    // metric that uses staked shares / total deployed supply(supply NYSEH token NOT left in AMM_vault)
-    //
-    // and change in staking over time
-    4 as u8
+    let current = current_stake_ratio(metrics) as i16;
+    let trailing_avg = (metrics
+        .trailing_stake_health
+        .iter()
+        .map(|&v| v as u16)
+        .sum::<u16>()
+        / 5) as i16;
+    let adjustment = (current - trailing_avg).clamp(-20, 20);
+    (current + adjustment).clamp(0, 100) as u8
+}
+
+// Record today's ratio into the 5-day trailing buffer (index 0 = oldest).
+fn record_stake_ratio(metrics: &mut MarketMetrics) {
+    let current = current_stake_ratio(metrics);
+    metrics.trailing_stake_health.copy_within(1.., 0);
+    metrics.trailing_stake_health[4] = current;
 }
 fn offer_accepted_aggression(accepted: &AcceptedOffers) -> u16 {
     // this metric will look at what % of each offer tier was accepted
     // if offers aren't being accepted,
-    // discount should tick higher, and lot sizes/vesting days decrease
+    // discount should tick higher, and vesting days decrease
     // these values should be updated at the END of an offer period (Beginning of next trading day)
     //
     const RECENCY_WEIGHTS: [u16; 5] = [5, 6, 7, 8, 9];

@@ -1,4 +1,4 @@
-use crate::state::offersState::{AmmState, OfferList};
+use crate::state::offersState::{AcceptedOffers, AmmState, MarketMetrics, OfferList};
 use anchor_lang::prelude::*;
 use anchor_spl::{
     associated_token::AssociatedToken,
@@ -19,6 +19,7 @@ pub fn handler(ctx: Context<InitializeAmm>) -> Result<()> {
     amm_state.usdc_vault = ctx.accounts.usdc_vault.key();
     amm_state.nyseh_vault = ctx.accounts.nyseh_vault.key();
     amm_state.offer_list = offer_list.key();
+    amm_state.accepted_offers = ctx.accounts.accepted_offers.key();
     amm_state.market_status_pda = ctx.accounts.market_status_pda.key();
     amm_state.crank_program = ctx.accounts.crank_program.key();
     amm_state.total_sol_proceeds = 0;
@@ -41,6 +42,20 @@ pub fn handler(ctx: Context<InitializeAmm>) -> Result<()> {
     offer_list.big_offer = empty_offer;
     offer_list.med_offer = empty_offer;
     offer_list.sml_offer = empty_offer;
+
+    let accepted_offers = &mut ctx.accounts.accepted_offers;
+    accepted_offers.day_index = 0;
+    accepted_offers.big_offers_accepted = [0; 5];
+    accepted_offers.med_offers_accepted = [0; 5];
+    accepted_offers.sml_offers_accepted = [0; 5];
+
+    let metrics = &mut ctx.accounts.metrics;
+    metrics.day_index = 0;
+    metrics.price_samples = [0; 5];
+    metrics.treasury_sol = 0;
+    metrics.total_staked = 0;
+    metrics.total_supply = 0;
+    metrics.trailing_stake_health = [0; 5];
     msg!(
         "did initialize the AMM empty state for mint {}",
         amm_state.nyseh_mint
@@ -111,6 +126,22 @@ pub struct InitializeAmm<'info> {
         space = 8 + OfferList::INIT_SPACE,
     )]
     pub offer_list: Account<'info, OfferList>,
+    #[account(
+        init,
+        payer = authority,
+        seeds = [b"accepted_offers", nyseh_mint.key().as_ref()],
+        bump,
+        space = 8 + AcceptedOffers::INIT_SPACE,
+    )]
+    pub accepted_offers: Account<'info, AcceptedOffers>,
+    #[account(
+        init,
+        payer = authority,
+        seeds = [b"metrics", nyseh_mint.key().as_ref()],
+        bump,
+        space = 8 + MarketMetrics::INIT_SPACE,
+    )]
+    pub metrics: Account<'info, MarketMetrics>,
 
     /// CHECK: verfiy seeds derive against crank
     #[account(

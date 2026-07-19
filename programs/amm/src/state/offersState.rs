@@ -92,6 +92,7 @@ pub struct AmmState {
 #[account]
 #[derive(InitSpace)]
 pub struct AcceptedOffers {
+    pub day_index: u64, // last trading day this was recorded, prevents double-record
     pub big_offers_accepted: [u8; 5], // stored as whole number % (0-100), last 5 offer instances
     // should be 0 for days when no offers were available (bear cycle)
     pub med_offers_accepted: [u8; 5],
