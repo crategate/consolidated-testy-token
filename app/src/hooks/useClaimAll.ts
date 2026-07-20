@@ -59,9 +59,11 @@ export function useClaimAll(mint: PublicKey | null, positions: Position[], marke
                 tx.add(ix);
             }
 
-            const signature = await (program.provider as any).sendAndConfirm(tx);
+            const sendAndConfirm = program.provider.sendAndConfirm?.bind(program.provider);
+            if (!sendAndConfirm) throw new Error('Provider cannot send transactions');
+            const signature = await sendAndConfirm(tx);
             return signature;
-        } catch (e: any) {
+        } catch (e) {
             console.error('Claim all error:', e);
             throw e;
         } finally {

@@ -4,10 +4,20 @@ import { PublicKey } from '@solana/web3.js';
 import { useReadOnlyStakingProgram } from './useReadOnlyProgram';
 import { STAKING_PROGRAM_ID } from '../anchor/setup';
 
+export interface StakePoolData {
+    totalStaked: { toString(): string };
+    maxMultiplierBps: number;
+    posrTaxBps: number;
+    accruedRewardPerShare: { toString(): string };
+    [key: string]: unknown;
+}
+
+type AccountNamespace = Record<string, { fetch(key: PublicKey): Promise<unknown> } | undefined>;
+
 export function usePool(mint: PublicKey | null) {
     const { connection } = useConnection();
     const program = useReadOnlyStakingProgram();
-    const [pool, setPool] = useState<any>(null);
+    const [pool, setPool] = useState<StakePoolData | null>(null);
     const [loading, setLoading] = useState(false);
 
     const fetchPool = useCallback(async () => {
@@ -21,10 +31,12 @@ export function usePool(mint: PublicKey | null) {
                 [Buffer.from('pool'), mint.toBuffer()],
                 STAKING_PROGRAM_ID
             );
-            const account = await (program.account as any).stakePool.fetch(poolPda);
-            setPool(account);
-        } catch (e: any) {
-            console.log('usePool: pool not found or not initialized', e.message);
+            const account = (await (program.account as AccountNamespace).stakePool?.fetch(
+                poolPda,
+            )) as StakePoolData | null | undefined;
+            setPool(account ?? null);
+        } catch (e) {
+            console.log('usePool: pool not found or not initialized', e instanceof Error ? e.message : e);
             setPool(null);
         } finally {
             setLoading(false);
@@ -32,7 +44,8 @@ export function usePool(mint: PublicKey | null) {
     }, [connection, mint, program]);
 
     useEffect(() => {
-        fetchPool();
+        // Deferred to a microtask so no setState runs synchronously inside the effect
+        void Promise.resolve().then(fetchPool);
     }, [fetchPool]);
 
     return { pool, loading, refresh: fetchPool };

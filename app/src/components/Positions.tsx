@@ -87,14 +87,14 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
                                 <div className="reward-line">
                                     <strong>Available Reward:</strong> {pos.netRewardDisplay}
                                 </div>
-                                {'penaltyRaw' in pos && (pos as any).penaltyRaw > 0 && (
+                                {'penaltyRaw' in pos && pos.penaltyRaw > 0 && (
                                     <div className="penalty-warning">
-                                        ⚠️ Market penalty: –{(pos as any).penaltyRaw.toFixed(4)} NYSEH
+                                        ⚠️ Market penalty: –{pos.penaltyRaw.toFixed(4)} NYSEH
                                     </div>
                                 )}
-                                {'posrTaxRaw' in pos && (pos as any).posrTaxRaw > 0 && (
+                                {'posrTaxRaw' in pos && pos.posrTaxRaw > 0 && (
                                     <div className="posr-line">
-                                        Protocol tax: –{(pos as any).posrTaxRaw.toFixed(4)} NYSEH
+                                        Protocol tax: –{pos.posrTaxRaw.toFixed(4)} NYSEH
                                     </div>
                                 )}
                             </>

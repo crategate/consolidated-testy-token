@@ -10,11 +10,9 @@ interface WalletDashboardProps {
 }
 
 export function WalletDashboard({ deployment }: WalletDashboardProps) {
-    // @ts-ignore
-    const { publicKey, connected, connecting } = useWallet();
+    const { connected, connecting } = useWallet();
     const mint = deployment.mintKey;
-    // @ts-ignore
-    const { positions, refresh: refreshPositions } = usePositions(mint);
+    const { refresh: refreshPositions } = usePositions(mint);
     if (!connected) {
         return (
             <div className="wallet-dashboard connect-prompt">
