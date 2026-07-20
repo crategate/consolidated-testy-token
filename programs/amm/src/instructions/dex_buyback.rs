@@ -1,12 +1,5 @@
 use crate::state::offersState::{AcceptedOffers, AmmState, MarketMetrics, OfferList};
 use anchor_lang::prelude::*;
-use anchor_spl::{
-    associated_token::AssociatedToken,
-    token_interface::{
-        close_account, transfer_checked, CloseAccount, Mint, TokenAccount, TokenInterface,
-        TransferChecked,
-    },
-};
 
 #[derive(Accounts)]
 pub struct DexBuyback<'info> {
@@ -40,7 +33,7 @@ pub struct DexBuyback<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
+pub fn handler(_ctx: Context<DexBuyback>) -> Result<()> {
     Ok(())
 }
 

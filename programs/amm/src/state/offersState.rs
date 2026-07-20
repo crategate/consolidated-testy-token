@@ -1,4 +1,3 @@
-use core::str;
 
 use anchor_lang::prelude::*;
 
@@ -105,6 +104,7 @@ pub struct AcceptedOffers {
 #[derive(InitSpace)]
 pub struct MarketMetrics {
     pub day_index: u64,
+    pub vol_samples: [u64; 5],
     pub price_samples: [u64; 5], // 5-trading-day rolling price history (TWAP of trading hours only)
     pub treasury_sol: u64,
     pub total_staked: u64,

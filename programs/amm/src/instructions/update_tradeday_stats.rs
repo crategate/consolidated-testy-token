@@ -1,10 +1,13 @@
-use crate::state::offersState::{AcceptedOffers, AmmState, Offer, OfferList};
+use crate::{
+    offersState::MarketMetrics,
+    state::offersState::{AcceptedOffers, AmmState},
+};
 use anchor_lang::prelude::*;
 
 // Fires off at beginning of trade day.
 
 #[derive(Accounts)]
-pub struct CalcCompletedOffers<'info> {
+pub struct UpdateTradedayStats<'info> {
     #[account(mut)]
     pub cranker: Signer<'info>,
     #[account(mut, seeds = [b"amm_state", amm_state.nyseh_mint.as_ref()], bump = amm_state.bump,)]
@@ -12,11 +15,11 @@ pub struct CalcCompletedOffers<'info> {
 
     #[account(
         mut,
-        seeds = [b"offer_list", amm_state.nyseh_mint.as_ref()],
-        bump = offer_list.bump,
+        seeds = [b"metrics", amm_state.nyseh_mint.as_ref()],
+        bump
     )]
-    pub offer_list: Account<'info, OfferList>,
-    /// CHECK: market status PDA, same verification as MakeOffers
+    pub market_metrics: Account<'info, MarketMetrics>,
+    /// CHECK: market status PDA
     #[account(
         seeds = [b"market_status"],
         seeds::program = amm_state.crank_program,
@@ -27,7 +30,7 @@ pub struct CalcCompletedOffers<'info> {
     pub accepted_offers: Account<'info, AcceptedOffers>,
 }
 
-pub fn handler(ctx: Context<CalcCompletedOffers>) -> Result<()> {
+pub fn handler(ctx: Context<UpdateTradedayStats>) -> Result<()> {
     let caller = ctx.accounts.cranker.key();
     require!(
         caller == ctx.accounts.amm_state.authority
@@ -48,49 +51,24 @@ pub fn handler(ctx: Context<CalcCompletedOffers>) -> Result<()> {
         ErrorCode::AlreadyConstructed
     );
     ctx.accounts.accepted_offers.day_index = current_day;
-
-    let offer_list = &ctx.accounts.offer_list;
-    let big_pct = pct_accepted(&offer_list.big_offer);
-    let med_pct = pct_accepted(&offer_list.med_offer);
-    let sml_pct = pct_accepted(&offer_list.sml_offer);
-
-    update_offer_sheet_records(&mut ctx.accounts.accepted_offers, big_pct, med_pct, sml_pct);
+    //
+    //    let offer_list = &ctx.accounts.offer_list;
+    //    let big_pct = pct_accepted(&offer_list.big_offer);
+    //    let med_pct = pct_accepted(&offer_list.med_offer);
+    //    let sml_pct = pct_accepted(&offer_list.sml_offer);
+    //
+    //    update_offer_sheet_records(&mut ctx.accounts.accepted_offers, big_pct, med_pct, sml_pct);
 
     Ok(())
 }
 
-// % of the tier that buyers cleared: 100 = sold out, 0 = untouched / no offers that day
-fn pct_accepted(offer: &Offer) -> u8 {
-    if offer.total_offered == 0 {
-        return 0;
-    }
-    let cleared = (offer.total_offered - offer.remaining) as u16;
-    (cleared * 100 / offer.total_offered as u16) as u8
-}
-
-// Update percentages of the AcceptedOffers account
-fn update_offer_sheet_records(
-    accepted: &mut AcceptedOffers,
-    big_pct: u8,
-    med_pct: u8,
-    sml_pct: u8,
-) {
-    accepted.big_offers_accepted.copy_within(1.., 0);
-    accepted.big_offers_accepted[4] = big_pct;
-
-    accepted.med_offers_accepted.copy_within(1.., 0);
-    accepted.med_offers_accepted[4] = med_pct;
-
-    accepted.sml_offers_accepted.copy_within(1.., 0);
-    accepted.sml_offers_accepted[4] = sml_pct;
-}
 #[error_code]
 pub enum ErrorCode {
     #[msg("Unauthorized caller")]
     UnauthorizedCaller,
     #[msg("Invalid market status")]
     InvalidMarketStatus,
-    #[msg("Invalid market state for offers")]
+    #[msg("Invalid market state for updating trade day stats")]
     InvalidMarketState,
     #[msg("Already constructed for this day")]
     AlreadyConstructed,

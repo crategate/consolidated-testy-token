@@ -1,12 +1,5 @@
 use crate::state::offersState::{AcceptedOffers, AmmState, MarketMetrics, Offer, OfferList};
 use anchor_lang::prelude::*;
-use anchor_spl::{
-    associated_token::AssociatedToken,
-    token_interface::{
-        close_account, transfer_checked, CloseAccount, Mint, TokenAccount, TokenInterface,
-        TransferChecked,
-    },
-};
 
 const MAX_OFFER_PCT_BPS: u16 = 500;
 const MHS_BEAR_THRESHOLD: u64 = 35_00;
@@ -51,7 +44,7 @@ pub fn handler(ctx: Context<MakeOffers>) -> Result<()> {
     // build offers for the day
 
     let amm_state = &mut ctx.accounts.amm_state;
-    let offer_list = &mut ctx.accounts.offer_list;
+    let _offer_list = &mut ctx.accounts.offer_list;
     let metrics = &mut ctx.accounts.metrics;
     let market_status = &ctx.accounts.market_status;
     let accepted_offers = &ctx.accounts.accepted_offers;
@@ -78,7 +71,7 @@ pub fn handler(ctx: Context<MakeOffers>) -> Result<()> {
     let momentum = calculate_momentum_score(metrics);
     let stake_health = calculate_stake_health(metrics);
     record_stake_ratio(metrics);
-    let offer_aggression = offer_accepted_aggression(accepted_offers);
+    let _offer_aggression = offer_accepted_aggression(accepted_offers);
     msg!(
         "the stake health ({}) & momentum {} for today  {}",
         stake_health,
@@ -158,7 +151,7 @@ fn offer_accepted_aggression(accepted: &AcceptedOffers) -> u16 {
     (total_weighted * 10000) / total_possible
 }
 
-fn calculate_momentum_score(metrics: &MarketMetrics) -> u8 {
+fn calculate_momentum_score(_metrics: &MarketMetrics) -> u8 {
     // trailing market performance metric of the NYSEH token
     // should use moving average, current price, trade volume moving average, as well as individual trading day change
     //let head = metrics.sample_head as usize;

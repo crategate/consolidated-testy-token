@@ -1,5 +1,5 @@
 use crate::{
-    calculate_multiplier, get_trading_day_index, Stake, StakeError, StakePool, StakePosition,
+    calculate_multiplier, get_trading_day_index, StakeError, StakePool, StakePosition,
     UserStakeIndex,
 };
 use anchor_lang::prelude::*;
