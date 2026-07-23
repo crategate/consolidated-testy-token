@@ -22,6 +22,7 @@ pub fn handler(ctx: Context<InitializeAmm>) -> Result<()> {
     amm_state.accepted_offers = ctx.accounts.accepted_offers.key();
     amm_state.market_status_pda = ctx.accounts.market_status_pda.key();
     amm_state.crank_program = ctx.accounts.crank_program.key();
+    amm_state.price_oracle = ctx.accounts.price_oracle.key();
     amm_state.total_sol_proceeds = 0;
     amm_state.total_usdc_proceeds = 0;
     amm_state.bump = ctx.bumps.amm_state;
@@ -51,7 +52,8 @@ pub fn handler(ctx: Context<InitializeAmm>) -> Result<()> {
 
     let metrics = &mut ctx.accounts.metrics;
     metrics.day_index = 0;
-    metrics.price_samples = [0; 5];
+    metrics.price_changes = [0; 20];
+    metrics.sample_head = 0;
     metrics.treasury_sol = 0;
     metrics.total_staked = 0;
     metrics.total_supply = 0;
@@ -153,6 +155,8 @@ pub struct InitializeAmm<'info> {
 
     /// CHECK: stored for verification in makeOffers
     pub crank_program: AccountInfo<'info>,
+    /// CHECK: canonical Switchboard quote account for [market_status, price] feeds
+    pub price_oracle: AccountInfo<'info>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,

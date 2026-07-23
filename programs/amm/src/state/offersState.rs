@@ -75,6 +75,9 @@ pub struct AmmState {
     pub accepted_offers: Pubkey,
     pub market_status_pda: Pubkey,
     pub crank_program: Pubkey,
+    // Canonical Switchboard quote account covering [market_status, price] feeds.
+    // Only the AMM consumes the price feed, so the address lives here.
+    pub price_oracle: Pubkey,
 
     pub total_sol_proceeds: u64,
     pub total_usdc_proceeds: u64,
@@ -95,16 +98,15 @@ pub struct AcceptedOffers {
     // should be 0 for days when no offers were available (bear cycle)
     pub med_offers_accepted: [u8; 5],
     pub sml_offers_accepted: [u8; 5],
-    // THESE and price_samples, and trailing stake health could be converted to sample_head
-    // circular buffer arrays to save CPU cycles
-    // when optimizing for mainnet.
 }
 #[account]
 #[derive(InitSpace)]
 pub struct MarketMetrics {
     pub day_index: u64,
-    pub vol_samples: [u64; 5],
-    pub price_samples: [u64; 5], // 5-trading-day rolling price history (TWAP of trading hours only)
+    // Daily priceChange24h from the price oracle, centi-percent (1.29% -> 129),
+    // written once per trading day by make_offers. Ring buffer, 20 trading days.
+    pub price_changes: [i16; 20],
+    pub sample_head: u8, // next write index into price_changes
     pub treasury_sol: u64,
     pub total_staked: u64,
     pub total_supply: u64,

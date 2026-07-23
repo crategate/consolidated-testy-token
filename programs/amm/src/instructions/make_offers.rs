@@ -34,8 +34,9 @@ pub struct MakeOffers<'info> {
     /// CHECK: nyse_vault for balance capping
     #[account(mut, address = amm_state.nyseh_vault)]
     pub nyseh_vault: AccountInfo<'info>,
-    /// CHECK: live price oracle (mock for devnet, change before mainnet)
-    pub price_oracle: UncheckedAccount<'info>,
+    /// CHECK: live price oracle — canonical Switchboard quote [market_status, price]
+    #[account(address = amm_state.price_oracle)]
+    pub price_oracle: Box<Account<'info, switchboard_on_demand::SwitchboardQuote>>,
     pub system_program: Program<'info, System>,
 }
 
@@ -68,6 +69,7 @@ pub fn handler(ctx: Context<MakeOffers>) -> Result<()> {
         ErrorCode::AlreadyConstructed
     );
     metrics.day_index = current_day;
+    record_price_change(metrics, &ctx.accounts.price_oracle, Clock::get()?.slot);
     let momentum = calculate_momentum_score(metrics);
     let stake_health = calculate_stake_health(metrics);
     record_stake_ratio(metrics);
@@ -82,6 +84,30 @@ pub fn handler(ctx: Context<MakeOffers>) -> Result<()> {
 
     Ok(())
 }
+
+// Record today's priceChange24h (feeds[1], centi-percent) into the 20-day ring.
+// Best-effort: a missing or stale price feed skips the write — momentum then
+// stays cold and no offers are built, rather than blocking the whole crank.
+fn record_price_change(
+    metrics: &mut MarketMetrics,
+    quote: &switchboard_on_demand::SwitchboardQuote,
+    current_slot: u64,
+) {
+    use switchboard_on_demand::prelude::rust_decimal::prelude::ToPrimitive;
+    const MAX_STALENESS_SLOTS: u64 = 300;
+    if quote.feeds.len() < 2 || current_slot.saturating_sub(quote.slot) > MAX_STALENESS_SLOTS {
+        msg!("price feed missing or stale — skipping today's price sample");
+        return;
+    }
+    if let Some(cp) = quote.feeds[1].value().to_i32() {
+        let v = cp.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+        let head = (metrics.sample_head as usize) % metrics.price_changes.len();
+        metrics.price_changes[head] = v;
+        metrics.sample_head = ((head + 1) % metrics.price_changes.len()) as u8;
+        msg!("recorded priceChange24h: {} centi-percent", v);
+    }
+}
+
 
 // Current staking participation as a whole %: staked / total_supply.
 // NOTE: per the metric's definition this should be staked / (supply NOT left in
@@ -158,11 +184,6 @@ fn calculate_momentum_score(_metrics: &MarketMetrics) -> u8 {
     4
 }
 
-fn read_reference_price(price_oracle: &AccountInfo) -> Result<u64> {
-    let data = price_oracle.try_borrow_data()?;
-    require!(data.len() >= 8, ErrorCode::InvalidOracle);
-    Ok(u64::from_le_bytes(data[0..8].try_into().unwrap()))
-}
 fn empty_offer() -> Offer {
     Offer {
         lot_size: 0,
