@@ -48,6 +48,22 @@ async function main() {
     // Single-feed quote used when the price feed can't resolve yet (devnet / pre-indexing)
     const [statusQuoteAccount] = OracleQuote.getCanonicalPubkey(queue.pubkey, [statusFeedId]);
 
+    // AMM program client for firing make_offers at end of trading day
+    const ammIdl = JSON.parse(
+        fs.readFileSync(path.join(process.cwd(), "target", "idl", "amm.json"), "utf-8")
+    );
+    const ammProgram = new anchor.Program(ammIdl as anchor.Idl, provider);
+    const nysehMint = new PublicKey(deployment.mint);
+    const ammPda = (seed: string) =>
+        anchor.web3.PublicKey.findProgramAddressSync(
+            [Buffer.from(seed), nysehMint.toBuffer()],
+            ammProgram.programId
+        )[0];
+    const ammStatePda = ammPda("amm_state");
+    const offerListPda = ammPda("offer_list");
+    const metricsPda = ammPda("metrics");
+    const acceptedOffersPda = ammPda("accepted_offers");
+
     console.log("🔍 Keeper started");
     console.log("Program ID:", programId.toBase58());
     console.log("Market Status:", marketStatusPda.toBase58());
@@ -150,6 +166,51 @@ async function main() {
                 const sig = await connection.sendTransaction(tx);
                 await connection.confirmTransaction(sig, "confirmed");
                 console.log(`✅ Cranked! ${sig}`);
+
+                // Trading day ends on 0→1 (open→after-hours), 0→2 (open→closed, holiday),
+                // or 3→2 (halted→closed). Fire make_offers to build tomorrow's offer sheet.
+                const prevState = marketStatus.currentState;
+                const newStatus = await program.account.marketStatus.fetch(marketStatusPda);
+                const dayEnded =
+                    (prevState === 0 && (newStatus.currentState === 1 || newStatus.currentState === 2)) ||
+                    (prevState === 3 && newStatus.currentState === 2);
+                if (dayEnded) {
+                    console.log(`📈 Day ended (${prevState} → ${newStatus.currentState}). Firing make_offers...`);
+                    try {
+                        const makeOffersIx = await ammProgram.methods
+                            .makeOffers()
+                            .accountsStrict({
+                                cranker: keypair.publicKey,
+                                ammState: ammStatePda,
+                                offerList: offerListPda,
+                                marketStatus: marketStatusPda,
+                                metrics: metricsPda,
+                                acceptedOffers: acceptedOffersPda,
+                                nysehVault: new PublicKey(deployment.ammNysehVault),
+                                priceOracle: quoteAccount,
+                                systemProgram: anchor.web3.SystemProgram.programId,
+                            })
+                            .instruction();
+
+                        const offersTx = await sb.asV0Tx({
+                            connection,
+                            ixs: [makeOffersIx],
+                            signers: [keypair],
+                            computeUnitPrice: 20_000,
+                        });
+                        const offersSim = await connection.simulateTransaction(offersTx);
+                        if (offersSim.value.err) {
+                            console.error("make_offers simulation failed (already built today?):", offersSim.value.err);
+                        } else {
+                            const offersSig = await connection.sendTransaction(offersTx);
+                            await connection.confirmTransaction(offersSig, "confirmed");
+                            console.log(`✅ make_offers fired! ${offersSig}`);
+                        }
+                    } catch (e) {
+                        // Never let an offer-sheet failure kill the crank loop
+                        console.error("❌ make_offers failed:", e);
+                    }
+                }
             } else {
                 console.log("Oracle fresh, nothing to do.");
             }
