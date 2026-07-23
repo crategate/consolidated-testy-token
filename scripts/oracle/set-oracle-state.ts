@@ -7,7 +7,7 @@ import { PublicKey, Keypair } from "@solana/web3.js";
 // =============================================================================
 // ORACLE STATE TEST SCRIPT
 // =============================================================================
-// Usage: npx ts-node scripts/set-oracle-state.ts <state>
+// Usage: npx ts-node scripts/oracle/set-oracle-state.ts <state>
 //   state = 0 (Open), 1 (After Hours), 2 (Closed), 3 (Halted)
 //
 // This script directly writes to the MarketStatus PDA to simulate any market
@@ -22,7 +22,7 @@ async function main() {
     const desiredState = parseInt(args[0]);
 
     if (isNaN(desiredState) || desiredState < 0 || desiredState > 3) {
-        console.error("Usage: npx ts-node scripts/set-oracle-state.ts <0|1|2|3>");
+        console.error("Usage: npx ts-node scripts/oracle/set-oracle-state.ts <0|1|2|3>");
         console.error("  0 = Market Open");
         console.error("  1 = After Hours");
         console.error("  2 = Market Closed");

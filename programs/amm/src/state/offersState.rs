@@ -1,4 +1,3 @@
-
 use anchor_lang::prelude::*;
 
 pub fn lot_sizer(tier: u8) -> u32 {

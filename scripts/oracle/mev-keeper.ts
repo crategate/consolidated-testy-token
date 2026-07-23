@@ -6,7 +6,7 @@ import * as dotenv from "dotenv";
 import * as fs from "fs";
 import * as path from "path";
 import { PublicKey } from "@solana/web3.js";
-import type { CrankOracle } from "../target/types/crank_oracle";
+import type { CrankOracle } from "../../target/types/crank_oracle";
 
 dotenv.config();
 
