@@ -12,6 +12,9 @@ pub use calc_completed_offers::*;
 
 pub mod set_keeper;
 pub use set_keeper::*;
+
+pub mod load_test_data;
+pub use load_test_data::*;
 pub mod update_tradeday_stats;
 pub use update_tradeday_stats::*;
 

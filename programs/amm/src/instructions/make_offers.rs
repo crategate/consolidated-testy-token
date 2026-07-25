@@ -1,9 +1,6 @@
 use crate::state::offersState::{AcceptedOffers, AmmState, MarketMetrics, Offer, OfferList};
 use anchor_lang::prelude::*;
 
-const MAX_OFFER_PCT_BPS: u16 = 500;
-const MHS_BEAR_THRESHOLD: u64 = 35_00;
-
 #[derive(Accounts)]
 pub struct MakeOffers<'info> {
     #[account(mut)]
@@ -108,7 +105,6 @@ fn record_price_change(
     }
 }
 
-
 // Current staking participation as a whole %: staked / total_supply.
 // NOTE: per the metric's definition this should be staked / (supply NOT left in
 // AMM vault); uses total_supply until a live circulating figure is wired in.
@@ -177,11 +173,61 @@ fn offer_accepted_aggression(accepted: &AcceptedOffers) -> u16 {
     (total_weighted * 10000) / total_possible
 }
 
-fn calculate_momentum_score(_metrics: &MarketMetrics) -> u8 {
-    // trailing market performance metric of the NYSEH token
-    // should use moving average, current price, trade volume moving average, as well as individual trading day change
-    //let head = metrics.sample_head as usize;
-    4
+// Momentum score, 0-10000 (5000 = flat). Primary weight in offer construction.
+// Derived only from the 20-day price_changes ring (daily priceChange24h,
+// centi-percent). No volume input — price is the signal, per design.
+//   blended = recency-weighted mean + (recent-5-day avg - older avg) / 2
+//   score   = 5000 + blended * 10  →  sustained ±5% daily move pins the scale
+// Cold start: fewer than MIN_SAMPLES nonzero ring entries → 0 (no offers).
+// Note: a genuine 0.00% day reads as "no sample" — acceptable at this precision.
+fn calculate_momentum_score(metrics: &MarketMetrics) -> u64 {
+    const MIN_SAMPLES: usize = 5;
+    const NEUTRAL: i64 = 5_000;
+    const CP_FULL_SCALE: i64 = 500; // 5.00% in centi-percent
+
+    let n = metrics.price_changes.len();
+    let head = metrics.sample_head as usize % n;
+
+    let mut count = 0usize;
+    let mut w_sum: i64 = 0;
+    let mut w_total: i64 = 0;
+    let mut recent_sum: i64 = 0;
+    let mut recent_n: i64 = 0;
+    let mut older_sum: i64 = 0;
+    let mut older_n: i64 = 0;
+
+    // age 0 = oldest entry (sample_head = next write = oldest slot)
+    for age in 0..n {
+        let v = metrics.price_changes[(head + age) % n];
+        if v == 0 {
+            continue;
+        }
+        count += 1;
+        let w = (age + 1) as i64; // newer days weigh more
+        w_sum += v as i64 * w;
+        w_total += w;
+        if age >= n - 5 {
+            recent_sum += v as i64;
+            recent_n += 1;
+        } else {
+            older_sum += v as i64;
+            older_n += 1;
+        }
+    }
+
+    if count < MIN_SAMPLES {
+        return 0;
+    }
+
+    let weighted_avg = w_sum / w_total;
+    let trend = if older_n > 0 {
+        recent_sum / recent_n - older_sum / older_n
+    } else {
+        0 // all samples inside the recent window — no trend baseline yet
+    };
+
+    let blended = weighted_avg + trend / 2;
+    (NEUTRAL + blended * NEUTRAL / CP_FULL_SCALE).clamp(0, 10_000) as u64
 }
 
 fn empty_offer() -> Offer {

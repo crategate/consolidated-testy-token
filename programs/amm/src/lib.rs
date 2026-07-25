@@ -31,6 +31,11 @@ pub mod amm {
         set_keeper::handler(ctx, new_keeper)
     }
 
+    // DEVNET/TEST ONLY — remove before mainnet
+    pub fn load_test_data(ctx: Context<LoadTestData>, data: TestMetrics) -> Result<()> {
+        load_test_data::handler(ctx, data)
+    }
+
     pub fn offer_claim(ctx: Context<OfferClaim>, tier: u8, units: u8) -> Result<()> {
         // decrease # of offers available by amount
         // multiply amount * market price * discount
