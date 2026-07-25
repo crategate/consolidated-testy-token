@@ -101,6 +101,16 @@ async function main() {
         CRANK_PROGRAM_ID
     );
 
+    // Canonical Switchboard quote account ([market_status, price] feeds) — run feed-deploy first
+    const deploymentPath = path.join(process.cwd(), "app", "public", "deployment.json");
+    const deployment = fs.existsSync(deploymentPath)
+        ? JSON.parse(fs.readFileSync(deploymentPath, "utf-8"))
+        : {};
+    if (!deployment.oracleQuoteAccount) {
+        throw new Error("oracleQuoteAccount missing from deployment.json. Run 'anchor run feed-deploy' first.");
+    }
+    const priceOracle = new PublicKey(deployment.oracleQuoteAccount);
+
     console.log("\n📋 Derived AMM accounts:");
     console.log("  AMM State:     ", ammStatePda.toBase58());
     console.log("  Offer List:    ", offerListPda.toBase58());
@@ -154,6 +164,7 @@ async function main() {
                 offerList: offerListPda,
                 marketStatusPda: marketStatusPda,
                 crankProgram: CRANK_PROGRAM_ID,
+                priceOracle: priceOracle,
                 associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
                 tokenProgram: TOKEN_2022_PROGRAM_ID,
                 systemProgram: anchor.web3.SystemProgram.programId,
