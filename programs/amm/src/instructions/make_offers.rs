@@ -53,7 +53,7 @@ pub fn handler(ctx: Context<MakeOffers>) -> Result<()> {
     // no more than 5% of total POSR
     let caller = ctx.accounts.cranker.key();
     require!(
-        caller == amm_state.authority || caller == amm_state.crank_program,
+        caller == amm_state.authority || caller == amm_state.keeper,
         ErrorCode::UnauthorizedCaller
     );
     let market_data = market_status.try_borrow_data()?;

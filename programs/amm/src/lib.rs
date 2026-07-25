@@ -27,6 +27,10 @@ pub mod amm {
         calc_completed_offers::handler(ctx)
     }
 
+    pub fn set_keeper(ctx: Context<SetKeeper>, new_keeper: Pubkey) -> Result<()> {
+        set_keeper::handler(ctx, new_keeper)
+    }
+
     pub fn offer_claim(ctx: Context<OfferClaim>, tier: u8, units: u8) -> Result<()> {
         // decrease # of offers available by amount
         // multiply amount * market price * discount

@@ -13,6 +13,8 @@ pub fn handler(ctx: Context<InitializeAmm>) -> Result<()> {
     let offer_list = &mut ctx.accounts.offer_list;
 
     amm_state.authority = ctx.accounts.authority.key();
+    // Single-wallet setups (devnet) work out of the box; rotate for mainnet.
+    amm_state.keeper = ctx.accounts.authority.key();
     amm_state.nyseh_mint = ctx.accounts.nyseh_mint.key();
     amm_state.usdc_mint = ctx.accounts.usdc_mint.key();
     amm_state.sol_vault = ctx.accounts.sol_vault.key();

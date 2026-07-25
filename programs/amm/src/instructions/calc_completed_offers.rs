@@ -30,8 +30,7 @@ pub struct CalcCompletedOffers<'info> {
 pub fn handler(ctx: Context<CalcCompletedOffers>) -> Result<()> {
     let caller = ctx.accounts.cranker.key();
     require!(
-        caller == ctx.accounts.amm_state.authority
-            || caller == ctx.accounts.amm_state.crank_program,
+        caller == ctx.accounts.amm_state.authority || caller == ctx.accounts.amm_state.keeper,
         ErrorCode::UnauthorizedCaller
     );
 

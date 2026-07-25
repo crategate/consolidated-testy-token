@@ -58,6 +58,10 @@ pub struct OfferList {
 #[derive(InitSpace)]
 pub struct AmmState {
     pub authority: Pubkey,
+    // Hot wallet allowed to fire daily crank-gated instructions (make_offers,
+    // calc_completed_offers). Cannot move funds — those check authority only.
+    // Defaults to authority at init; rotate via set_keeper for mainnet.
+    pub keeper: Pubkey,
     pub nyseh_mint: Pubkey,
     pub usdc_mint: Pubkey,
     // big main vault, initial supply and where fees/buybacks go
