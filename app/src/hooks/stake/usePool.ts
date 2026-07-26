@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
-import { useReadOnlyStakingProgram } from './useReadOnlyProgram';
-import { STAKING_PROGRAM_ID } from '../anchor/setup';
+import { useReadOnlyStakingProgram } from '../useReadOnlyProgram';
+import { STAKING_PROGRAM_ID } from '../../anchor/setup';
 
 export interface StakePoolData {
     totalStaked: { toString(): string };

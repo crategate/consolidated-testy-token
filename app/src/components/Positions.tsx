@@ -1,8 +1,8 @@
-import { usePositions } from '../hooks/usePositions';
-import { usePositionRewards } from '../hooks/usePositionRewards';
-import { useClaimAll } from '../hooks/useClaimAll';
+import { usePositions } from '../hooks/stake/usePositions';
+import { usePositionRewards } from '../hooks/stake/usePositionRewards';
+import { useClaimAll } from '../hooks/stake/useClaimAll';
 import { useMarketStatus } from '../hooks/useMarketStatus';
-import { useUnstake } from '../hooks/useUnstake';
+import { useUnstake } from '../hooks/stake/useUnstake';
 import { PublicKey } from '@solana/web3.js';
 
 interface PositionsProps {

@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import BN from 'bn.js';
-import { useStakingProgram, STAKING_PROGRAM_ID } from '../anchor/setup';
+import { useStakingProgram, STAKING_PROGRAM_ID } from '../../anchor/setup';
 
 export interface Position {
     pda: PublicKey;
