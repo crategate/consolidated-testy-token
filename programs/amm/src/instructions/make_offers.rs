@@ -170,7 +170,8 @@ fn offer_accepted_aggression(accepted: &AcceptedOffers) -> u16 {
 
     // Returns 0-10000 (basis points, 2 decimal precision)
     // 0 = dead, 10000 = every offer cleared instantly for 5 days
-    (total_weighted * 10000) / total_possible
+    // u32 math: total_weighted can reach 24500 — * 10000 would overflow u16
+    (total_weighted as u32 * 10000 / total_possible as u32) as u16
 }
 
 // Momentum score, 0-10000 (5000 = flat). Primary weight in offer construction.
@@ -178,12 +179,16 @@ fn offer_accepted_aggression(accepted: &AcceptedOffers) -> u16 {
 // centi-percent). No volume input — price is the signal, per design.
 //   blended = recency-weighted mean + (recent-5-day avg - older avg) / 2
 //   score   = 5000 + blended * 10  →  sustained ±5% daily move pins the scale
+// Each sample is capped at ±SAMPLE_CAP_CP, so one wash pump/dump boosts or
+// sinks the score for a few days but can't pin it — only SUSTAINED extreme
+// moves reach 0 / 10000.
 // Cold start: fewer than MIN_SAMPLES nonzero ring entries → 0 (no offers).
 // Note: a genuine 0.00% day reads as "no sample" — acceptable at this precision.
 fn calculate_momentum_score(metrics: &MarketMetrics) -> u64 {
     const MIN_SAMPLES: usize = 5;
     const NEUTRAL: i64 = 5_000;
     const CP_FULL_SCALE: i64 = 500; // 5.00% in centi-percent
+    const SAMPLE_CAP_CP: i64 = 1_000; // ±10%/day effective per sample
 
     let n = metrics.price_changes.len();
     let head = metrics.sample_head as usize % n;
@@ -198,19 +203,20 @@ fn calculate_momentum_score(metrics: &MarketMetrics) -> u64 {
 
     // age 0 = oldest entry (sample_head = next write = oldest slot)
     for age in 0..n {
-        let v = metrics.price_changes[(head + age) % n];
-        if v == 0 {
+        let raw = metrics.price_changes[(head + age) % n];
+        if raw == 0 {
             continue;
         }
+        let v = (raw as i64).clamp(-SAMPLE_CAP_CP, SAMPLE_CAP_CP);
         count += 1;
         let w = (age + 1) as i64; // newer days weigh more
-        w_sum += v as i64 * w;
+        w_sum += v * w;
         w_total += w;
         if age >= n - 5 {
-            recent_sum += v as i64;
+            recent_sum += v;
             recent_n += 1;
         } else {
-            older_sum += v as i64;
+            older_sum += v;
             older_n += 1;
         }
     }
@@ -220,10 +226,12 @@ fn calculate_momentum_score(metrics: &MarketMetrics) -> u64 {
     }
 
     let weighted_avg = w_sum / w_total;
-    let trend = if older_n > 0 {
+    // Guard both windows: all samples in the recent window (cold ring) or all
+    // in the older window (recent days read as 0.00% = "no sample") → no trend.
+    let trend = if recent_n > 0 && older_n > 0 {
         recent_sum / recent_n - older_sum / older_n
     } else {
-        0 // all samples inside the recent window — no trend baseline yet
+        0
     };
 
     let blended = weighted_avg + trend / 2;
