@@ -44,7 +44,7 @@ pub fn handler(ctx: Context<UpdateTradedayStats>) -> Result<()> {
     let current_state = market_data[8];
     let current_day = u64::from_le_bytes(market_data[17..25].try_into().unwrap());
     // Only record at the start of a trading day (market just opened)
-    require!(current_state == 1, ErrorCode::InvalidMarketState);
+    require!(current_state == 0, ErrorCode::InvalidMarketState);
     // Once per trading day
     require!(
         ctx.accounts.accepted_offers.day_index != current_day,

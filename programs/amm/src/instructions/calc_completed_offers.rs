@@ -1,7 +1,7 @@
 use crate::state::offersState::{AcceptedOffers, AmmState, Offer, OfferList};
 use anchor_lang::prelude::*;
 
-// Fires off at beginning of trade day.
+// Fires off at beginning of each trade day.
 
 #[derive(Accounts)]
 pub struct CalcCompletedOffers<'info> {

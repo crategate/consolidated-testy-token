@@ -18,5 +18,8 @@ pub use load_test_data::*;
 pub mod update_tradeday_stats;
 pub use update_tradeday_stats::*;
 
+pub mod buy_the_dip;
+pub use buy_the_dip::*;
+
 pub mod dex_buyback;
 pub use dex_buyback::*;

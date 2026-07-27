@@ -2,7 +2,7 @@ use crate::state::offersState::{AcceptedOffers, AmmState, MarketMetrics, OfferLi
 use anchor_lang::prelude::*;
 
 #[derive(Accounts)]
-pub struct DexBuyback<'info> {
+pub struct BuyTheDip<'info> {
     #[account(mut)]
     pub cranker: Signer<'info>,
     #[account(mut, seeds = [b"amm_state", amm_state.nyseh_mint.as_ref()], bump = amm_state.bump,)]
@@ -23,12 +23,12 @@ pub struct DexBuyback<'info> {
     pub market_status: UncheckedAccount<'info>,
     #[account(mut, seeds = [b"metrics", amm_state.nyseh_mint.as_ref()], bump)]
     pub metrics: Account<'info, MarketMetrics>,
-    /// CHECK: sol_vault for buybacks
-    #[account(mut, address = amm_state.sol_vault)]
-    pub sol_vault: AccountInfo<'info>,
-    /// CHECK: sol_vault for buybacks
-    #[account(mut, address = amm_state.usdc_vault)]
-    pub usdc_vault: AccountInfo<'info>,
+    /// CHECK: sol_dip for buy the dip
+    #[account(mut, address = amm_state.sol_dip)]
+    pub sol_dip: AccountInfo<'info>,
+    /// CHECK: usdc_vault for dip
+    #[account(mut, address = amm_state.usdc_dip)]
+    pub usdc_dip: AccountInfo<'info>,
     /// CHECK: live price oracle (mock for devnet, change before mainnet)
     pub price_oracle: UncheckedAccount<'info>,
 
@@ -36,9 +36,8 @@ pub struct DexBuyback<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler(_ctx: Context<DexBuyback>) -> Result<()> {
-    // execute buyback with 80% of accumulated sol and usdc from offer sales
-    // random trades over next trading day
+pub fn handler(_ctx: Context<BuyTheDip>) -> Result<()> {
+    // use accumulated reserve dip funds to buy the dip
     Ok(())
 }
 
