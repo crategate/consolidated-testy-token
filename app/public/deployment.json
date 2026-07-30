@@ -10,11 +10,14 @@
   "penaltyVault": "HiC9r2D4gfw5WHJBt4WD2noN7vwxpkgYGT3SAq86dpFX",
   "posrVault": "3SVjLYoq1t9uNcfVvPtMdN2UfT3Lv2TSg4WZTs2XYHGJ",
   "marketStatus": "H6MA6mzdaFDxZgv3dHPJfXapwNznEZNSSg2ySs7RHEwE",
-  "updatedAt": "2026-07-02T15:59:15.447Z",
+  "updatedAt": "2026-07-30T16:24:38.029Z",
   "ammProgram": "HtdXAsisFb5BcW8N1ejbWURZB9WHEFPgHemFqBzHkY9z",
   "ammState": "bXhG4YvtpnTdYViYbtfR4TLdWzKfcTvvSuRa9W9afRJ",
   "ammOfferList": "8fMBr9tWpdhJMgru1rmDWQ8gWz5k6u61NGkbipnXJroV",
   "ammSolVault": "FhH6Ri2mhgFRBZ45FQDnmUH9D67juAVkAQjbgmjKxesi",
   "ammUsdcVault": "bQE8ntqqJNUcR3nhxHD8wHtnRnLB4PSezTBBCytSGuT",
-  "ammNysehVault": "2134D4UdTGZbNQQ1W2b4XS7yURbgs1SKY95YgirC9dSw"
+  "ammNysehVault": "2134D4UdTGZbNQQ1W2b4XS7yURbgs1SKY95YgirC9dSw",
+  "marketStatusFeedId": "0xfdc555a86f8389c64f71f59a5676eccbd207a6be0ee0ec166373de8af69f9ff4",
+  "priceFeedId": "0xe1f5d3fa975d5f8cbdc21c59a2c2cdfb6bb26e7e59ba2550323a42905b27958f",
+  "oracleQuoteAccount": "mVerjWb7a5YStBZojytGFthAPwtfABtKMzYP1YRA2zn"
 }

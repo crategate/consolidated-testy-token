@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useDashData, type DashSection } from '../hooks/useDashData';
+import { useAmmData, type DashSection } from '../hooks/amm/useAmmData.ts';
 import OfferLists from '../components/amm/OfferLists.tsx';
 import './Dash.css';
 
@@ -35,13 +35,17 @@ function Section({ section, hideAddresses }: { section: DashSection; hideAddress
 }
 
 export default function AmmPage() {
-    const { data, error } = useDashData();
+    const { data, error } = useAmmData();
     const [hideAddresses, setHideAddresses] = useState(false);
+    const [offersLive, setoffersLive] = useState(false);
+    document.title = "Bond Offer Desk | NYSEH"
+
+
 
     return (
         <div className="amm-page-shell">
             <header className="dash-topbar">
-                <h1>NYSEH dev dashboard</h1>
+                <h1 className="offers-live">{offersLive ? "Offers Are Live!" : "No Offers Available, Check Back End of Next Trading Day"}</h1>
                 <div className="dash-controls">
                     {data && <span className="dash-updated">updated {new Date(data.updatedAt).toLocaleTimeString()}</span>}
                     <button className="dash-toggle" onClick={() => setHideAddresses((v) => !v)}>

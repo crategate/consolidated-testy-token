@@ -1,19 +1,11 @@
+import { useAmmData, type DashSection } from '../../hooks/amm/useAmmData.ts';
 
 export default function OfferLists() {
-    const { data, error } = useDashData();
-    const [hideAddresses, setHideAddresses] = useState(false);
+    const { data, error } = useAmmData();
 
     return (
-        <div className="amm-page-shell">
-            <header className="dash-topbar">
-                <h1>NYSEH dev dashboard</h1>
-                <div className="dash-controls">
-                    {data && <span className="dash-updated">updated {new Date(data.updatedAt).toLocaleTimeString()}</span>}
-                    <button className="dash-toggle" onClick={() => setHideAddresses((v) => !v)}>
-                        {hideAddresses ? 'Show addresses' : 'Hide all addresses'}
-                    </button>
-                </div>
-            </header>
+        <section className="amm-page-shell">
+
             {error && <div className="dash-error">RPC error: {error} — showing last known state</div>}
             {!data && !error && <div className="dash-loading">Loading deployment + chain state…</div>}
             {data && (
@@ -28,6 +20,6 @@ export default function OfferLists() {
                     )}
                 </main>
             )}
-        </div>
+        </section>
     );
 }

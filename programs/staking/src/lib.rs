@@ -70,7 +70,7 @@ mod amm_stake;
 //   → Alice's next claim includes her share of Bob's penalty
 // =============================================================================
 
-declare_id!("8pg4vnWVu5EiiBdrBF3ck1STsMToqDQAezYwZLPt3PbY");
+declare_id!("Fzqz7EK6CZp2v2Co7MBDdHkdk2Vx1HnbbmsfkoXWSjwG");
 
 #[program]
 pub mod staking {

@@ -10,6 +10,7 @@ import '@solana/wallet-adapter-react-ui/styles.css';
 import './index.css';
 import App from './App';
 import Dash from './pages/Dash';
+import AmmPage from './pages/AmmPage';
 
 const queryClient = new QueryClient({
     defaultOptions: {
@@ -30,6 +31,7 @@ createRoot(document.getElementById('root')!).render(
                             <Routes>
                                 <Route path="/" element={<App />} />
                                 <Route path="/dash" element={<Dash />} />
+                                <Route path="/offer-desk" element={<AmmPage />} />
                             </Routes>
                         </BrowserRouter>
                     </QueryClientProvider>

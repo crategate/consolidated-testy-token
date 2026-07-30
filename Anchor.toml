@@ -6,9 +6,9 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-amm = "HtdXAsisFb5BcW8N1ejbWURZB9WHEFPgHemFqBzHkY9z"
-crank_oracle = "9X66uGcL9LF6kTzz442nxQKctaTZEyhmtPe5HBFJLW38"
-staking = "8pg4vnWVu5EiiBdrBF3ck1STsMToqDQAezYwZLPt3PbY"
+amm = "7L32KRgZAttvuiY7LgtLTUwTAYL54JfyELVd7CUxVKgy"
+crank_oracle = "ENJn9r8uCBLZXJ4unADAJfgNScWZuEm3rHD2LoBDpAki"
+staking = "Fzqz7EK6CZp2v2Co7MBDdHkdk2Vx1HnbbmsfkoXWSjwG"
 
 [programs.localnet]
 testy_token = "Eb7SiNnSwCoKobhG8dDarPQxErqmnzK7kJ1SRW9vEpdS"
@@ -21,16 +21,21 @@ cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
+amm-init = "npx ts-node ./scripts/amm-init.ts"
+amm-test-data = "npx ts-node ./scripts/amm-test-data.ts"
+
 bount = "npx ts-node ./scripts/oracle/mev-keeper.ts"
 crank = "npx ts-node ./scripts/oracle/managedUpdate.ts --feedId 0xaf3a39b12f5c052d81eb8c62bb86f4691fce2c2e0c88b39f83801978b6f203c3"
+
 feed-deploy = "npx ts-node ./scripts/oracle/feed-deploy.ts"
+
 init = "npx ts-node ./scripts/initialize.ts && npx ts-node ./scripts/init-bounty.ts"
 init-o = "npx ts-node ./scripts/initialize.ts"
 
 mint = "npx ts-node scripts/mint-launch.ts"
 pool = "npx ts-node ./scripts/pool-init.ts"
-amm-init = "npx ts-node ./scripts/amm-init.ts"
-amm-test-data = "npx ts-node ./scripts/amm-test-data.ts"
 set-oracle = "npx ts-node ./scripts/oracle/set-oracle-state.ts"
+
+
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
 test-staking = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/staking.test.ts"
