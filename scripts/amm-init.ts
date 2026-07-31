@@ -8,6 +8,7 @@ import {
     TOKEN_PROGRAM_ID,
     createTransferCheckedInstruction,
     createAssociatedTokenAccountInstruction,
+    createAssociatedTokenAccountIdempotentInstruction,
     getAccount,
 } from "@solana/spl-token";
 import { pubkey, writeDeploymentState } from "./deployment-state";
@@ -154,7 +155,7 @@ async function main() {
     const nysehInfo = await provider.connection.getAccountInfo(nysehVaultAta);
     if (!nysehInfo) {
         console.log("  Creating NYSEH vault (Token-2022)...");
-        preIxs.push(createAssociatedTokenAccountInstruction(
+        preIxs.push(createAssociatedTokenAccountIdempotentInstruction(
             provider.wallet.publicKey, nysehVaultAta, ammStatePda,
             NYSEH_MINT, TOKEN_2022_PROGRAM_ID
         ));
@@ -163,7 +164,7 @@ async function main() {
     const usdcInfo = await provider.connection.getAccountInfo(usdcVaultAta);
     if (!usdcInfo) {
         console.log("  Creating USDC vault (standard Token)...");
-        preIxs.push(createAssociatedTokenAccountInstruction(
+        preIxs.push(createAssociatedTokenAccountIdempotentInstruction(
             provider.wallet.publicKey, usdcVaultAta, ammStatePda,
             USDC_MINT, TOKEN_PROGRAM_ID  // <-- Standard Token
         ));
