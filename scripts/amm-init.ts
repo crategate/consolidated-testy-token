@@ -149,35 +149,42 @@ async function main() {
     console.log("  Market Status: ", marketStatusPda.toBase58());
 
     console.log("\n📦 Checking vault accounts...");
-    // const preIxs = [];
+    const preIxs = [];
 
-    // const nysehInfo = await provider.connection.getAccountInfo(nysehVaultAta);
-    // if (!nysehInfo) {
-    //     console.log("  Creating NYSEH vault (Token-2022)...");
-    //     preIxs.push(createAssociatedTokenAccountInstruction(
-    //         provider.wallet.publicKey, nysehVaultAta, ammStatePda,
-    //         NYSEH_MINT, TOKEN_2022_PROGRAM_ID
-    //     ));
-    // }
+    const nysehInfo = await provider.connection.getAccountInfo(nysehVaultAta);
+    if (!nysehInfo) {
+        console.log("  Creating NYSEH vault (Token-2022)...");
+        preIxs.push(createAssociatedTokenAccountInstruction(
+            provider.wallet.publicKey, nysehVaultAta, ammStatePda,
+            NYSEH_MINT, TOKEN_2022_PROGRAM_ID
+        ));
+    }
 
-    // const usdcInfo = await provider.connection.getAccountInfo(usdcVaultAta);
-    // if (!usdcInfo) {
-    //     console.log("  Creating USDC vault (standard Token)...");
-    //     preIxs.push(createAssociatedTokenAccountInstruction(
-    //         provider.wallet.publicKey, usdcVaultAta, ammStatePda,
-    //         USDC_MINT, TOKEN_PROGRAM_ID  // <-- Standard Token
-    //     ));
-    // }
-
-    // if (preIxs.length > 0) {
-    //     const tx = new Transaction().add(...preIxs);
-    //     const { blockhash } = await provider.connection.getLatestBlockhash("confirmed");
-    //     tx.recentBlockhash = blockhash;
-    //     tx.feePayer = provider.wallet.publicKey;
-    //     const sig = await provider.sendAndConfirm(tx);
-    //     console.log("  ✅ Vaults created:", sig);
-    // }
-    // ── 5. Initialize AMM ──
+    const usdcInfo = await provider.connection.getAccountInfo(usdcVaultAta);
+    if (!usdcInfo) {
+        console.log("  Creating USDC vault (standard Token)...");
+        preIxs.push(createAssociatedTokenAccountInstruction(
+            provider.wallet.publicKey, usdcVaultAta, ammStatePda,
+            USDC_MINT, TOKEN_PROGRAM_ID  // <-- Standard Token
+        ));
+    }
+    const usdcDipInfo = await provider.connection.getAccountInfo(usdcDipAta);
+    if (!usdcDipInfo) {
+        console.log("  Creating USDC dip vault (standard Token)...");
+        preIxs.push(createAssociatedTokenAccountInstruction(
+            provider.wallet.publicKey, usdcDipAta, ammStatePda,
+            USDC_MINT, TOKEN_PROGRAM_ID
+        ));
+    }
+    if (preIxs.length > 0) {
+        const tx = new Transaction().add(...preIxs);
+        const { blockhash } = await provider.connection.getLatestBlockhash("confirmed");
+        tx.recentBlockhash = blockhash;
+        tx.feePayer = provider.wallet.publicKey;
+        const sig = await provider.sendAndConfirm(tx);
+        console.log("  ✅ Vaults created:", sig);
+    }
+    //   ── 5. Initialize AMM ──
     console.log("\n🚀 Initializing AMM accounts...");
     try {
         const tx = await ammProgram.methods

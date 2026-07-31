@@ -84,8 +84,6 @@ pub struct InitializeAmm<'info> {
     pub amm_state: Box<Account<'info, AmmState>>,
     /// CHECK: nyseh vault
     #[account(
-        init,
-        payer = authority,
         associated_token::mint = nyseh_mint,
         associated_token::authority = amm_state,
         associated_token::token_program = token_2022_program,
@@ -93,16 +91,12 @@ pub struct InitializeAmm<'info> {
     pub nyseh_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     /// CHECK: usdc vault
     #[account(
-        init,
-        payer= authority,
        associated_token::mint = usdc_mint,
         associated_token::authority = amm_state,
         associated_token::token_program = token_program,
     )]
     pub usdc_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(
-        init,
-        payer = authority,
         associated_token::mint = usdc_mint,
         associated_token::authority = amm_state,
         associated_token::token_program = token_program,
