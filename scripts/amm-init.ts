@@ -96,7 +96,36 @@ async function main() {
         true,
         TOKEN_2022_PROGRAM_ID
     );
-    const [marketStatusPda] = PublicKey.findProgramAddressSync(
+    const usdcDipAta = getAssociatedTokenAddressSync(
+        USDC_MINT,
+        ammStatePda,       // The authority/owner of the vault
+        true,              // allowOwnerOffCurve = true (Required because ammStatePda is a PDA)
+        TOKEN_PROGRAM_ID   // Standard Token Program ID
+    );
+
+    const [solDipPda] = PublicKey.findProgramAddressSync(
+        [
+            Buffer.from("amm_sol_dip"),
+            NYSEH_MINT.toBuffer()
+        ],
+        AMM_PROGRAM_ID
+    );
+
+    const [acceptedOffersPda] = PublicKey.findProgramAddressSync(
+        [
+            Buffer.from("accepted_offers"),
+            NYSEH_MINT.toBuffer()
+        ],
+        AMM_PROGRAM_ID
+    );
+
+    const [metricsPda] = PublicKey.findProgramAddressSync(
+        [
+            Buffer.from("metrics"),
+            NYSEH_MINT.toBuffer()
+        ],
+        AMM_PROGRAM_ID
+    ); const [marketStatusPda] = PublicKey.findProgramAddressSync(
         [Buffer.from("market_status")],
         CRANK_PROGRAM_ID
     );
@@ -120,34 +149,34 @@ async function main() {
     console.log("  Market Status: ", marketStatusPda.toBase58());
 
     console.log("\n📦 Checking vault accounts...");
-    const preIxs = [];
+    // const preIxs = [];
 
-    const nysehInfo = await provider.connection.getAccountInfo(nysehVaultAta);
-    if (!nysehInfo) {
-        console.log("  Creating NYSEH vault (Token-2022)...");
-        preIxs.push(createAssociatedTokenAccountInstruction(
-            provider.wallet.publicKey, nysehVaultAta, ammStatePda,
-            NYSEH_MINT, TOKEN_2022_PROGRAM_ID
-        ));
-    }
+    // const nysehInfo = await provider.connection.getAccountInfo(nysehVaultAta);
+    // if (!nysehInfo) {
+    //     console.log("  Creating NYSEH vault (Token-2022)...");
+    //     preIxs.push(createAssociatedTokenAccountInstruction(
+    //         provider.wallet.publicKey, nysehVaultAta, ammStatePda,
+    //         NYSEH_MINT, TOKEN_2022_PROGRAM_ID
+    //     ));
+    // }
 
-    const usdcInfo = await provider.connection.getAccountInfo(usdcVaultAta);
-    if (!usdcInfo) {
-        console.log("  Creating USDC vault (standard Token)...");
-        preIxs.push(createAssociatedTokenAccountInstruction(
-            provider.wallet.publicKey, usdcVaultAta, ammStatePda,
-            USDC_MINT, TOKEN_PROGRAM_ID  // <-- Standard Token
-        ));
-    }
+    // const usdcInfo = await provider.connection.getAccountInfo(usdcVaultAta);
+    // if (!usdcInfo) {
+    //     console.log("  Creating USDC vault (standard Token)...");
+    //     preIxs.push(createAssociatedTokenAccountInstruction(
+    //         provider.wallet.publicKey, usdcVaultAta, ammStatePda,
+    //         USDC_MINT, TOKEN_PROGRAM_ID  // <-- Standard Token
+    //     ));
+    // }
 
-    if (preIxs.length > 0) {
-        const tx = new Transaction().add(...preIxs);
-        const { blockhash } = await provider.connection.getLatestBlockhash("confirmed");
-        tx.recentBlockhash = blockhash;
-        tx.feePayer = provider.wallet.publicKey;
-        const sig = await provider.sendAndConfirm(tx);
-        console.log("  ✅ Vaults created:", sig);
-    }
+    // if (preIxs.length > 0) {
+    //     const tx = new Transaction().add(...preIxs);
+    //     const { blockhash } = await provider.connection.getLatestBlockhash("confirmed");
+    //     tx.recentBlockhash = blockhash;
+    //     tx.feePayer = provider.wallet.publicKey;
+    //     const sig = await provider.sendAndConfirm(tx);
+    //     console.log("  ✅ Vaults created:", sig);
+    // }
     // ── 5. Initialize AMM ──
     console.log("\n🚀 Initializing AMM accounts...");
     try {
@@ -160,13 +189,18 @@ async function main() {
                 solVault: solVaultPda,
                 usdcVault: usdcVaultAta,
                 nysehVault: nysehVaultAta,
+                usdcDip: usdcDipAta,
+                solDip: solDipPda,
                 ammState: ammStatePda,
                 offerList: offerListPda,
+                acceptedOffers: acceptedOffersPda,
+                metrics: metricsPda,
                 marketStatusPda: marketStatusPda,
                 crankProgram: CRANK_PROGRAM_ID,
                 priceOracle: priceOracle,
                 associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
-                tokenProgram: TOKEN_2022_PROGRAM_ID,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                token2022Program: TOKEN_2022_PROGRAM_ID,
                 systemProgram: anchor.web3.SystemProgram.programId,
             })
             .rpc();

@@ -2,6 +2,7 @@ use crate::state::offersState::{AcceptedOffers, AmmState, MarketMetrics, OfferLi
 use anchor_lang::prelude::*;
 use anchor_spl::{
     associated_token::AssociatedToken,
+    token_2022::Token2022,
     token_interface::{Mint, TokenAccount, TokenInterface},
 };
 
@@ -73,12 +74,21 @@ pub struct InitializeAmm<'info> {
     pub authority: Signer<'info>,
     pub nyseh_mint: Box<InterfaceAccount<'info, Mint>>,
     pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(
+        init,
+        payer=authority,
+        seeds=[b"amm_state", nyseh_mint.key().as_ref()],
+        bump,
+        space = 8 + AmmState::INIT_SPACE,
+    )]
+    pub amm_state: Box<Account<'info, AmmState>>,
     /// CHECK: nyseh vault
     #[account(
         init,
         payer = authority,
         associated_token::mint = nyseh_mint,
         associated_token::authority = amm_state,
+        associated_token::token_program = token_2022_program,
     )]
     pub nyseh_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     /// CHECK: usdc vault
@@ -87,6 +97,7 @@ pub struct InitializeAmm<'info> {
         payer= authority,
        associated_token::mint = usdc_mint,
         associated_token::authority = amm_state,
+        associated_token::token_program = token_program,
     )]
     pub usdc_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(
@@ -94,6 +105,7 @@ pub struct InitializeAmm<'info> {
         payer = authority,
         associated_token::mint = usdc_mint,
         associated_token::authority = amm_state,
+        associated_token::token_program = token_program,
     )]
     pub usdc_dip: Box<InterfaceAccount<'info, TokenAccount>>,
     /// CHECK: sol vault for buybacks on dips
@@ -114,14 +126,6 @@ pub struct InitializeAmm<'info> {
         space = 8,
     )]
     pub sol_vault: AccountInfo<'info>,
-    #[account(
-        init,
-        payer=authority,
-        seeds=[b"amm_state", nyseh_mint.key().as_ref()],
-        bump,
-        space = 8 + AmmState::INIT_SPACE,
-    )]
-    pub amm_state: Box<Account<'info, AmmState>>,
     #[account(
         init,
         payer = authority,
@@ -161,5 +165,6 @@ pub struct InitializeAmm<'info> {
     pub price_oracle: AccountInfo<'info>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub token_program: Interface<'info, TokenInterface>,
+    pub token_2022_program: Program<'info, Token2022>,
     pub system_program: Program<'info, System>,
 }
