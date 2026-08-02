@@ -4,7 +4,7 @@ SPL token protocol tied to NYSE trading hours. Market status (open / after-hours
 
 ## Layout
 
-- `programs/amm` — offer desk: `make_offers` (builds daily offer sheet from 3 metrics), `calc_completed_offers` (scores fill % at day end), `load_test_data` (**devnet-only, remove before mainnet**), `dex_buyback`, `set_keeper`. State in `state/offersState.rs`: `AmmState` (incl. `highest_buyback_basis` ratchet floor, `keeper`, `price_oracle`), `MarketMetrics` (20-day `price_changes` ring + `sample_head`, `trailing_stake_health[5]`), `AcceptedOffers` (3×[u8;5] fill %), `OfferList` + `lot_sizer` (tiers 0–21).
+- `programs/amm` — offer desk: `make_offers` (builds daily offer sheet via the sequential combinator — step 1 totals done, steps 2–5 TODO; metric helpers in `instructions/helpers_make_offers.rs`), `calc_completed_offers` (scores fill % at day end), `load_test_data` (**devnet-only, remove before mainnet**), `dex_buyback` (execution TODO; `ratchet_buyback_basis` wired), `set_keeper`. State in `state/offersState.rs`: `AmmState` (incl. `highest_buyback_basis` ratchet floor, `keeper`, `price_oracle`), `MarketMetrics` (20-day `price_changes` ring + `sample_head`, `trailing_stake_health[5]`), `AcceptedOffers` (3×[u8;5] fill %), `OfferList` + `lot_sizer` (tiers 0–21).
 - `programs/crank-oracle` — market-status PDA (`b"market_status"`). Status byte at offset 8, day index u64 at bytes 17..25. Mapping: 0=open, 1=after-hours, 2=closed, 3=halted.
 - `programs/staking` — staking pool, bounty.
 - `scripts/` — deployment/ops TS scripts; `scripts/oracle/` holds Switchboard feed deploy + keeper (`mev-keeper.ts` is the deployed crank: collects bounty, updates quote, fires `makeOffers` on transitions 0→1, 0→2, 3→2).

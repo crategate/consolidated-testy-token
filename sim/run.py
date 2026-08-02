@@ -59,7 +59,8 @@ TIERS = ("sml", "med", "big")
 
 
 def run_sim(scenario, desk="v1", v3_mode="full", v3_aggr_mod=False,
-            v3_shape="bump", impact_k=IMPACT_K, seed=SEED, start_vault=START_VAULT):
+            v3_shape="bump", impact_k=IMPACT_K, seed=SEED, start_vault=START_VAULT,
+            days=DAYS):
     """Simulate one scenario; return list of per-day row dicts."""
     rng = random.Random(seed)
     state = MetricsState(total_staked=int(START_STAKED_PCT * SUPPLY / 100),
@@ -72,7 +73,7 @@ def run_sim(scenario, desk="v1", v3_mode="full", v3_aggr_mod=False,
     pending_impact_cp = 0.0   # buyback impact landing on today's return
     rows = []
 
-    for day in range(1, DAYS + 1):
+    for day in range(1, days + 1):
         base_cp = scenario.base_ret_cp(day, rng)          # rng draw 1
         ret_cp = base_cp + pending_impact_cp
         price *= 1.0 + ret_cp / 10_000.0
@@ -139,6 +140,7 @@ def run_sim(scenario, desk="v1", v3_mode="full", v3_aggr_mod=False,
             "notional": notional, "buyback_notional": BUYBACK_SHARE * notional,
             "tokens_sold": tokens_sold, "vault": vault, "vault_pre": vault_pre,
             "cap_bps": sheet["cap_bps"] if (desk == "v3" and sheet) else cap_bps,
+            "floor_price": floor_price if desk == "v3" else None,
             "impact_cp_next": pending_impact_cp,
         })
     return rows
@@ -388,9 +390,9 @@ def _t_first(rows, threshold):
     return next((r["day"] for r in rows if r["momentum"] >= threshold), None)
 
 
-def _vault_lifespan(rows, start_vault):
+def _vault_lifespan(rows, start_vault, days=DAYS):
     d = next((r["day"] for r in rows if r["vault"] < 0.10 * start_vault), None)
-    return str(d) if d else f">{DAYS}"
+    return str(d) if d else f">{days}"
 
 
 def e1_ab(bull_sc):

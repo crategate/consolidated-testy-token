@@ -4,6 +4,9 @@ pub use initialize::*;
 pub mod make_offers;
 pub use make_offers::*;
 
+// Metric helpers consumed by make_offers (not an instruction).
+pub mod helpers_make_offers;
+
 pub mod offer_claim;
 pub use offer_claim::*;
 

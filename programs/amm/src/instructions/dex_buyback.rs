@@ -37,9 +37,23 @@ pub struct DexBuyback<'info> {
 }
 
 pub fn handler(_ctx: Context<DexBuyback>) -> Result<()> {
-    // execute buyback with 80% of accumulated sol and usdc from offer sales
-    // random trades over next trading day
+    // TODO: buyback EXECUTION is not engineered yet. Plan: spend the 80% share
+    // of accumulated sol/usdc offer proceeds on DEX buys, spread over the next
+    // trading day (keeper-fired slices). The ratchet helper below is the only
+    // completed piece of the buyback path — on every executed fill, call:
+    //   ratchet_buyback_basis(&mut amm_state, fill_price);
     Ok(())
+}
+
+// The ratchet floor is the offer desk's ONLY bear-shutdown mechanism:
+// make_offers may never price a lot below the highest realized buyback price,
+// so when the live price falls to the floor the desk goes dark on its own.
+// It therefore only ever moves UP — call once per executed buyback fill.
+// (Any decay/reset policy would be a separate design decision; none exists.)
+pub fn ratchet_buyback_basis(amm_state: &mut AmmState, executed_price: u64) {
+    if executed_price > amm_state.highest_buyback_basis {
+        amm_state.highest_buyback_basis = executed_price;
+    }
 }
 
 #[error_code]

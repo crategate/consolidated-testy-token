@@ -37,6 +37,11 @@ pub fn handler(ctx: Context<UpdateTradedayStats>) -> Result<()> {
             || caller == ctx.accounts.amm_state.crank_program,
         ErrorCode::UnauthorizedCaller
     );
+    //
+    // DECAY MECHANISM: lower the ratchet floor by 0.5% every trading day.
+    // Decay only starts after 15 trading days of no offer desk activity
+    // due to the DEX price being too low to make offers. So T+15, then decay
+    // hits every trading day following that
 
     // MarketStatus layout: disc(8) + current_state(1) + timestamp(8) + trading_day_index(8)
     let market_data = ctx.accounts.market_status.try_borrow_data()?;
