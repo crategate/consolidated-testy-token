@@ -4,7 +4,7 @@ This directory contains simple, easy-to-understand examples for getting started 
 
 ## Examples
 
-### `managedUpdate.ts` - Complete Managed Update Flow
+### `oracle/managedUpdate.ts` - Complete Managed Update Flow
 A more detailed example demonstrating:
 - Canonical oracle account derivation
 - Managed update instruction creation
@@ -117,7 +117,7 @@ pub fn use_oracle_data(ctx: Context<UseOracleData>) -> Result<()> {
 
 ## Getting Started
 
-1. **Run the example**: Start with `managedUpdate.ts` for learning
+1. **Run the example**: Start with `oracle/managedUpdate.ts` for learning
 2. **Set your feed ID**: Use a real Switchboard feed hash
 3. **See the integration**: Watch the oracle integration in action
 4. **Modify for your needs**: Adapt the pattern to your program

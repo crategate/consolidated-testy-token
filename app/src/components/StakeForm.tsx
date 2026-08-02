@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useStake } from '../hooks/useStake';
+import { useStake } from '../hooks/stake/useStake';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import { getAccount, getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';

@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { PublicKey } from '@solana/web3.js';
 import BN from 'bn.js';
 import { usePool } from './usePool';
-import { useMarketStatus } from './useMarketStatus';
+import { useMarketStatus } from '../useMarketStatus';
 import type { Position } from './usePositions';
 
 export interface EnrichedPosition extends Position {

@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
-import { useStakingProgram, STAKING_PROGRAM_ID, CRANK_PROGRAM_ID } from '../anchor/setup';
+import { useStakingProgram, STAKING_PROGRAM_ID, CRANK_PROGRAM_ID } from '../../anchor/setup';
 import { PublicKey, Transaction } from '@solana/web3.js';
 import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';
 import type { Position } from './usePositions';
@@ -59,9 +59,11 @@ export function useClaimAll(mint: PublicKey | null, positions: Position[], marke
                 tx.add(ix);
             }
 
-            const signature = await (program.provider as any).sendAndConfirm(tx);
+            const sendAndConfirm = program.provider.sendAndConfirm?.bind(program.provider);
+            if (!sendAndConfirm) throw new Error('Provider cannot send transactions');
+            const signature = await sendAndConfirm(tx);
             return signature;
-        } catch (e: any) {
+        } catch (e) {
             console.error('Claim all error:', e);
             throw e;
         } finally {

@@ -2,6 +2,7 @@ use crate::state::offersState::{AcceptedOffers, AmmState, MarketMetrics, OfferLi
 use anchor_lang::prelude::*;
 use anchor_spl::{
     associated_token::AssociatedToken,
+    token_2022::Token2022,
     token_interface::{Mint, TokenAccount, TokenInterface},
 };
 
@@ -13,6 +14,8 @@ pub fn handler(ctx: Context<InitializeAmm>) -> Result<()> {
     let offer_list = &mut ctx.accounts.offer_list;
 
     amm_state.authority = ctx.accounts.authority.key();
+    // Single-wallet setups (devnet) work out of the box; rotate for mainnet.
+    amm_state.keeper = ctx.accounts.authority.key();
     amm_state.nyseh_mint = ctx.accounts.nyseh_mint.key();
     amm_state.usdc_mint = ctx.accounts.usdc_mint.key();
     amm_state.sol_vault = ctx.accounts.sol_vault.key();
@@ -22,6 +25,7 @@ pub fn handler(ctx: Context<InitializeAmm>) -> Result<()> {
     amm_state.accepted_offers = ctx.accounts.accepted_offers.key();
     amm_state.market_status_pda = ctx.accounts.market_status_pda.key();
     amm_state.crank_program = ctx.accounts.crank_program.key();
+    amm_state.price_oracle = ctx.accounts.price_oracle.key();
     amm_state.total_sol_proceeds = 0;
     amm_state.total_usdc_proceeds = 0;
     amm_state.bump = ctx.bumps.amm_state;
@@ -51,7 +55,8 @@ pub fn handler(ctx: Context<InitializeAmm>) -> Result<()> {
 
     let metrics = &mut ctx.accounts.metrics;
     metrics.day_index = 0;
-    metrics.price_samples = [0; 5];
+    metrics.price_changes = [0; 20];
+    metrics.sample_head = 0;
     metrics.treasury_sol = 0;
     metrics.total_staked = 0;
     metrics.total_supply = 0;
@@ -69,27 +74,32 @@ pub struct InitializeAmm<'info> {
     pub authority: Signer<'info>,
     pub nyseh_mint: Box<InterfaceAccount<'info, Mint>>,
     pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
-    /// CHECK: nyseh vault
     #[account(
         init,
-        payer = authority,
+        payer=authority,
+        seeds=[b"amm_state", nyseh_mint.key().as_ref()],
+        bump,
+        space = 8 + AmmState::INIT_SPACE,
+    )]
+    pub amm_state: Box<Account<'info, AmmState>>,
+    /// CHECK: nyseh vault
+    #[account(
         associated_token::mint = nyseh_mint,
         associated_token::authority = amm_state,
+        associated_token::token_program = token_2022_program,
     )]
     pub nyseh_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     /// CHECK: usdc vault
     #[account(
-        init,
-        payer= authority,
        associated_token::mint = usdc_mint,
         associated_token::authority = amm_state,
+        associated_token::token_program = token_program,
     )]
     pub usdc_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(
-        init,
-        payer = authority,
         associated_token::mint = usdc_mint,
         associated_token::authority = amm_state,
+        associated_token::token_program = token_program,
     )]
     pub usdc_dip: Box<InterfaceAccount<'info, TokenAccount>>,
     /// CHECK: sol vault for buybacks on dips
@@ -110,14 +120,6 @@ pub struct InitializeAmm<'info> {
         space = 8,
     )]
     pub sol_vault: AccountInfo<'info>,
-    #[account(
-        init,
-        payer=authority,
-        seeds=[b"amm_state", nyseh_mint.key().as_ref()],
-        bump,
-        space = 8 + AmmState::INIT_SPACE,
-    )]
-    pub amm_state: Box<Account<'info, AmmState>>,
     #[account(
         init,
         payer = authority,
@@ -153,7 +155,10 @@ pub struct InitializeAmm<'info> {
 
     /// CHECK: stored for verification in makeOffers
     pub crank_program: AccountInfo<'info>,
+    /// CHECK: canonical Switchboard quote account for [market_status, price] feeds
+    pub price_oracle: AccountInfo<'info>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub token_program: Interface<'info, TokenInterface>,
+    pub token_2022_program: Program<'info, Token2022>,
     pub system_program: Program<'info, System>,
 }

@@ -2,7 +2,7 @@ import * as sb from "@switchboard-xyz/on-demand";
 import { OracleQuote, isMainnetConnection } from "@switchboard-xyz/on-demand";
 import yargs from "yargs";
 import { PublicKey } from "@solana/web3.js";
-import * as myIdl from "../target/idl/crank_oracle.json";
+import * as myIdl from "../../target/idl/crank_oracle.json";
 import * as fs from "fs";
 import * as dotenv from "dotenv";
 import * as anchor from "@coral-xyz/anchor";
@@ -14,7 +14,7 @@ import {
     DEFAULT_FEED_ID,
     logFeedId,
     handleSimulationError,
-} from "./utils";
+} from "../utils";
 
 dotenv.config();
 

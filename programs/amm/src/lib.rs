@@ -4,16 +4,13 @@ pub mod instructions;
 pub mod state;
 
 use anchor_lang::prelude::*;
-use anchor_spl::{
-    associated_token::AssociatedToken,
-    token_interface::{transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked},
-};
+use anchor_spl::token_interface::Mint;
 
 pub use constants::*;
 pub use instructions::*;
 pub use state::*;
 
-declare_id!("HtdXAsisFb5BcW8N1ejbWURZB9WHEFPgHemFqBzHkY9z");
+declare_id!("7L32KRgZAttvuiY7LgtLTUwTAYL54JfyELVd7CUxVKgy");
 
 #[program]
 pub mod amm {
@@ -28,6 +25,15 @@ pub mod amm {
 
     pub fn calc_completed_offers(ctx: Context<CalcCompletedOffers>) -> Result<()> {
         calc_completed_offers::handler(ctx)
+    }
+
+    pub fn set_keeper(ctx: Context<SetKeeper>, new_keeper: Pubkey) -> Result<()> {
+        set_keeper::handler(ctx, new_keeper)
+    }
+
+    // DEVNET/TEST ONLY — remove before mainnet
+    pub fn load_test_data(ctx: Context<LoadTestData>, data: TestMetrics) -> Result<()> {
+        load_test_data::handler(ctx, data)
     }
 
     pub fn offer_claim(ctx: Context<OfferClaim>, tier: u8, units: u8) -> Result<()> {

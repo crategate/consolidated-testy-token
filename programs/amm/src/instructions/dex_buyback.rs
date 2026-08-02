@@ -1,12 +1,5 @@
 use crate::state::offersState::{AcceptedOffers, AmmState, MarketMetrics, OfferList};
 use anchor_lang::prelude::*;
-use anchor_spl::{
-    associated_token::AssociatedToken,
-    token_interface::{
-        close_account, transfer_checked, CloseAccount, Mint, TokenAccount, TokenInterface,
-        TransferChecked,
-    },
-};
 
 #[derive(Accounts)]
 pub struct DexBuyback<'info> {
@@ -30,9 +23,12 @@ pub struct DexBuyback<'info> {
     pub market_status: UncheckedAccount<'info>,
     #[account(mut, seeds = [b"metrics", amm_state.nyseh_mint.as_ref()], bump)]
     pub metrics: Account<'info, MarketMetrics>,
-    /// CHECK: nyse_vault for balance capping
-    #[account(mut, address = amm_state.nyseh_vault)]
-    pub nyseh_vault: AccountInfo<'info>,
+    /// CHECK: sol_vault for buybacks
+    #[account(mut, address = amm_state.sol_vault)]
+    pub sol_vault: AccountInfo<'info>,
+    /// CHECK: sol_vault for buybacks
+    #[account(mut, address = amm_state.usdc_vault)]
+    pub usdc_vault: AccountInfo<'info>,
     /// CHECK: live price oracle (mock for devnet, change before mainnet)
     pub price_oracle: UncheckedAccount<'info>,
 
@@ -40,8 +36,24 @@ pub struct DexBuyback<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
+pub fn handler(_ctx: Context<DexBuyback>) -> Result<()> {
+    // TODO: buyback EXECUTION is not engineered yet. Plan: spend the 80% share
+    // of accumulated sol/usdc offer proceeds on DEX buys, spread over the next
+    // trading day (keeper-fired slices). The ratchet helper below is the only
+    // completed piece of the buyback path — on every executed fill, call:
+    //   ratchet_buyback_basis(&mut amm_state, fill_price);
     Ok(())
+}
+
+// The ratchet floor is the offer desk's ONLY bear-shutdown mechanism:
+// make_offers may never price a lot below the highest realized buyback price,
+// so when the live price falls to the floor the desk goes dark on its own.
+// It therefore only ever moves UP — call once per executed buyback fill.
+// (Any decay/reset policy would be a separate design decision; none exists.)
+pub fn ratchet_buyback_basis(amm_state: &mut AmmState, executed_price: u64) {
+    if executed_price > amm_state.highest_buyback_basis {
+        amm_state.highest_buyback_basis = executed_price;
+    }
 }
 
 #[error_code]

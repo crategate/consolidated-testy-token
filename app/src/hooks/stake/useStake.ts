@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
-import { useStakingProgram, STAKING_PROGRAM_ID, CRANK_PROGRAM_ID } from '../anchor/setup';
+import { useStakingProgram, STAKING_PROGRAM_ID, CRANK_PROGRAM_ID } from '../../anchor/setup';
 import { PublicKey, SystemProgram } from '@solana/web3.js';
 import BN from 'bn.js';
 import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';
@@ -34,10 +34,17 @@ export function useStake(mint: PublicKey | null, marketStatusPda?: PublicKey) {
         )[0];
 
         // Fetch user index to know which position index to create
+        type AccountNamespace = Record<
+            string,
+            { fetchNullable(key: PublicKey): Promise<{ nextIndex: unknown } | null> } | undefined
+        >;
         let userIndex = null;
         try {
-            userIndex = await (program.account as any).userStakeIndex?.fetchNullable(userIndexPda);
-        } catch (e) {
+            userIndex =
+                (await (program.account as AccountNamespace).userStakeIndex?.fetchNullable(
+                    userIndexPda,
+                )) ?? null;
+        } catch {
             console.log('No existing userIndex account (expected for first stake)');
         }
         const index = userIndex ? Number(userIndex.nextIndex) : 0;

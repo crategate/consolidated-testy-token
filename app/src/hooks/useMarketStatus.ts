@@ -25,6 +25,8 @@ export function useMarketStatus(marketStatusPda?: PublicKey): UseMarketStatusRet
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    const [stale, setStale] = useState(false);
+
     const fetchStatus = useCallback(async () => {
         if (!connection) return;
         try {
@@ -49,6 +51,8 @@ export function useMarketStatus(marketStatusPda?: PublicKey): UseMarketStatusRet
             const tradingDay = Number(view.getBigUint64(17, true)); // little-endian
 
             setData({ state, timestamp, tradingDay });
+            // Computed here rather than during render (Date.now is impure)
+            setStale(Date.now() / 1000 - timestamp > MAX_STALENESS_MS / 1000);
             setError(null);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Unknown error fetching oracle');
@@ -58,14 +62,11 @@ export function useMarketStatus(marketStatusPda?: PublicKey): UseMarketStatusRet
     }, [connection, marketStatusPda]);
 
     useEffect(() => {
-        fetchStatus();
+        // Deferred to a microtask so no setState runs synchronously inside the effect
+        void Promise.resolve().then(fetchStatus);
         const interval = setInterval(fetchStatus, 30000);
         return () => clearInterval(interval);
     }, [fetchStatus]);
-
-    const stale = data
-        ? (Date.now() / 1000) - data.timestamp > (MAX_STALENESS_MS / 1000)
-        : false;
 
     return { data, loading, error, stale, refresh: fetchStatus };
 }

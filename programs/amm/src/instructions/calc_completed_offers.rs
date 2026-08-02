@@ -1,14 +1,7 @@
 use crate::state::offersState::{AcceptedOffers, AmmState, Offer, OfferList};
 use anchor_lang::prelude::*;
-use anchor_spl::{
-    associated_token::AssociatedToken,
-    token_interface::{
-        close_account, transfer_checked, CloseAccount, Mint, TokenAccount, TokenInterface,
-        TransferChecked,
-    },
-};
 
-// Fires off at beginning of trade day.
+// Fires off at beginning of each trade day.
 
 #[derive(Accounts)]
 pub struct CalcCompletedOffers<'info> {
@@ -37,8 +30,7 @@ pub struct CalcCompletedOffers<'info> {
 pub fn handler(ctx: Context<CalcCompletedOffers>) -> Result<()> {
     let caller = ctx.accounts.cranker.key();
     require!(
-        caller == ctx.accounts.amm_state.authority
-            || caller == ctx.accounts.amm_state.crank_program,
+        caller == ctx.accounts.amm_state.authority || caller == ctx.accounts.amm_state.keeper,
         ErrorCode::UnauthorizedCaller
     );
 
@@ -48,7 +40,7 @@ pub fn handler(ctx: Context<CalcCompletedOffers>) -> Result<()> {
     let current_state = market_data[8];
     let current_day = u64::from_le_bytes(market_data[17..25].try_into().unwrap());
     // Only record at the start of a trading day (market just opened)
-    require!(current_state == 1, ErrorCode::InvalidMarketState);
+    require!(current_state == 0, ErrorCode::InvalidMarketState);
     // Once per trading day
     require!(
         ctx.accounts.accepted_offers.day_index != current_day,

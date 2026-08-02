@@ -1,14 +1,17 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useConnection } from '@solana/wallet-adapter-react';
-import { PublicKey } from '@solana/web3.js';
+import { PublicKey, type ParsedAccountData } from '@solana/web3.js';
 import { useReadOnlyStakingProgram } from './useReadOnlyProgram';
 import { STAKING_PROGRAM_ID } from '../anchor/setup';
+import type { StakePoolData } from './usePool';
 export interface PoolStats {
     totalStaked: number;
     totalSupply: number;
     userCount: number;
     decimals: number;
 }
+
+type AccountNamespace = Record<string, { fetch(key: PublicKey): Promise<unknown> } | undefined>;
 
 export function usePoolStats(mint: PublicKey | null) {
     const { connection } = useConnection();
@@ -30,12 +33,14 @@ export function usePoolStats(mint: PublicKey | null) {
             console.log('PoolStats: fetching pool at', poolPda.toBase58());
 
             // Try to fetch pool account - use try/catch since fetchNullable doesn't exist
-            let pool = null;
+            let pool: StakePoolData | null = null;
             try {
-                pool = await (program.account as any).stakePool.fetch(poolPda);
+                pool = (await (program.account as AccountNamespace).stakePool?.fetch(
+                    poolPda,
+                )) as StakePoolData | null;
                 console.log('PoolStats: pool fetched', pool);
-            } catch (e: any) {
-                console.log('PoolStats: pool not found or not initialized yet', e.message);
+            } catch (e) {
+                console.log('PoolStats: pool not found or not initialized yet', e instanceof Error ? e.message : e);
             }
 
             // Get mint info for supply and decimals
@@ -43,7 +48,7 @@ export function usePoolStats(mint: PublicKey | null) {
             let supply = 0;
             let decimals = 9;
             if (mintInfo.value && 'parsed' in mintInfo.value.data) {
-                const parsed = (mintInfo.value.data as any).parsed.info;
+                const parsed = (mintInfo.value.data as ParsedAccountData).parsed.info;
                 supply = Number(parsed.supply);
                 decimals = Number(parsed.decimals);
                 console.log('PoolStats: mint info', { supply, decimals });
@@ -83,7 +88,8 @@ export function usePoolStats(mint: PublicKey | null) {
     }, [connection, mint, program]);
 
     useEffect(() => {
-        fetchStats();
+        // Deferred to a microtask so no setState runs synchronously inside the effect
+        void Promise.resolve().then(fetchStats);
     }, [fetchStats]);
 
     return { stats, loading, refresh: fetchStats };

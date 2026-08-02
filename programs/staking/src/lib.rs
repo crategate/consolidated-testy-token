@@ -4,7 +4,6 @@ use anchor_spl::token_interface::{
 };
 
 mod amm_stake;
-use amm_stake::create_amm_position;
 // =============================================================================
 // NYSEH STAKING PROGRAM — COMPLETE IMPLEMENTATION
 // =============================================================================
@@ -71,7 +70,7 @@ use amm_stake::create_amm_position;
 //   → Alice's next claim includes her share of Bob's penalty
 // =============================================================================
 
-declare_id!("8pg4vnWVu5EiiBdrBF3ck1STsMToqDQAezYwZLPt3PbY");
+declare_id!("Fzqz7EK6CZp2v2Co7MBDdHkdk2Vx1HnbbmsfkoXWSjwG");
 
 #[program]
 pub mod staking {

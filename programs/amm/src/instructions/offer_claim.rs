@@ -1,10 +1,10 @@
 // programs/amm/src/instructions/offerClaim.rs
 
-use crate::state::offersState::{AmmState, Offer, OfferList};
+use crate::state::offersState::{AmmState, OfferList};
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token_interface::{
-    transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked,
+    Mint, TokenAccount, TokenInterface, TransferChecked,
 };
 
 #[derive(Accounts)]
@@ -93,10 +93,10 @@ pub fn handler(ctx: Context<OfferClaim>, tier: u8, units: u8) -> Result<()> {
     }
 
     let total_nyseh = (offer.lot_size as u64) * (units as u64);
-    let total_cost = total_nyseh * effective_price; // adjust for decimals in practice
+    let _total_cost = total_nyseh * effective_price; // adjust for decimals in practice
 
     // ── Transfer USDC from buyer to AMM ──
-    let cpi_accounts = TransferChecked {
+    let _cpi_accounts = TransferChecked {
         from: ctx.accounts.buyer_usdc.to_account_info(),
         mint: ctx.accounts.usdc_mint.to_account_info(), // need to add usdc_mint to accounts
         to: ctx.accounts.amm_usdc_vault.to_account_info(),

@@ -36,6 +36,7 @@ export default defineConfig({
         alias: {
             '@idl': path.resolve(__dirname, '../target/idl'),
             '@types': path.resolve(__dirname, '../target/types'),
+            '@': path.resolve(__dirname, '../')
         },
     },
     define: {

@@ -2,7 +2,7 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { StakeForm } from './StakeForm';
 import { Positions } from './Positions';
-import { usePositions } from '../hooks/usePositions';
+import { usePositions } from '../hooks/stake/usePositions';
 import type { ResolvedDeployment } from '../config';
 
 interface WalletDashboardProps {
@@ -10,11 +10,9 @@ interface WalletDashboardProps {
 }
 
 export function WalletDashboard({ deployment }: WalletDashboardProps) {
-    // @ts-ignore
-    const { publicKey, connected, connecting } = useWallet();
+    const { connected, connecting } = useWallet();
     const mint = deployment.mintKey;
-    // @ts-ignore
-    const { positions, refresh: refreshPositions } = usePositions(mint);
+    const { refresh: refreshPositions } = usePositions(mint);
     if (!connected) {
         return (
             <div className="wallet-dashboard connect-prompt">

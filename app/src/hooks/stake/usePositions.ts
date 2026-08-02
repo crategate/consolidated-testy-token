@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import BN from 'bn.js';
-import { useStakingProgram, STAKING_PROGRAM_ID } from '../anchor/setup';
+import { useStakingProgram, STAKING_PROGRAM_ID } from '../../anchor/setup';
 
 export interface Position {
     pda: PublicKey;
@@ -13,6 +13,19 @@ export interface Position {
     currentWeight: string; // u128 as string to keep precision
     rewardDebt: string; // u128 as string to keep precision
 }
+
+type StakePositionAccount = {
+    amount: { toString(): string };
+    entryTradingDay: { toString(): string };
+    lastClaimTimestamp: { toString(): string };
+    currentWeight?: { toString(): string };
+    rewardDebt?: { toString(): string };
+};
+
+type AccountNamespace = Record<
+    string,
+    { fetchNullable(key: PublicKey): Promise<unknown> } | undefined
+>;
 
 export function usePositions(mint: PublicKey | null) {
     const { publicKey } = useWallet();
@@ -35,7 +48,9 @@ export function usePositions(mint: PublicKey | null) {
                 [Buffer.from('user_index'), publicKey.toBuffer()],
                 STAKING_PROGRAM_ID
             );
-            const userIndex = await (program.account as any).userStakeIndex?.fetchNullable(userIndexPda);
+            const userIndex = (await (program.account as AccountNamespace).userStakeIndex?.fetchNullable(
+                userIndexPda,
+            )) as { nextIndex: { toString(): string } } | null | undefined;
             const nextIndex = userIndex ? Number(userIndex.nextIndex) : 0;
             const fetched: Position[] = [];
             for (let i = 0; i < nextIndex; i++) {
@@ -48,7 +63,9 @@ export function usePositions(mint: PublicKey | null) {
                         indexBytes,
                     ], STAKING_PROGRAM_ID);
 
-                    const pos = await (program.account as any).stakePosition?.fetchNullable(positionPda);
+                    const pos = (await (program.account as AccountNamespace).stakePosition?.fetchNullable(
+                        positionPda,
+                    )) as StakePositionAccount | null | undefined;
                     if (pos) {
                         fetched.push({
                             pda: positionPda,
@@ -75,7 +92,8 @@ export function usePositions(mint: PublicKey | null) {
     }, [publicKey, program, mint]);
 
     useEffect(() => {
-        fetchPositions();
+        // Deferred to a microtask so no setState runs synchronously inside the effect
+        void Promise.resolve().then(fetchPositions);
     }, [fetchPositions]);
 
     return { positions, loading, refresh: fetchPositions };
