@@ -44,6 +44,9 @@ pub struct Offer {
 pub struct OfferList {
     pub owner: Pubkey,
     pub seed: u64,
+    // Last trading day a sheet was constructed — make_offers' idempotency
+    // guard (metrics accounts are read-only to make_offers).
+    pub day_index: u64,
 
     pub big_offer: Offer,
 

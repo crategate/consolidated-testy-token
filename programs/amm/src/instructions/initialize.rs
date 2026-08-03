@@ -33,6 +33,7 @@ pub fn handler(ctx: Context<InitializeAmm>) -> Result<()> {
 
     offer_list.owner = ctx.accounts.authority.key();
     offer_list.seed = 0;
+    offer_list.day_index = 0;
     offer_list.total_complete = 0;
     offer_list.bump = ctx.bumps.offer_list;
 

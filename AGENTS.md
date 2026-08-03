@@ -22,8 +22,10 @@ SPL token protocol tied to NYSE trading hours. Market status (open / after-hours
 
 - **Devnet only.** `overflow-checks = true` in release — all metric math must widen before multiply (see u32 cast in `offer_accepted_aggression`).
 - Units: price changes are centi-percent i16 (1% = 100); metric scores are 0–10000 (stake health 0–100); `discount_bps` u8 is tenths of a percent (115 = 11.5%).
-- Caller gates: `make_offers` / `calc_completed_offers` accept `authority || keeper`; funds move on `authority` only. Keeper defaults to authority at init, rotate via `set_keeper`.
-- Offer desk rules: never offer below `highest_buyback_basis` (ratchet floor); never offer more than 5% of vault per sheet; no offer sheet until ≥5 price samples (cold start = dark desk).
+- Caller gates: `make_offers` / `calc_completed_offers` / `update_tradeday_stats` accept `authority || keeper`; funds move on `authority` only. Keeper defaults to authority at init, rotate via `set_keeper`.
+- Metric-write separation: `make_offers` is READ-ONLY over metrics (calculate + post sheet). End-of-day metric writes (price sample, stake ratio) live in `update_tradeday_stats`, fired by the keeper BEFORE `make_offers`; start-of-day offer accounting (fill % rings) lives in `calc_completed_offers`, fired on any →0 transition. Idempotency guards: `metrics.day_index` (stats), `offer_list.day_index` (sheet), `accepted_offers.day_index` (fills).
+- Offer desk rules: never offer below `highest_buyback_basis` (ratchet floor, enforced at claim time in `offer_claim`; only moves up via `dex_buyback::ratchet_buyback_basis`); never offer more than 5% of vault per sheet; no offer sheet until ≥5 price samples (cold start = dark desk).
+- Combinator (make_offers, sequential): 1 totals ← momentum bump-taper · 2 lot tiers ← vault abundance + excitement · 3 counts derived (50/35/15 split ÷ lot sizes) · 4 discount ← momentum bump, aggression-tightened, strictly big>med>sml · 5 vesting ← stake health, compensated for clamped discounts. Sim/tuning: `sim/` (v3 = deployed spec).
 - Offer constraints: sml lot tier < med < big (≥1 tier apart); discount strictly big > med > sml.
 - Switchboard: Secrets feature is **deprecated** — use variableOverrides. Canonical quote covers `[market_status, price]` feeds; `make_offers` reads `feeds[1]` as priceChange24h, skips write if <2 feeds or >300 slots stale.
 

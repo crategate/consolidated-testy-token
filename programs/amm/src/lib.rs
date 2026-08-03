@@ -27,6 +27,11 @@ pub mod amm {
         calc_completed_offers::handler(ctx)
     }
 
+    // End-of-day metric writes; keeper fires this BEFORE make_offers.
+    pub fn update_tradeday_stats(ctx: Context<UpdateTradedayStats>) -> Result<()> {
+        update_tradeday_stats::handler(ctx)
+    }
+
     pub fn set_keeper(ctx: Context<SetKeeper>, new_keeper: Pubkey) -> Result<()> {
         set_keeper::handler(ctx, new_keeper)
     }

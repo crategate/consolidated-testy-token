@@ -168,15 +168,41 @@ async function main() {
                 console.log(`✅ Cranked! ${sig}`);
 
                 // Trading day ends on 0→1 (open→after-hours), 0→2 (open→closed, holiday),
-                // or 3→2 (halted→closed). Fire make_offers to build tomorrow's offer sheet.
+                // or 3→2 (halted→closed). Fire update_tradeday_stats FIRST (it owns all
+                // end-of-day metric writes), then make_offers (read-only + posts sheet).
                 const prevState = marketStatus.currentState;
                 const newStatus = await program.account.marketStatus.fetch(marketStatusPda);
                 const dayEnded =
                     (prevState === 0 && (newStatus.currentState === 1 || newStatus.currentState === 2)) ||
                     (prevState === 3 && newStatus.currentState === 2);
                 if (dayEnded) {
-                    console.log(`📈 Day ended (${prevState} → ${newStatus.currentState}). Firing make_offers...`);
+                    console.log(`📈 Day ended (${prevState} → ${newStatus.currentState}). Firing update_tradeday_stats + make_offers...`);
                     try {
+                        const statsIx = await ammProgram.methods
+                            .updateTradedayStats()
+                            .accountsStrict({
+                                cranker: keypair.publicKey,
+                                ammState: ammStatePda,
+                                marketMetrics: metricsPda,
+                                marketStatus: marketStatusPda,
+                                priceOracle: quoteAccount,
+                            })
+                            .instruction();
+                        const statsTx = await sb.asV0Tx({
+                            connection,
+                            ixs: [statsIx],
+                            signers: [keypair],
+                            computeUnitPrice: 20_000,
+                        });
+                        const statsSim = await connection.simulateTransaction(statsTx);
+                        if (statsSim.value.err) {
+                            console.error("update_tradeday_stats simulation failed (already updated today?):", statsSim.value.err);
+                        } else {
+                            const statsSig = await connection.sendTransaction(statsTx);
+                            await connection.confirmTransaction(statsSig, "confirmed");
+                            console.log(`✅ update_tradeday_stats fired! ${statsSig}`);
+                        }
+
                         const makeOffersIx = await ammProgram.methods
                             .makeOffers()
                             .accountsStrict({
@@ -186,6 +212,7 @@ async function main() {
                                 marketStatus: marketStatusPda,
                                 metrics: metricsPda,
                                 acceptedOffers: acceptedOffersPda,
+                                nysehMint: nysehMint,
                                 nysehVault: new PublicKey(deployment.ammNysehVault),
                                 priceOracle: quoteAccount,
                                 systemProgram: anchor.web3.SystemProgram.programId,
@@ -208,7 +235,41 @@ async function main() {
                         }
                     } catch (e) {
                         // Never let an offer-sheet failure kill the crank loop
-                        console.error("❌ make_offers failed:", e);
+                        console.error("❌ end-of-day AMM sequence failed:", e);
+                    }
+                }
+
+                // Trading day STARTS on any →0 transition: score yesterday's sheet fills.
+                const dayStarted = prevState !== 0 && newStatus.currentState === 0;
+                if (dayStarted) {
+                    console.log(`📉 Day started (${prevState} → 0). Firing calc_completed_offers...`);
+                    try {
+                        const calcIx = await ammProgram.methods
+                            .calcCompletedOffers()
+                            .accountsStrict({
+                                cranker: keypair.publicKey,
+                                ammState: ammStatePda,
+                                offerList: offerListPda,
+                                marketStatus: marketStatusPda,
+                                acceptedOffers: acceptedOffersPda,
+                            })
+                            .instruction();
+                        const calcTx = await sb.asV0Tx({
+                            connection,
+                            ixs: [calcIx],
+                            signers: [keypair],
+                            computeUnitPrice: 20_000,
+                        });
+                        const calcSim = await connection.simulateTransaction(calcTx);
+                        if (calcSim.value.err) {
+                            console.error("calc_completed_offers simulation failed (already recorded today?):", calcSim.value.err);
+                        } else {
+                            const calcSig = await connection.sendTransaction(calcTx);
+                            await connection.confirmTransaction(calcSig, "confirmed");
+                            console.log(`✅ calc_completed_offers fired! ${calcSig}`);
+                        }
+                    } catch (e) {
+                        console.error("❌ calc_completed_offers failed:", e);
                     }
                 }
             } else {
