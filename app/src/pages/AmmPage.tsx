@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useAmmData, type DashSection } from '../hooks/amm/useAmmData.ts';
+import { useAmmData } from '../hooks/amm/useAmmData.ts';
 import OfferLists from '../components/amm/OfferLists.tsx';
 import './Dash.css';
 

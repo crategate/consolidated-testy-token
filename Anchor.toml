@@ -9,9 +9,11 @@ skip-lint = false
 amm = "7L32KRgZAttvuiY7LgtLTUwTAYL54JfyELVd7CUxVKgy"
 crank_oracle = "ENJn9r8uCBLZXJ4unADAJfgNScWZuEm3rHD2LoBDpAki"
 staking = "Fzqz7EK6CZp2v2Co7MBDdHkdk2Vx1HnbbmsfkoXWSjwG"
+mock_dex_pool = "3fgSPE55km8DrbFPmyi7x3YRLmpQ8BYZHUUr85Miwbod"
 
 [programs.localnet]
 testy_token = "Eb7SiNnSwCoKobhG8dDarPQxErqmnzK7kJ1SRW9vEpdS"
+mock_dex_pool = "3fgSPE55km8DrbFPmyi7x3YRLmpQ8BYZHUUr85Miwbod"
 
 [registry]
 url = "https://api.apr.dev"

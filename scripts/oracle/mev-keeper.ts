@@ -6,6 +6,11 @@ import * as dotenv from "dotenv";
 import * as fs from "fs";
 import * as path from "path";
 import { PublicKey } from "@solana/web3.js";
+import {
+    getAssociatedTokenAddressSync,
+    TOKEN_PROGRAM_ID,
+    TOKEN_2022_PROGRAM_ID,
+} from "@solana/spl-token";
 import type { CrankOracle } from "../../target/types/crank_oracle";
 
 dotenv.config();
@@ -274,6 +279,63 @@ async function main() {
                 }
             } else {
                 console.log("Oracle fresh, nothing to do.");
+            }
+
+            // dex_buyback slices: attempt every loop while the market is open.
+            // On-chain pacing (MIN_SLICE_SLOTS) turns extra fires into cheap
+            // no-ops; sim failures (no fills, budget spent) are expected.
+            try {
+                const statusNow = await program.account.marketStatus.fetch(marketStatusPda);
+                if (statusNow.currentState === 0) {
+                    const ammState = await (ammProgram.account as any).ammState.fetch(ammStatePda);
+                    const dexProgramId = new PublicKey(ammState.dexProgram);
+                    const usdcMint = new PublicKey(ammState.usdcMint);
+                    // mock-dex-pool: pool token accounts are ATAs of the pool PDA
+                    const [poolState] = PublicKey.findProgramAddressSync(
+                        [Buffer.from("mock_pool"), nysehMint.toBuffer()],
+                        dexProgramId
+                    );
+                    const poolNyseh = getAssociatedTokenAddressSync(nysehMint, poolState, true, TOKEN_2022_PROGRAM_ID);
+                    const poolUsdc = getAssociatedTokenAddressSync(usdcMint, poolState, true, TOKEN_PROGRAM_ID);
+                    const bbIx = await ammProgram.methods
+                        .dexBuyback()
+                        .accountsStrict({
+                            cranker: keypair.publicKey,
+                            ammState: ammStatePda,
+                            marketStatus: marketStatusPda,
+                            acceptedOffers: acceptedOffersPda,
+                            usdcVault: ammState.usdcVault,
+                            nysehVault: ammState.nysehVault,
+                            solVault: ammState.solVault,
+                            nysehMint,
+                            poolState,
+                            poolNyseh,
+                            poolUsdc,
+                            poolSol: poolState,
+                            dexProgram: dexProgramId,
+                            tokenProgram: TOKEN_PROGRAM_ID,
+                            token2022Program: TOKEN_2022_PROGRAM_ID,
+                            systemProgram: anchor.web3.SystemProgram.programId,
+                        })
+                        .instruction();
+                    const bbTx = await sb.asV0Tx({
+                        connection,
+                        ixs: [bbIx],
+                        signers: [keypair],
+                        computeUnitPrice: 20_000,
+                    });
+                    const bbSim = await connection.simulateTransaction(bbTx);
+                    if (bbSim.value.err) {
+                        console.log("dex_buyback skipped (pacing / no fills / spent).");
+                    } else {
+                        const bbSig = await connection.sendTransaction(bbTx);
+                        await connection.confirmTransaction(bbSig, "confirmed");
+                        console.log(`✅ dex_buyback slice fired! ${bbSig}`);
+                    }
+                }
+            } catch (e) {
+                // Never let a buyback attempt kill the crank loop
+                console.error("❌ dex_buyback attempt failed:", (e as Error).message);
             }
         } catch (e) {
             console.error("❌ Crank attempt failed:", e);

@@ -39,7 +39,7 @@ describe("NYSEH Staking", () => {
     // Helper: set market state via the crank oracle's test instruction
     async function setMarketState(state: number) {
         await crankProgram.methods
-            .testSetState(state)
+            .testSetState(state, new anchor.BN(0), new anchor.BN(0))
             .accounts({ marketStatus: marketStatusPda })
             .rpc();
         const status = await crankProgram.account.marketStatus.fetch(marketStatusPda);

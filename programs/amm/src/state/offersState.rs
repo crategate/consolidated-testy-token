@@ -92,6 +92,21 @@ pub struct AmmState {
     // AMM never offers bulk deals with price per share lower than this
     pub highest_buyback_basis: u64,
 
+    // Pool program dex_buyback CPIs for buybacks. Stub/mock on devnet;
+    // point at the real DEX pool program at launch.
+    pub dex_program: Pubkey,
+
+    // Buyback day schedule. Budget snapshots the vault balances at the first
+    // buyback call of a trading day; unspent budget just stays in the vaults
+    // and rolls into the next day with fills (no bookkeeping needed for that).
+    pub bb_day_index: u64,
+    pub bb_budget_usdc: u64,
+    pub bb_spent_usdc: u64,
+    pub bb_budget_sol: u64,
+    pub bb_spent_sol: u64,
+    pub bb_slice_count: u16,
+    pub bb_last_slot: u64,
+
     pub bump: u8,
     pub sol_vault_bump: u8,
 }
