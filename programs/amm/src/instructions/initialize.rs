@@ -26,13 +26,23 @@ pub fn handler(ctx: Context<InitializeAmm>) -> Result<()> {
     amm_state.market_status_pda = ctx.accounts.market_status_pda.key();
     amm_state.crank_program = ctx.accounts.crank_program.key();
     amm_state.price_oracle = ctx.accounts.price_oracle.key();
+    amm_state.dex_program = ctx.accounts.dex_program.key();
     amm_state.total_sol_proceeds = 0;
     amm_state.total_usdc_proceeds = 0;
+    amm_state.highest_buyback_basis = 0;
+    amm_state.bb_day_index = 0;
+    amm_state.bb_budget_usdc = 0;
+    amm_state.bb_spent_usdc = 0;
+    amm_state.bb_budget_sol = 0;
+    amm_state.bb_spent_sol = 0;
+    amm_state.bb_slice_count = 0;
+    amm_state.bb_last_slot = 0;
     amm_state.bump = ctx.bumps.amm_state;
     amm_state.sol_vault_bump = ctx.bumps.sol_vault;
 
     offer_list.owner = ctx.accounts.authority.key();
     offer_list.seed = 0;
+    offer_list.day_index = 0;
     offer_list.total_complete = 0;
     offer_list.bump = ctx.bumps.offer_list;
 
@@ -157,6 +167,9 @@ pub struct InitializeAmm<'info> {
     pub crank_program: AccountInfo<'info>,
     /// CHECK: canonical Switchboard quote account for [market_status, price] feeds
     pub price_oracle: AccountInfo<'info>,
+    /// CHECK: swap target for dex_buyback (mock-dex-pool stub on devnet; the
+    /// real DEX pool program at launch)
+    pub dex_program: AccountInfo<'info>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub token_program: Interface<'info, TokenInterface>,
     pub token_2022_program: Program<'info, Token2022>,

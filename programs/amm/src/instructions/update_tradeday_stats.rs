@@ -1,16 +1,18 @@
-use crate::{
-    offersState::MarketMetrics,
-    state::offersState::{AcceptedOffers, AmmState},
-};
+use crate::state::offersState::{AmmState, MarketMetrics};
 use anchor_lang::prelude::*;
 
-// Fires off at beginning of trade day.
+use super::helpers_make_offers::{record_price_change, record_stake_ratio};
+
+// Fires at END of every trading day (after-hours begin / market closes),
+// BEFORE make_offers. Owns ALL end-of-day metric writes: today's price sample
+// and today's staking ratio. make_offers only READS what this records.
+// (Start-of-day offer accounting is calc_completed_offers' job.)
 
 #[derive(Accounts)]
 pub struct UpdateTradedayStats<'info> {
     #[account(mut)]
     pub cranker: Signer<'info>,
-    #[account(mut, seeds = [b"amm_state", amm_state.nyseh_mint.as_ref()], bump = amm_state.bump,)]
+    #[account(seeds = [b"amm_state", amm_state.nyseh_mint.as_ref()], bump = amm_state.bump,)]
     pub amm_state: Account<'info, AmmState>,
 
     #[account(
@@ -26,43 +28,46 @@ pub struct UpdateTradedayStats<'info> {
         bump
     )]
     pub market_status: UncheckedAccount<'info>,
-    #[account(mut, seeds = [b"accepted_offers", amm_state.nyseh_mint.as_ref()], bump)]
-    pub accepted_offers: Account<'info, AcceptedOffers>,
+    /// live price oracle — canonical Switchboard quote [market_status, price]
+    #[account(address = amm_state.price_oracle)]
+    pub price_oracle: Box<Account<'info, switchboard_on_demand::SwitchboardQuote>>,
 }
 
 pub fn handler(ctx: Context<UpdateTradedayStats>) -> Result<()> {
     let caller = ctx.accounts.cranker.key();
     require!(
-        caller == ctx.accounts.amm_state.authority
-            || caller == ctx.accounts.amm_state.crank_program,
+        caller == ctx.accounts.amm_state.authority || caller == ctx.accounts.amm_state.keeper,
         ErrorCode::UnauthorizedCaller
     );
-    //
-    // DECAY MECHANISM: lower the ratchet floor by 0.5% every trading day.
-    // Decay only starts after 15 trading days of no offer desk activity
-    // due to the DEX price being too low to make offers. So T+15, then decay
-    // hits every trading day following that
 
     // MarketStatus layout: disc(8) + current_state(1) + timestamp(8) + trading_day_index(8)
     let market_data = ctx.accounts.market_status.try_borrow_data()?;
     require!(market_data.len() >= 25, ErrorCode::InvalidMarketStatus);
     let current_state = market_data[8];
     let current_day = u64::from_le_bytes(market_data[17..25].try_into().unwrap());
-    // Only record at the start of a trading day (market just opened)
-    require!(current_state == 0, ErrorCode::InvalidMarketState);
+    // End of trading day only (after-hours or closed)
+    require!(
+        current_state == 1 || current_state == 2,
+        ErrorCode::InvalidMarketState
+    );
     // Once per trading day
     require!(
-        ctx.accounts.accepted_offers.day_index != current_day,
+        ctx.accounts.market_metrics.day_index != current_day,
         ErrorCode::AlreadyConstructed
     );
-    ctx.accounts.accepted_offers.day_index = current_day;
-    //
-    //    let offer_list = &ctx.accounts.offer_list;
-    //    let big_pct = pct_accepted(&offer_list.big_offer);
-    //    let med_pct = pct_accepted(&offer_list.med_offer);
-    //    let sml_pct = pct_accepted(&offer_list.sml_offer);
-    //
-    //    update_offer_sheet_records(&mut ctx.accounts.accepted_offers, big_pct, med_pct, sml_pct);
+    ctx.accounts.market_metrics.day_index = current_day;
+
+    // End-of-day metric writes (helpers_make_offers.rs)
+    record_price_change(
+        &mut ctx.accounts.market_metrics,
+        &ctx.accounts.price_oracle,
+        Clock::get()?.slot,
+    );
+    record_stake_ratio(&mut ctx.accounts.market_metrics);
+
+    // FUTURE — ratchet floor decay (design discussion): 0.5%/trading day,
+    // only after ~15 consecutive floor-locked days. Not implemented; the
+    // floor currently only ratchets UP (dex_buyback::ratchet_buyback_basis).
 
     Ok(())
 }

@@ -161,10 +161,11 @@ pub mod crank_oracle {
         Ok(())
     }
     // Add this instruction for testing ONLY — remove before mainnet
-    pub fn test_set_state(ctx: Context<TestSetState>, state: u8) -> Result<()> {
+    pub fn test_set_state(ctx: Context<TestSetState>, state: u8, day: u64, ts: i64) -> Result<()> {
         ctx.accounts.market_status.current_state = state;
-        ctx.accounts.market_status.last_updated_timestamp = Clock::get()?.unix_timestamp;
-        msg!("Test state set to: {}", state);
+        ctx.accounts.market_status.trading_day_index = day;
+        ctx.accounts.market_status.last_updated_timestamp = ts;
+        msg!("Test state set to: {} day {} ts {}", state, day, ts);
         Ok(())
     }
 }

@@ -824,3 +824,7 @@ body {
     background: rgba(0, 240, 255, 0.2);
     color: var(--text-primary);
 }
+
+.infointro {
+    padding: 20px;
+}

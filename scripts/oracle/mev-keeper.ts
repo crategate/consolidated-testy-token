@@ -6,6 +6,11 @@ import * as dotenv from "dotenv";
 import * as fs from "fs";
 import * as path from "path";
 import { PublicKey } from "@solana/web3.js";
+import {
+    getAssociatedTokenAddressSync,
+    TOKEN_PROGRAM_ID,
+    TOKEN_2022_PROGRAM_ID,
+} from "@solana/spl-token";
 import type { CrankOracle } from "../../target/types/crank_oracle";
 
 dotenv.config();
@@ -168,15 +173,41 @@ async function main() {
                 console.log(`✅ Cranked! ${sig}`);
 
                 // Trading day ends on 0→1 (open→after-hours), 0→2 (open→closed, holiday),
-                // or 3→2 (halted→closed). Fire make_offers to build tomorrow's offer sheet.
+                // or 3→2 (halted→closed). Fire update_tradeday_stats FIRST (it owns all
+                // end-of-day metric writes), then make_offers (read-only + posts sheet).
                 const prevState = marketStatus.currentState;
                 const newStatus = await program.account.marketStatus.fetch(marketStatusPda);
                 const dayEnded =
                     (prevState === 0 && (newStatus.currentState === 1 || newStatus.currentState === 2)) ||
                     (prevState === 3 && newStatus.currentState === 2);
                 if (dayEnded) {
-                    console.log(`📈 Day ended (${prevState} → ${newStatus.currentState}). Firing make_offers...`);
+                    console.log(`📈 Day ended (${prevState} → ${newStatus.currentState}). Firing update_tradeday_stats + make_offers...`);
                     try {
+                        const statsIx = await ammProgram.methods
+                            .updateTradedayStats()
+                            .accountsStrict({
+                                cranker: keypair.publicKey,
+                                ammState: ammStatePda,
+                                marketMetrics: metricsPda,
+                                marketStatus: marketStatusPda,
+                                priceOracle: quoteAccount,
+                            })
+                            .instruction();
+                        const statsTx = await sb.asV0Tx({
+                            connection,
+                            ixs: [statsIx],
+                            signers: [keypair],
+                            computeUnitPrice: 20_000,
+                        });
+                        const statsSim = await connection.simulateTransaction(statsTx);
+                        if (statsSim.value.err) {
+                            console.error("update_tradeday_stats simulation failed (already updated today?):", statsSim.value.err);
+                        } else {
+                            const statsSig = await connection.sendTransaction(statsTx);
+                            await connection.confirmTransaction(statsSig, "confirmed");
+                            console.log(`✅ update_tradeday_stats fired! ${statsSig}`);
+                        }
+
                         const makeOffersIx = await ammProgram.methods
                             .makeOffers()
                             .accountsStrict({
@@ -186,6 +217,7 @@ async function main() {
                                 marketStatus: marketStatusPda,
                                 metrics: metricsPda,
                                 acceptedOffers: acceptedOffersPda,
+                                nysehMint: nysehMint,
                                 nysehVault: new PublicKey(deployment.ammNysehVault),
                                 priceOracle: quoteAccount,
                                 systemProgram: anchor.web3.SystemProgram.programId,
@@ -208,11 +240,102 @@ async function main() {
                         }
                     } catch (e) {
                         // Never let an offer-sheet failure kill the crank loop
-                        console.error("❌ make_offers failed:", e);
+                        console.error("❌ end-of-day AMM sequence failed:", e);
+                    }
+                }
+
+                // Trading day STARTS on any →0 transition: score yesterday's sheet fills.
+                const dayStarted = prevState !== 0 && newStatus.currentState === 0;
+                if (dayStarted) {
+                    console.log(`📉 Day started (${prevState} → 0). Firing calc_completed_offers...`);
+                    try {
+                        const calcIx = await ammProgram.methods
+                            .calcCompletedOffers()
+                            .accountsStrict({
+                                cranker: keypair.publicKey,
+                                ammState: ammStatePda,
+                                offerList: offerListPda,
+                                marketStatus: marketStatusPda,
+                                acceptedOffers: acceptedOffersPda,
+                            })
+                            .instruction();
+                        const calcTx = await sb.asV0Tx({
+                            connection,
+                            ixs: [calcIx],
+                            signers: [keypair],
+                            computeUnitPrice: 20_000,
+                        });
+                        const calcSim = await connection.simulateTransaction(calcTx);
+                        if (calcSim.value.err) {
+                            console.error("calc_completed_offers simulation failed (already recorded today?):", calcSim.value.err);
+                        } else {
+                            const calcSig = await connection.sendTransaction(calcTx);
+                            await connection.confirmTransaction(calcSig, "confirmed");
+                            console.log(`✅ calc_completed_offers fired! ${calcSig}`);
+                        }
+                    } catch (e) {
+                        console.error("❌ calc_completed_offers failed:", e);
                     }
                 }
             } else {
                 console.log("Oracle fresh, nothing to do.");
+            }
+
+            // dex_buyback slices: attempt every loop while the market is open.
+            // On-chain pacing (MIN_SLICE_SLOTS) turns extra fires into cheap
+            // no-ops; sim failures (no fills, budget spent) are expected.
+            try {
+                const statusNow = await program.account.marketStatus.fetch(marketStatusPda);
+                if (statusNow.currentState === 0) {
+                    const ammState = await (ammProgram.account as any).ammState.fetch(ammStatePda);
+                    const dexProgramId = new PublicKey(ammState.dexProgram);
+                    const usdcMint = new PublicKey(ammState.usdcMint);
+                    // mock-dex-pool: pool token accounts are ATAs of the pool PDA
+                    const [poolState] = PublicKey.findProgramAddressSync(
+                        [Buffer.from("mock_pool"), nysehMint.toBuffer()],
+                        dexProgramId
+                    );
+                    const poolNyseh = getAssociatedTokenAddressSync(nysehMint, poolState, true, TOKEN_2022_PROGRAM_ID);
+                    const poolUsdc = getAssociatedTokenAddressSync(usdcMint, poolState, true, TOKEN_PROGRAM_ID);
+                    const bbIx = await ammProgram.methods
+                        .dexBuyback()
+                        .accountsStrict({
+                            cranker: keypair.publicKey,
+                            ammState: ammStatePda,
+                            marketStatus: marketStatusPda,
+                            acceptedOffers: acceptedOffersPda,
+                            usdcVault: ammState.usdcVault,
+                            nysehVault: ammState.nysehVault,
+                            solVault: ammState.solVault,
+                            nysehMint,
+                            poolState,
+                            poolNyseh,
+                            poolUsdc,
+                            poolSol: poolState,
+                            dexProgram: dexProgramId,
+                            tokenProgram: TOKEN_PROGRAM_ID,
+                            token2022Program: TOKEN_2022_PROGRAM_ID,
+                            systemProgram: anchor.web3.SystemProgram.programId,
+                        })
+                        .instruction();
+                    const bbTx = await sb.asV0Tx({
+                        connection,
+                        ixs: [bbIx],
+                        signers: [keypair],
+                        computeUnitPrice: 20_000,
+                    });
+                    const bbSim = await connection.simulateTransaction(bbTx);
+                    if (bbSim.value.err) {
+                        console.log("dex_buyback skipped (pacing / no fills / spent).");
+                    } else {
+                        const bbSig = await connection.sendTransaction(bbTx);
+                        await connection.confirmTransaction(bbSig, "confirmed");
+                        console.log(`✅ dex_buyback slice fired! ${bbSig}`);
+                    }
+                }
+            } catch (e) {
+                // Never let a buyback attempt kill the crank loop
+                console.error("❌ dex_buyback attempt failed:", (e as Error).message);
             }
         } catch (e) {
             console.error("❌ Crank attempt failed:", e);

@@ -4,17 +4,18 @@ SPL token protocol tied to NYSE trading hours. Market status (open / after-hours
 
 ## Layout
 
-- `programs/amm` — offer desk: `make_offers` (builds daily offer sheet via the sequential combinator — step 1 totals done, steps 2–5 TODO; metric helpers in `instructions/helpers_make_offers.rs`), `calc_completed_offers` (scores fill % at day end), `load_test_data` (**devnet-only, remove before mainnet**), `dex_buyback` (execution TODO; `ratchet_buyback_basis` wired), `set_keeper`. State in `state/offersState.rs`: `AmmState` (incl. `highest_buyback_basis` ratchet floor, `keeper`, `price_oracle`), `MarketMetrics` (20-day `price_changes` ring + `sample_head`, `trailing_stake_health[5]`), `AcceptedOffers` (3×[u8;5] fill %), `OfferList` + `lot_sizer` (tiers 0–21).
+- `programs/amm` — offer desk: `make_offers` (builds daily offer sheet via the sequential combinator — step 1 totals done, steps 2–5 TODO; metric helpers in `instructions/helpers_make_offers.rs`), `calc_completed_offers` (scores fill % at day end), `load_test_data` (**devnet-only, remove before mainnet**), `dex_buyback` (working: slices the day's vault USDC/SOL into the configured DEX pool while market==open; pseudo-random slice sizes weighted 15%/5% of remaining first-hour/tail; pacing 150 slots; unspent budget rolls over by staying in the vaults; every fill ratchets `highest_buyback_basis`. Swap CPI is isolated in `execute_swap` — the ONLY function to replace for the real DEX), `set_keeper`. State in `state/offersState.rs`: `AmmState` (incl. `highest_buyback_basis` ratchet floor, `keeper`, `price_oracle`, `dex_program`, `bb_*` day-budget fields), `MarketMetrics` (20-day `price_changes` ring + `sample_head`, `trailing_stake_health[5]`), `AcceptedOffers` (3×[u8;5] fill %), `OfferList` + `lot_sizer` (tiers 0–21).
+- `programs/mock-dex-pool` — **stub "DEX"** (fixed-rate NYSEH dispenser; devnet/localnet only, remove before mainnet): `init_pool` (pool PDA `b"mock_pool"`+mint, token vaults are ATAs of the pool PDA), `send_nyseh` (out-leg CPI target for `dex_buyback`; in-leg transfer is done by the caller).
 - `programs/crank-oracle` — market-status PDA (`b"market_status"`). Status byte at offset 8, day index u64 at bytes 17..25. Mapping: 0=open, 1=after-hours, 2=closed, 3=halted.
 - `programs/staking` — staking pool, bounty.
-- `scripts/` — deployment/ops TS scripts; `scripts/oracle/` holds Switchboard feed deploy + keeper (`mev-keeper.ts` is the deployed crank: collects bounty, updates quote, fires `makeOffers` on transitions 0→1, 0→2, 3→2).
+- `scripts/` — deployment/ops TS scripts; `scripts/oracle/` holds Switchboard feed deploy + keeper (`mev-keeper.ts` is the deployed crank: collects bounty, updates quote, fires `makeOffers` on transitions 0→1, 0→2, 3→2, fires `calcCompletedOffers` on →0, and attempts `dexBuyback` slices every loop while market==open).
 - `sim/` — pure-stdlib Python simulation; exact ports of the 3 metrics + combiner design space. `python3 sim/run.py` (`--quiet`).
 - `app/` — Vite/React frontend; `/dash` dev dashboard route; reads `app/public/deployment.json`.
 
 ## Commands
 
 - Build/check: `anchor build`; `cargo check -p amm` (fast iteration; ignore anchor macro `cfg` warnings)
-- Tests: `yarn test` (all), `yarn test-staking`
+- Tests: `yarn test` (all), `yarn test-staking`; `tests/dex-buyback.test.ts` runs against a local validator (`solana-test-validator --bpf-program …` for all 4 programs) — covers buyback gating, first-hour weighting, pacing, rollover, ratchet.
 - Ops (via `anchor run …`): `mint` → `init` → `feed-deploy` → `amm-init` → `amm-test-data` → `bount` (keeper). PDAs from earlier steps are inputs to later ones — order matters.
 - Lint: `yarn lint`
 
@@ -22,8 +23,10 @@ SPL token protocol tied to NYSE trading hours. Market status (open / after-hours
 
 - **Devnet only.** `overflow-checks = true` in release — all metric math must widen before multiply (see u32 cast in `offer_accepted_aggression`).
 - Units: price changes are centi-percent i16 (1% = 100); metric scores are 0–10000 (stake health 0–100); `discount_bps` u8 is tenths of a percent (115 = 11.5%).
-- Caller gates: `make_offers` / `calc_completed_offers` accept `authority || keeper`; funds move on `authority` only. Keeper defaults to authority at init, rotate via `set_keeper`.
-- Offer desk rules: never offer below `highest_buyback_basis` (ratchet floor); never offer more than 5% of vault per sheet; no offer sheet until ≥5 price samples (cold start = dark desk).
+- Caller gates: `make_offers` / `calc_completed_offers` / `update_tradeday_stats` accept `authority || keeper`; funds move on `authority` only. Keeper defaults to authority at init, rotate via `set_keeper`.
+- Metric-write separation: `make_offers` is READ-ONLY over metrics (calculate + post sheet). End-of-day metric writes (price sample, stake ratio) live in `update_tradeday_stats`, fired by the keeper BEFORE `make_offers`; start-of-day offer accounting (fill % rings) lives in `calc_completed_offers`, fired on any →0 transition. Idempotency guards: `metrics.day_index` (stats), `offer_list.day_index` (sheet), `accepted_offers.day_index` (fills).
+- Offer desk rules: never offer below `highest_buyback_basis` (ratchet floor, enforced at claim time in `offer_claim`; only moves up via `dex_buyback::ratchet_buyback_basis`); never offer more than 5% of vault per sheet; no offer sheet until ≥5 price samples (cold start = dark desk).
+- Combinator (make_offers, sequential): 1 totals ← momentum bump-taper · 2 lot tiers ← vault abundance + excitement · 3 counts derived (50/35/15 split ÷ lot sizes) · 4 discount ← momentum bump, aggression-tightened, strictly big>med>sml · 5 vesting ← stake health, compensated for clamped discounts. Sim/tuning: `sim/` (v3 = deployed spec).
 - Offer constraints: sml lot tier < med < big (≥1 tier apart); discount strictly big > med > sml.
 - Switchboard: Secrets feature is **deprecated** — use variableOverrides. Canonical quote covers `[market_status, price]` feeds; `make_offers` reads `feeds[1]` as priceChange24h, skips write if <2 feeds or >300 slots stale.
 
@@ -31,6 +34,8 @@ SPL token protocol tied to NYSE trading hours. Market status (open / after-hours
 
 - Devnet: Jupiter won't index devnet mints, so the combined [status, price] quote never resolves — for pipeline tests set `NYSEH_MINT` in `.env` to a liquid mainnet mint before `feed-deploy`.
 - `feed-deploy.ts` writes `marketStatusFeedId` / `priceFeedId` / `oracleQuoteAccount` to `app/public/deployment.json`; `amm-init.ts` consumes it.
-- Known staking issues (not yet fixed): `amm_stake.rs` `is_signer` check on program ID blocks offer_claim CPI; `Stake` position space uses wrong INIT_SPACE; `dex_buyback.rs` has a duplicate `record_acceptance` to remove.
+- Known staking issues (not yet fixed): `amm_stake.rs` `is_signer` check on program ID blocks offer_claim CPI; `Stake` position space uses wrong INIT_SPACE.
+- `dex_buyback` ratchet units: exec price = (input raw × 1e6) / NYSEH raw — the SOL leg is lamports-denominated, NOT the same units as the USDC leg. The real-DEX adapter must report a USDC-denominated exec price. Fine for the stub era.
+- Before mainnet: remove `mock-dex-pool`, `load_test_data`, crank `test_set_state`; point `amm_state.dex_program` at the real pool program at init and rewrite `execute_swap`; rotate keeper via `set_keeper`.
 - `programs/staking/tests/test_staking.ts` has a pre-existing broken import (`../target/types/crank_oracle`).
 - Root `tsc` shows pre-existing errors from `app/` — check script files individually instead.

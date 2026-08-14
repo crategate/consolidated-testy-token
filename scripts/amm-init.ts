@@ -72,6 +72,18 @@ async function main() {
     ).publicKey;
     console.log("📍 Crank oracle:", CRANK_PROGRAM_ID.toBase58());
 
+    // ── 3b. DEX swap target (mock-dex-pool stub for devnet; real DEX at launch) ──
+    const mockPoolKeyPath = path.join(
+        process.cwd(), "target", "deploy", "mock_dex_pool-keypair.json"
+    );
+    if (!fs.existsSync(mockPoolKeyPath)) {
+        throw new Error("mock_dex_pool-keypair.json not found. Run 'anchor build' first.");
+    }
+    const DEX_PROGRAM_ID = Keypair.fromSecretKey(
+        new Uint8Array(JSON.parse(fs.readFileSync(mockPoolKeyPath, "utf-8")))
+    ).publicKey;
+    console.log("📍 DEX program (stub):", DEX_PROGRAM_ID.toBase58());
+
     // ── 4. Derive all AMM PDAs ──
     const [ammStatePda] = PublicKey.findProgramAddressSync(
         [Buffer.from("amm_state"), NYSEH_MINT.toBuffer()],
@@ -206,6 +218,7 @@ async function main() {
                 marketStatusPda: marketStatusPda,
                 crankProgram: CRANK_PROGRAM_ID,
                 priceOracle: priceOracle,
+                dexProgram: DEX_PROGRAM_ID,
                 associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
                 tokenProgram: TOKEN_PROGRAM_ID,
                 token2022Program: TOKEN_2022_PROGRAM_ID,
