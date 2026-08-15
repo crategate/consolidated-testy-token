@@ -54,6 +54,49 @@ pub mod mock_dex_pool {
         );
         Ok(())
     }
+
+    // TEST/DEVNET ONLY — permissionless setter for the mock live price.
+    // mock_price is a RAW 8-byte account (no anchor discriminator): the first
+    // 8 bytes ARE the little-endian u64 price, matching the stub pattern that
+    // offer_claim / calc_completed_offers read via read_live_price.
+    pub fn set_price(ctx: Context<SetPrice>, price: u64) -> Result<()> {
+        let price_ai = &ctx.accounts.mock_price;
+        if price_ai.data_is_empty() {
+            let mint_key = ctx.accounts.nyseh_mint.key();
+            let bump = ctx.bumps.mock_price;
+            let seeds: &[&[u8]] = &[b"mock_price", mint_key.as_ref(), &[bump]];
+            let rent = Rent::get()?.minimum_balance(8);
+            anchor_lang::solana_program::program::invoke_signed(
+                &anchor_lang::solana_program::system_instruction::create_account(
+                    &ctx.accounts.payer.key(),
+                    &price_ai.key(),
+                    rent,
+                    8,
+                    &crate::ID,
+                ),
+                &[
+                    ctx.accounts.payer.to_account_info(),
+                    price_ai.to_account_info(),
+                    ctx.accounts.system_program.to_account_info(),
+                ],
+                &[seeds],
+            )?;
+        }
+        price_ai.try_borrow_mut_data()?[..8].copy_from_slice(&price.to_le_bytes());
+        msg!("mock price set to {}", price);
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct SetPrice<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub nyseh_mint: InterfaceAccount<'info, Mint>,
+    /// CHECK: raw 8-byte price PDA (no anchor disc) — first 8 bytes are the price
+    #[account(mut, seeds = [b"mock_price", nyseh_mint.key().as_ref()], bump)]
+    pub mock_price: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
 }
 
 #[account]

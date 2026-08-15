@@ -47,6 +47,12 @@ async function main() {
         bigAccepted: [10, 20, 30, 40, 50],
         medAccepted: [20, 35, 50, 60, 70],
         smlAccepted: [30, 45, 55, 65, 75],
+        // ratchet-decay knobs: leave floor/counter/offer sheet untouched
+        buybackBasis: new anchor.BN(0),
+        untakenDays: 0,
+        bigOffered: 0, bigRemaining: 0,
+        medOffered: 0, medRemaining: 0,
+        smlOffered: 0, smlRemaining: 0,
     };
 
     const sig = await ammProgram.methods
@@ -56,6 +62,7 @@ async function main() {
             ammState: pda("amm_state"),
             metrics: pda("metrics"),
             acceptedOffers: pda("accepted_offers"),
+            offerList: pda("offer_list"),
         })
         .rpc();
 

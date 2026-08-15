@@ -249,6 +249,14 @@ async function main() {
                 if (dayStarted) {
                     console.log(`📉 Day started (${prevState} → 0). Firing calc_completed_offers...`);
                     try {
+                        // Live price for ratchet decay: mock_price PDA of the
+                        // configured dex_program (devnet stub; MAINNET: the real
+                        // absolute-price account in highest_buyback_basis units).
+                        const ammStateForCalc = await (ammProgram.account as any).ammState.fetch(ammStatePda);
+                        const [mockPricePda] = PublicKey.findProgramAddressSync(
+                            [Buffer.from("mock_price"), nysehMint.toBuffer()],
+                            new PublicKey(ammStateForCalc.dexProgram)
+                        );
                         const calcIx = await ammProgram.methods
                             .calcCompletedOffers()
                             .accountsStrict({
@@ -257,6 +265,7 @@ async function main() {
                                 offerList: offerListPda,
                                 marketStatus: marketStatusPda,
                                 acceptedOffers: acceptedOffersPda,
+                                priceOracle: mockPricePda,
                             })
                             .instruction();
                         const calcTx = await sb.asV0Tx({

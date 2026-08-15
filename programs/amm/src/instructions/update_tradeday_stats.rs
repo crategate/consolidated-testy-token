@@ -65,10 +65,6 @@ pub fn handler(ctx: Context<UpdateTradedayStats>) -> Result<()> {
     );
     record_stake_ratio(&mut ctx.accounts.market_metrics);
 
-    // FUTURE — ratchet floor decay (design discussion): 0.5%/trading day,
-    // only after ~15 consecutive floor-locked days. Not implemented; the
-    // floor currently only ratchets UP (dex_buyback::ratchet_buyback_basis).
-
     Ok(())
 }
 

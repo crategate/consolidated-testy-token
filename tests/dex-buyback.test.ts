@@ -35,6 +35,7 @@ describe("dex_buyback", () => {
     let poolState: PublicKey;
     let poolNyseh: PublicKey;
     let poolUsdc: PublicKey;
+    let offerListPda: PublicKey;
 
     const USDC_FUND = 10_000_000_000; // 10k USDC raw (6 dec)
     // mock rate: out = in * 100_000 -> exec price = 1e6/1e5 = 10 exactly
@@ -116,7 +117,7 @@ describe("dex_buyback", () => {
         [ammStatePda] = PublicKey.findProgramAddressSync([Buffer.from("amm_state"), nysehMint.toBuffer()], amm.programId);
         [acceptedOffersPda] = PublicKey.findProgramAddressSync([Buffer.from("accepted_offers"), nysehMint.toBuffer()], amm.programId);
         [metricsPda] = PublicKey.findProgramAddressSync([Buffer.from("metrics"), nysehMint.toBuffer()], amm.programId);
-        const [offerListPda] = PublicKey.findProgramAddressSync([Buffer.from("offer_list"), nysehMint.toBuffer()], amm.programId);
+        [offerListPda] = PublicKey.findProgramAddressSync([Buffer.from("offer_list"), nysehMint.toBuffer()], amm.programId);
         const [solDipPda] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_dip"), nysehMint.toBuffer()], amm.programId);
         [solVault] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_vault"), nysehMint.toBuffer()], amm.programId);
 
@@ -192,8 +193,13 @@ describe("dex_buyback", () => {
                 bigAccepted: [0, 0, 0, 0, 70],
                 medAccepted: [0, 0, 0, 0, 60],
                 smlAccepted: [0, 0, 0, 0, 50],
+                buybackBasis: new anchor.BN(0),
+                untakenDays: 0,
+                bigOffered: 0, bigRemaining: 0,
+                medOffered: 0, medRemaining: 0,
+                smlOffered: 0, smlRemaining: 0,
             })
-            .accounts({ authority: payer.publicKey, ammState: ammStatePda, metrics: metricsPda, acceptedOffers: acceptedOffersPda })
+            .accounts({ authority: payer.publicKey, ammState: ammStatePda, metrics: metricsPda, acceptedOffers: acceptedOffersPda, offerList: offerListPda })
             .rpc();
 
         const usdcBefore = await usdcBalance();
