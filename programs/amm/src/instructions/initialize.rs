@@ -37,6 +37,7 @@ pub fn handler(ctx: Context<InitializeAmm>) -> Result<()> {
     amm_state.bb_spent_sol = 0;
     amm_state.bb_slice_count = 0;
     amm_state.bb_last_slot = 0;
+    amm_state.untaken_days = 0;
     amm_state.bump = ctx.bumps.amm_state;
     amm_state.sol_vault_bump = ctx.bumps.sol_vault;
 

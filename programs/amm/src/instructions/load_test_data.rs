@@ -1,4 +1,4 @@
-use crate::state::offersState::{AcceptedOffers, AmmState, MarketMetrics};
+use crate::state::offersState::{AcceptedOffers, AmmState, MarketMetrics, OfferList};
 use anchor_lang::prelude::*;
 
 // DEVNET/TEST ONLY — remove before mainnet (same pattern as crank test_set_state).
@@ -8,6 +8,7 @@ use anchor_lang::prelude::*;
 pub struct LoadTestData<'info> {
     pub authority: Signer<'info>,
     #[account(
+        mut,
         seeds = [b"amm_state", amm_state.nyseh_mint.as_ref()],
         bump = amm_state.bump,
         has_one = authority,
@@ -17,6 +18,12 @@ pub struct LoadTestData<'info> {
     pub metrics: Account<'info, MarketMetrics>,
     #[account(mut, seeds = [b"accepted_offers", amm_state.nyseh_mint.as_ref()], bump)]
     pub accepted_offers: Account<'info, AcceptedOffers>,
+    #[account(
+        mut,
+        seeds = [b"offer_list", amm_state.nyseh_mint.as_ref()],
+        bump = offer_list.bump,
+    )]
+    pub offer_list: Account<'info, OfferList>,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
@@ -31,6 +38,17 @@ pub struct TestMetrics {
     pub big_accepted: [u8; 5],
     pub med_accepted: [u8; 5],
     pub sml_accepted: [u8; 5],
+    // Ratchet-decay test knobs. buyback_basis only overwritten when > 0.
+    pub buyback_basis: u64,
+    pub untaken_days: u16,
+    // Offer sheet writes (total_offered/remaining per tier) — always applied,
+    // so tests can clear a sheet by passing zeros.
+    pub big_offered: u8,
+    pub big_remaining: u8,
+    pub med_offered: u8,
+    pub med_remaining: u8,
+    pub sml_offered: u8,
+    pub sml_remaining: u8,
 }
 
 pub fn handler(ctx: Context<LoadTestData>, data: TestMetrics) -> Result<()> {
@@ -47,6 +65,20 @@ pub fn handler(ctx: Context<LoadTestData>, data: TestMetrics) -> Result<()> {
     accepted.big_offers_accepted = data.big_accepted;
     accepted.med_offers_accepted = data.med_accepted;
     accepted.sml_offers_accepted = data.sml_accepted;
+
+    let amm_state = &mut ctx.accounts.amm_state;
+    if data.buyback_basis > 0 {
+        amm_state.highest_buyback_basis = data.buyback_basis;
+    }
+    amm_state.untaken_days = data.untaken_days;
+
+    let offer_list = &mut ctx.accounts.offer_list;
+    offer_list.big_offer.total_offered = data.big_offered;
+    offer_list.big_offer.remaining = data.big_remaining;
+    offer_list.med_offer.total_offered = data.med_offered;
+    offer_list.med_offer.remaining = data.med_remaining;
+    offer_list.sml_offer.total_offered = data.sml_offered;
+    offer_list.sml_offer.remaining = data.sml_remaining;
 
     msg!("test data loaded into metrics + accepted_offers");
     Ok(())

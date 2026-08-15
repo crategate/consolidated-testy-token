@@ -107,6 +107,11 @@ pub struct AmmState {
     pub bb_slice_count: u16,
     pub bb_last_slot: u64,
 
+    // Ratchet decay: consecutive trading days with no offers taken. After
+    // FLOOR_LOCK_GRACE_DAYS straight, highest_buyback_basis decays toward the
+    // live price (calc_completed_offers). Reset to 0 by any fill.
+    pub untaken_days: u16,
+
     pub bump: u8,
     pub sol_vault_bump: u8,
 }
