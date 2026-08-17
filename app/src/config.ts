@@ -13,6 +13,16 @@ export type DeploymentConfig = {
     penaltyVault?: string;
     posrVault?: string;
     marketStatus?: string;
+    ammProgram?: string;
+    ammState?: string;
+    ammOfferList?: string;
+    ammSolVault?: string;
+    ammUsdcVault?: string;
+    ammNysehVault?: string;
+    marketStatusFeedId?: string;
+    priceFeedId?: string;
+    oracleQuoteAccount?: string;
+
 };
 
 export type ResolvedDeployment = DeploymentConfig & {
