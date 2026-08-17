@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useAmmData } from '../hooks/amm/useAmmData.ts';
+import { useAmmData, type AmmSection } from '../hooks/amm/useAmmData.ts';
 import OfferLists from '../components/amm/OfferLists.tsx';
 import './Dash.css';
 
@@ -7,7 +7,7 @@ function StatusDot({ on }: { on: boolean }) {
     return <span className={`dash-dot ${on ? 'on' : 'off'}`} title={on ? 'initialized' : 'not initialized'} />;
 }
 
-function Section({ section, hideAddresses }: { section: DashSection; hideAddresses: boolean }) {
+function Section({ section, hideOfferSection }: { section: AmmSection; hideOfferSection: boolean }) {
     return (
         <section className={`dash-section ${section.initialized ? 'active' : ''}`}>
             <header className="dash-section-header">
@@ -22,22 +22,17 @@ function Section({ section, hideAddresses }: { section: DashSection; hideAddress
                         <span className="dash-value">{f.value}</span>
                     </div>
                 ))}
-                {!hideAddresses &&
-                    section.addresses.map((a) => (
-                        <div className="dash-row dash-addr" key={a.label}>
-                            <span className="dash-label">{a.label}</span>
-                            <span className="dash-value mono">{a.value}</span>
-                        </div>
-                    ))}
+                {hideOfferSection && <h2>No Offers Available</h2>
+                }
             </div>
         </section>
     );
 }
 
 export default function AmmPage() {
-    const data = useAmmData();
-    const [hideAddresses, setHideAddresses] = useState(false);
-    const [offersLive, setoffersLive] = useState(false);
+    const ammData = useAmmData();
+    const [hideOfferSection, setHideOfferSection] = useState(true);
+    const [offersLive, setoffersLive] = useState(true);
     document.title = "Bond Offer Desk | NYSEH"
 
 
@@ -47,20 +42,22 @@ export default function AmmPage() {
             <header className="dash-topbar">
                 <h1 className="offers-live">{offersLive ? "Offers Are Live!" : "No Offers Available, Check Back End of Next Trading Day"}</h1>
                 <div className="dash-controls">
-                    {data && <span className="dash-updated">updated {new Date(data.updatedAt).toLocaleTimeString()}</span>}
-                    <button className="dash-toggle" onClick={() => setHideAddresses((v) => !v)}>
-                        {hideAddresses ? 'Show addresses' : 'Hide all addresses'}
+                    {ammData && <span className="dash-updated">updated {new Date(ammData.updatedAt).toLocaleTimeString()}</span>}
+                    <button className="dash-toggle" onClick={() => setHideOfferSection((v) => !v)}>
+                        {hideOfferSection ? 'Show addresses' : 'Hide all addresses'}
                     </button>
                 </div>
             </header>
             {<div className="dash-error">RPC error: {} — showing last known state</div>}
             {!data && <div className="dash-loading">Loading deployment + chain state…</div>}
-            {data && (
-                <main className="dash-board">
+            {
+                data && (
+                    <main className="dash-board">
 
-                    {console.log(data)}
-                </main>
-            )}
-        </div>
+                        {console.log(data)}
+                    </main>
+                )
+            }
+        </div >
     );
 }

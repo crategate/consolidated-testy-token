@@ -69,8 +69,8 @@ async function main() {
     // 4. Token Metadata Configuration
     const metadata: TokenMetadata = {
         mint: mint.publicKey,
-        name: 'cleanSweep',
-        symbol: '6/29',
+        name: 'winning',
+        symbol: '8-15',
         uri: 'https://copper-quick-koi-488.mypinata.cloud/ipfs/bafkreiblskodz5bwtelz4id437rnhsndtq3rfh7jjsgaj72wb55cgnbbea',
         additionalMetadata: [['description', 'combining concepts and learning the basics']],
     };
@@ -129,7 +129,7 @@ async function main() {
     const recipient = Keypair.generate();
     const destinationTokenAccount = getAssociatedTokenAddressSync(mint.publicKey, recipient.publicKey, false, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
 
-    const amountToMint = 722 * 10 ** decimals;
+    const amountToMint = 9090 * 10 ** decimals;
     const amountToTransfer = BigInt(1 * 10 ** decimals);
 
     const transferTx = new Transaction().add(

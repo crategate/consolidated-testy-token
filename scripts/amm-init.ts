@@ -215,7 +215,7 @@ async function main() {
     const usdcDipInfo = await provider.connection.getAccountInfo(usdcDipAta);
     if (!usdcDipInfo) {
         console.log("  Creating USDC dip vault (standard Token)...");
-        preIxs.push(createAssociatedTokenAccountInstruction(
+        preIxs.push(createAssociatedTokenAccountIdempotentInstruction(
             provider.wallet.publicKey, usdcDipAta, ammStatePda,
             USDC_MINT, TOKEN_PROGRAM_ID
         ));

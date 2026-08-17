@@ -53,6 +53,7 @@ export interface AmmData {
     offersLive: boolean;
     loading: boolean;
     error: string | null;
+    updatedAt: string | null;
 }
 
 const AMM_PROGRAM_ID = idlProgramId(ammIdl);
@@ -68,6 +69,7 @@ export function useAmmData(): AmmData {
         offersLive: false,
         loading: true,
         error: null,
+        updatedAt: null,
     });
 
     useEffect(() => {
@@ -80,6 +82,7 @@ export function useAmmData(): AmmData {
                 const mint = pk(config.mint);
                 if (!mint) throw new Error('Mint not configured in deployment.json');
 
+                console.log(config.ammProgram);
                 const ammProgram = pk(config.ammProgram) ?? AMM_PROGRAM_ID;
 
                 const [ammStatePda] = PublicKey.findProgramAddressSync(
