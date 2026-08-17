@@ -1,5 +1,6 @@
 use crate::state::offersState::{AmmState, MarketMetrics};
 use anchor_lang::prelude::*;
+use anchor_spl::token_interface::Mint;
 
 use super::helpers_make_offers::{record_price_change, record_stake_ratio};
 
@@ -31,6 +32,14 @@ pub struct UpdateTradedayStats<'info> {
     /// live price oracle — canonical Switchboard quote [market_status, price]
     #[account(address = amm_state.price_oracle)]
     pub price_oracle: Box<Account<'info, switchboard_on_demand::SwitchboardQuote>>,
+
+    /// Staking pool — the source of truth for total_staked (stake-health
+    /// metric). Typed account: owner + discriminator checked automatically.
+    #[account(address = amm_state.staking_pool)]
+    pub staking_pool: Box<Account<'info, staking::StakePool>>,
+    /// NYSEH mint — the source of truth for total_supply.
+    #[account(address = amm_state.nyseh_mint)]
+    pub nyseh_mint: Box<InterfaceAccount<'info, Mint>>,
 }
 
 pub fn handler(ctx: Context<UpdateTradedayStats>) -> Result<()> {
@@ -56,6 +65,11 @@ pub fn handler(ctx: Context<UpdateTradedayStats>) -> Result<()> {
         ErrorCode::AlreadyConstructed
     );
     ctx.accounts.market_metrics.day_index = current_day;
+
+    // Refresh the staking inputs from their on-chain sources of truth before
+    // recording today's stake ratio (without this, stake health reads 0).
+    ctx.accounts.market_metrics.total_staked = ctx.accounts.staking_pool.total_staked;
+    ctx.accounts.market_metrics.total_supply = ctx.accounts.nyseh_mint.supply;
 
     // End-of-day metric writes (helpers_make_offers.rs)
     record_price_change(

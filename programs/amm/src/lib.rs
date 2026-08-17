@@ -16,8 +16,12 @@ declare_id!("7L32KRgZAttvuiY7LgtLTUwTAYL54JfyELVd7CUxVKgy");
 pub mod amm {
     use super::*;
 
-    pub fn initialize_amm(ctx: Context<InitializeAmm>) -> Result<()> {
-        initialize::handler(ctx)
+    pub fn initialize_amm(
+        ctx: Context<InitializeAmm>,
+        spot_oracle: Pubkey,
+        staking_pool: Pubkey,
+    ) -> Result<()> {
+        initialize::handler(ctx, spot_oracle, staking_pool)
     }
     pub fn make_offers(ctx: Context<MakeOffers>) -> Result<()> {
         make_offers::handler(ctx)
@@ -41,19 +45,21 @@ pub mod amm {
         load_test_data::handler(ctx, data)
     }
 
-    pub fn offer_claim(ctx: Context<OfferClaim>, tier: u8, units: u8) -> Result<()> {
-        // decrease # of offers available by amount
-        // multiply amount * market price * discount
-        //
-        // claim should use largest offers available first for their amount,
-        // so a whale wallet doesn't take all available small offers...
-        //
-        // create locked stake position for user
-        //
-        //
-        // set 80% for buybacks, 10% to stakers, 10% for favorable/discount buybacks
+    // Night-desk taking instruction. Buyer pays USDC (SOL support at
+    // mainnet); payment splits 80% buyback vault / 10% dip reserve / 10%
+    // staker-rewards holding vault at claim time. Purchased NYSEH goes
+    // directly into a vesting StakePosition via CPI — it never sits in the
+    // buyer's wallet. Claims only while the market is after-hours/closed,
+    // against the current day's sheet.
+    pub fn offer_claim(ctx: Context<OfferClaim>, tier: u8, units: u8, index: u64) -> Result<()> {
+        offer_claim::handler(ctx, tier, units, index)
+    }
 
-        offer_claim::handler(ctx, tier, units)
+    // Start-of-day staker distribution: swap yesterday's 10% USDC share into
+    // NYSEH and deposit it into the staking reward vault (MasterChef index
+    // bump → instantly claimable pro-rata). Once per trading day.
+    pub fn distribute_staker_rewards(ctx: Context<DistributeStakerRewards>) -> Result<()> {
+        distribute_staker_rewards::handler(ctx)
     }
 
     pub fn dex_buyback(ctx: Context<DexBuyback>) -> Result<()> {

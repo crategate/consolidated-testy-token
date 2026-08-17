@@ -79,6 +79,15 @@ pub fn handler(ctx: Context<LoadTestData>, data: TestMetrics) -> Result<()> {
     offer_list.med_offer.remaining = data.med_remaining;
     offer_list.sml_offer.total_offered = data.sml_offered;
     offer_list.sml_offer.remaining = data.sml_remaining;
+    offer_list.big_offer.lot_size = data.big_lot_tier;
+    offer_list.big_offer.discount_bps = data.big_discount_bps;
+    offer_list.big_offer.vesting_days = data.big_vesting_days;
+    offer_list.med_offer.lot_size = data.med_lot_tier;
+    offer_list.med_offer.discount_bps = data.med_discount_bps;
+    offer_list.med_offer.vesting_days = data.med_vesting_days;
+    offer_list.sml_offer.lot_size = data.sml_lot_tier;
+    offer_list.sml_offer.discount_bps = data.sml_discount_bps;
+    offer_list.sml_offer.vesting_days = data.sml_vesting_days;
 
     msg!("test data loaded into metrics + accepted_offers");
     Ok(())

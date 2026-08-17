@@ -7,27 +7,30 @@ use anchor_spl::token_interface::{
     transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked,
 };
 
+// =============================================================================
+// AMM CPI GATE PATTERN
+// ---------------------
+// A program ID can never sign (it is an on-curve keypair, not a PDA), so the
+// old `amm_program.is_signer` check could never pass. Instead, the AMM's STATE
+// PDA signs the CPI (the AMM program produces that signature via
+// invoke_signed). The seeds constraint with seeds::program = pool.amm_program
+// proves the signer PDA belongs to the authorized AMM program — only that
+// program can make it sign.
+// =============================================================================
+
 pub fn create_amm_position(
     ctx: Context<CreateAmmPosition>,
     amount: u64,
     index: u64,
     days_to_unlock: u8,
 ) -> Result<()> {
-    // Only callable via CPI from authorized AMM program
-    let amm_program_id = ctx.accounts.pool.amm_program;
-    require!(
-        ctx.accounts.amm_program.key() == amm_program_id,
-        CpiError::UnauthorizedAmm
-    );
-    require!(
-        ctx.accounts.amm_program.is_signer,
-        CpiError::UnauthorizedAmm
-    );
+    // The amm_state PDA signer + seeds constraint in the accounts struct is
+    // the authorization check (see header comment).
 
     require!(amount > 0, StakeError::ZeroAmount);
     require!(amount >= 100, StakeError::MinStake);
     require!(days_to_unlock > 0, CpiError::InvalidVestingPeriod); // AMM positions MUST vest
-                                                                  //
+
     let pool = &mut ctx.accounts.pool;
     let position = &mut ctx.accounts.position;
     let user_index = &mut ctx.accounts.user_index;
@@ -60,12 +63,13 @@ pub fn create_amm_position(
     // Set reward debt so user doesn't claim past distributions
     position.reward_debt = (weight * pool.accrued_reward_per_share) / 1_000_000_000_000u128;
 
-    // Transfer tokens from user to pool vault
+    // Transfer tokens from the AMM vault (authority = amm_state PDA, which
+    // signed this CPI) to the pool vault.
     let cpi_accounts = TransferChecked {
         from: ctx.accounts.source_token.to_account_info(),
         mint: ctx.accounts.mint.to_account_info(),
         to: ctx.accounts.vault.to_account_info(),
-        authority: ctx.accounts.amm_program.to_account_info(),
+        authority: ctx.accounts.amm_state.to_account_info(),
     };
     let cpi_ctx = CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts);
     transfer_checked(cpi_ctx, amount, ctx.accounts.mint.decimals)?;
@@ -76,6 +80,35 @@ pub fn create_amm_position(
         weight,
         index
     );
+    Ok(())
+}
+
+// The AMM's daily staker-distribution: NYSEH (converted from the 10% USDC
+// share by the AMM's swap adapter) moves from the AMM's NYSEH vault into the
+// reward_vault, and the MasterChef index is bumped so it is immediately
+// claimable pro-rata by current stakers.
+pub fn deposit_rewards_from_amm(ctx: Context<DepositRewardsFromAmm>, amount: u64) -> Result<()> {
+    require!(amount > 0, StakeError::ZeroAmount);
+
+    let pool = &mut ctx.accounts.pool;
+    // Without stakers the deposit would strand in reward_vault (the index can
+    // never be back-distributed). The AMM skips the call in that case; treat a
+    // direct hit as an error rather than burning the tokens.
+    require!(pool.total_weighted_stake > 0, StakeError::NoStakers);
+
+    pool.accrued_reward_per_share +=
+        (amount as u128 * 1_000_000_000_000u128) / pool.total_weighted_stake;
+
+    let cpi_accounts = TransferChecked {
+        from: ctx.accounts.amm_nyseh_vault.to_account_info(),
+        mint: ctx.accounts.mint.to_account_info(),
+        to: ctx.accounts.reward_vault.to_account_info(),
+        authority: ctx.accounts.amm_state.to_account_info(),
+    };
+    let cpi_ctx = CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts);
+    transfer_checked(cpi_ctx, amount, ctx.accounts.mint.decimals)?;
+
+    msg!("AMM deposited {} reward tokens", amount);
     Ok(())
 }
 
@@ -97,21 +130,32 @@ pub struct UpdateAmmProgram<'info> {
 #[derive(Accounts)]
 #[instruction(amount: u64, index: u64, days_to_unlock: u8)]
 pub struct CreateAmmPosition<'info> {
-    /// CHECK: Verified below against authorized AMM program ID
     #[account(mut)]
-    pub amm_program: AccountInfo<'info>,
-
-    #[account(mut)]
-    pub owner: Signer<'info>, // The buyer (ultimately receives the position)
+    pub owner: Signer<'info>, // The buyer (ultimately receives the position); pays rent
 
     pub mint: InterfaceAccount<'info, Mint>,
 
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"pool", mint.key().as_ref()],
+        bump = pool.bump,
+        has_one = mint,
+    )]
     pub pool: Box<Account<'info, StakePool>>,
+
+    /// AMM state PDA. Its signature proves the caller is the AMM program
+    /// stored on the pool (only that program can sign for this PDA).
+    /// CHECK: PDA verified by seeds against pool.amm_program
+    #[account(
+        seeds = [b"amm_state", mint.key().as_ref()],
+        bump,
+        seeds::program = pool.amm_program,
+    )]
+    pub amm_state: Signer<'info>,
 
     #[account(
         init_if_needed,
-        payer = amm_program,  // AMM pays for user_index creation
+        payer = owner,
         seeds = [b"user_index", owner.key().as_ref()],
         bump,
         space = 8 + 8
@@ -120,7 +164,7 @@ pub struct CreateAmmPosition<'info> {
 
     #[account(
         init,
-        payer = amm_program,  // AMM pays for position creation
+        payer = owner,
         seeds = [
             b"position",
             pool.key().as_ref(),
@@ -128,15 +172,15 @@ pub struct CreateAmmPosition<'info> {
             &index.to_le_bytes(),
         ],
         bump,
-        space = 8 + 160  // Adjust for new fields
+        space = 8 + StakePosition::INIT_SPACE
     )]
     pub position: Box<Account<'info, StakePosition>>,
 
-    /// Where the NYSEH tokens come from (AMM's escrow/ATA, not buyer's wallet)
-    #[account(mut, token::mint = mint, token::authority = amm_program)]
+    /// AMM's NYSEH vault — authority is the amm_state PDA signing this CPI
+    #[account(mut, token::mint = mint, token::authority = amm_state)]
     pub source_token: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    #[account(mut, token::mint = mint, token::authority = pool)]
+    #[account(mut, address = pool.vault)]
     pub vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
     /// CHECK: Address verified by pool.market_status_pda constraint
@@ -146,6 +190,38 @@ pub struct CreateAmmPosition<'info> {
     pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
 }
+
+#[derive(Accounts)]
+pub struct DepositRewardsFromAmm<'info> {
+    pub mint: InterfaceAccount<'info, Mint>,
+
+    #[account(
+        mut,
+        seeds = [b"pool", mint.key().as_ref()],
+        bump = pool.bump,
+        has_one = mint,
+    )]
+    pub pool: Box<Account<'info, StakePool>>,
+
+    /// AMM state PDA — same CPI gate as create_amm_position.
+    /// CHECK: PDA verified by seeds against pool.amm_program
+    #[account(
+        seeds = [b"amm_state", mint.key().as_ref()],
+        bump,
+        seeds::program = pool.amm_program,
+    )]
+    pub amm_state: Signer<'info>,
+
+    /// Source: AMM's NYSEH vault (authority = amm_state PDA)
+    #[account(mut, token::mint = mint, token::authority = amm_state)]
+    pub amm_nyseh_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+
+    #[account(mut, address = pool.reward_vault)]
+    pub reward_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+
+    pub token_program: Interface<'info, TokenInterface>,
+}
+
 #[error_code]
 pub enum CpiError {
     #[msg("unauthorized vested amm stake...")]

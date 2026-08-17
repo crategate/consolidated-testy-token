@@ -133,7 +133,7 @@ async function main() {
                 vault: vaultPda,
                 rewardVault: rewardVaultPda,
                 penaltyVault: penaltyVaultPda,
-                posrVault: posrVaultPda,
+                nysehVault: posrVaultPda,
                 marketStatusPda,
                 tokenProgram: new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"), // TOKEN_2022
                 systemProgram: anchor.web3.SystemProgram.programId,

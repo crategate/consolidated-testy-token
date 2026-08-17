@@ -26,3 +26,6 @@ pub use buy_the_dip::*;
 
 pub mod dex_buyback;
 pub use dex_buyback::*;
+
+pub mod distribute_staker_rewards;
+pub use distribute_staker_rewards::*;

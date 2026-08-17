@@ -124,9 +124,11 @@ describe("dex_buyback", () => {
         nysehVault = await createAtaOffCurve(nysehMint, ammStatePda, TOKEN_2022_PROGRAM_ID);
         usdcVault = await createAtaOffCurve(usdcMint, ammStatePda, TOKEN_PROGRAM_ID);
         const usdcDip = await createAtaOffCurve(usdcMint, ammStatePda, TOKEN_PROGRAM_ID);
+        const usdcRewards = await createAtaOffCurve(usdcMint, ammStatePda, TOKEN_PROGRAM_ID);
+        const [mockPricePda] = PublicKey.findProgramAddressSync([Buffer.from("mock_price"), nysehMint.toBuffer()], mock.programId);
 
         await amm.methods
-            .initializeAmm()
+            .initializeAmm(mockPricePda, PublicKey.default)
             .accounts({
                 authority: payer.publicKey,
                 nysehMint,
@@ -135,6 +137,7 @@ describe("dex_buyback", () => {
                 nysehVault,
                 usdcVault,
                 usdcDip,
+                usdcRewards,
                 solDip: solDipPda,
                 solVault,
                 offerList: offerListPda,
@@ -198,6 +201,9 @@ describe("dex_buyback", () => {
                 bigOffered: 0, bigRemaining: 0,
                 medOffered: 0, medRemaining: 0,
                 smlOffered: 0, smlRemaining: 0,
+                bigLotTier: 0, bigDiscountBps: 0, bigVestingDays: 0,
+                medLotTier: 0, medDiscountBps: 0, medVestingDays: 0,
+                smlLotTier: 0, smlDiscountBps: 0, smlVestingDays: 0,
             })
             .accounts({ authority: payer.publicKey, ammState: ammStatePda, metrics: metricsPda, acceptedOffers: acceptedOffersPda, offerList: offerListPda })
             .rpc();
