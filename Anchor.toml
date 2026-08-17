@@ -23,19 +23,23 @@ cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-amm-init = "npx ts-node ./scripts/amm-init.ts"
-amm-test-data = "npx ts-node ./scripts/amm-test-data.ts"
-
-bount = "npx ts-node ./scripts/oracle/mev-keeper.ts"
-crank = "npx ts-node ./scripts/oracle/managedUpdate.ts --feedId 0xaf3a39b12f5c052d81eb8c62bb86f4691fce2c2e0c88b39f83801978b6f203c3"
-
 feed-deploy = "npx ts-node ./scripts/oracle/feed-deploy.ts"
+
+mint = "npx ts-node scripts/mint-launch.ts"
+pool = "npx ts-node ./scripts/pool-init.ts"
+
 
 init = "npx ts-node ./scripts/initialize.ts && npx ts-node ./scripts/init-bounty.ts"
 init-o = "npx ts-node ./scripts/initialize.ts"
 
-mint = "npx ts-node scripts/mint-launch.ts"
-pool = "npx ts-node ./scripts/pool-init.ts"
+
+amm-init = "npx ts-node ./scripts/amm-init.ts"
+amm-test-data = "npx ts-node ./scripts/amm-test-data.ts"
+
+bount = "npx ts-node ./scripts/oracle/mev-keeper.ts"
+fund-bount="npx ts-node ./scripts/fund-bounty.ts"
+crank = "npx ts-node ./scripts/oracle/managedUpdate.ts --feedId 0xaf3a39b12f5c052d81eb8c62bb86f4691fce2c2e0c88b39f83801978b6f203c3"
+
 set-oracle = "npx ts-node ./scripts/oracle/set-oracle-state.ts"
 
 
