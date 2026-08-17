@@ -13,6 +13,7 @@ export type DeploymentConfig = {
     penaltyVault?: string;
     posrVault?: string;
     marketStatus?: string;
+    ammProgram?: string;
 };
 
 export type ResolvedDeployment = DeploymentConfig & {

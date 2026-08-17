@@ -35,7 +35,7 @@ function Section({ section, hideAddresses }: { section: DashSection; hideAddress
 }
 
 export default function AmmPage() {
-    const { data, error } = useAmmData();
+    const data = useAmmData();
     const [hideAddresses, setHideAddresses] = useState(false);
     const [offersLive, setoffersLive] = useState(false);
     document.title = "Bond Offer Desk | NYSEH"
@@ -53,18 +53,12 @@ export default function AmmPage() {
                     </button>
                 </div>
             </header>
-            {error && <div className="dash-error">RPC error: {error} — showing last known state</div>}
-            {!data && !error && <div className="dash-loading">Loading deployment + chain state…</div>}
+            {<div className="dash-error">RPC error: {} — showing last known state</div>}
+            {!data && <div className="dash-loading">Loading deployment + chain state…</div>}
             {data && (
                 <main className="dash-board">
-                    {data.sections.map((s) => (
-                        <Section key={s.title} section={s} hideAddresses={hideAddresses} />
-                    ))}
-                    {data.missing.length > 0 && (
-                        <footer className="dash-missing">
-                            Not found on-chain: {data.missing.join(' · ')}
-                        </footer>
-                    )}
+
+                    {console.log(data)}
                 </main>
             )}
         </div>
