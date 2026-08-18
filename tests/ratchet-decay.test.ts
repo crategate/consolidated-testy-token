@@ -124,6 +124,9 @@ describe("ratchet floor decay", () => {
         [metricsPda] = PublicKey.findProgramAddressSync([Buffer.from("metrics"), nysehMint.toBuffer()], amm.programId);
         [offerListPda] = PublicKey.findProgramAddressSync([Buffer.from("offer_list"), nysehMint.toBuffer()], amm.programId);
         [mockPricePda] = PublicKey.findProgramAddressSync([Buffer.from("mock_price"), nysehMint.toBuffer()], mock.programId);
+        // SOL/USD oracle + SOL rewards holding PDA (SOL leg unused in this suite)
+        const [solOraclePda] = PublicKey.findProgramAddressSync([Buffer.from("mock_price"), usdcMint.toBuffer()], mock.programId);
+        const [solRewardsPda] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_rewards"), nysehMint.toBuffer()], amm.programId);
         const [solDipPda] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_dip"), nysehMint.toBuffer()], amm.programId);
         const [solVault] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_vault"), nysehMint.toBuffer()], amm.programId);
 
@@ -133,7 +136,7 @@ describe("ratchet floor decay", () => {
         const usdcRewards = await createAtaOffCurve(usdcMint, ammStatePda, TOKEN_PROGRAM_ID);
 
         await amm.methods
-            .initializeAmm(mockPricePda, PublicKey.default)
+            .initializeAmm(mockPricePda, PublicKey.default, solOraclePda)
             .accounts({
                 authority: payer.publicKey,
                 nysehMint,
@@ -143,6 +146,7 @@ describe("ratchet floor decay", () => {
                 usdcVault,
                 usdcDip,
                 usdcRewards,
+                solRewards: solRewardsPda,
                 solDip: solDipPda,
                 solVault,
                 offerList: offerListPda,

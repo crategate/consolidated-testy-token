@@ -3,6 +3,8 @@ use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 use mock_dex_pool::cpi::accounts::SendNyseh;
 
+use super::offer_claim::read_live_price;
+
 // Minimum slots between slices (~1 min) — pacing so one crank burst can't
 // drain the day's budget in a single block.
 const MIN_SLICE_SLOTS: u64 = 150;
@@ -37,6 +39,11 @@ pub struct DexBuyback<'info> {
     /// CHECK: SOL buyback funds (system PDA, seeds [b"amm_sol_vault", mint])
     #[account(mut, address = amm_state.sol_vault)]
     pub sol_vault: AccountInfo<'info>,
+    /// CHECK: SOL/USD price oracle — SOL-leg fills are converted to USDC
+    /// units with this before ratcheting the floor (raw-u64 mock PDA on
+    /// devnet; real SOL/USD feed at mainnet)
+    #[account(address = amm_state.sol_oracle)]
+    pub sol_oracle: UncheckedAccount<'info>,
     pub nyseh_mint: Box<InterfaceAccount<'info, Mint>>,
 
     // --- swap adapter accounts (mock-dex-pool today; real DEX at launch) ---
@@ -69,8 +76,9 @@ pub struct DexBuyback<'info> {
 
 // AccountInfo clones handed to the swap adapter, collected before amm_state
 // is mutably borrowed (avoids whole-struct borrow conflicts). Shared with
-// distribute_staker_rewards — the `usdc_vault` slot holds whichever USDC
-// account funds the swap (buyback vault or staker-rewards holding vault).
+// distribute_staker_rewards — the `usdc_vault`/`sol_vault` slots hold
+// whichever vaults fund the swap (buyback vaults or staker-rewards holding
+// vaults).
 pub(crate) struct SwapInfos<'info> {
     pub amm_state: AccountInfo<'info>,
     pub usdc_vault: AccountInfo<'info>,
@@ -193,7 +201,15 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
     let slice_usdc = slice_usdc.min(remaining_usdc);
     if slice_usdc > 0 {
         let before = ctx.accounts.nyseh_vault.amount;
-        execute_swap(&swap, mint_key, state_bump, sol_vault_bump, slice_usdc, false)?;
+        execute_swap(
+            &swap,
+            mint_key,
+            state_bump,
+            b"amm_sol_vault",
+            sol_vault_bump,
+            slice_usdc,
+            false,
+        )?;
         ctx.accounts.nyseh_vault.reload()?;
         let out = ctx.accounts.nyseh_vault.amount.saturating_sub(before);
         if out > 0 {
@@ -208,11 +224,24 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
     let slice_sol = slice_sol.min(remaining_sol);
     if slice_sol > 0 {
         let before = ctx.accounts.nyseh_vault.amount;
-        execute_swap(&swap, mint_key, state_bump, sol_vault_bump, slice_sol, true)?;
+        execute_swap(
+            &swap,
+            mint_key,
+            state_bump,
+            b"amm_sol_vault",
+            sol_vault_bump,
+            slice_sol,
+            true,
+        )?;
         ctx.accounts.nyseh_vault.reload()?;
         let out = ctx.accounts.nyseh_vault.amount.saturating_sub(before);
         if out > 0 {
-            ratchet_buyback_basis(amm_state, (slice_sol as u128 * 1_000_000 / out as u128) as u64);
+            // Ratchet in USDC units: lamports × sol_price / out equals
+            // (usdc_raw × 1e6) / nyseh_raw — same units as the USDC leg.
+            let sol_price = read_live_price(&ctx.accounts.sol_oracle.to_account_info())?;
+            require!(sol_price > 0, ErrorCode::InvalidOracle);
+            let px = (slice_sol as u128).saturating_mul(sol_price as u128) / out as u128;
+            ratchet_buyback_basis(amm_state, u64::try_from(px).unwrap_or(u64::MAX));
         }
         amm_state.bb_spent_sol += slice_sol;
     }
@@ -237,16 +266,19 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
 // amm_state, or SOL lamport transfer signed by the sol_vault PDA).
 // Out-leg: CPI send_nyseh on the configured dex_program (mock fixed-rate
 // dispenser today). Everything else in this file is swap-agnostic.
+// `sol_vault_seed`/`sol_vault_bump` name the system PDA funding a SOL in-leg:
+// b"amm_sol_vault" for buybacks, b"amm_sol_rewards" for the staker share.
 pub(crate) fn execute_swap(
     swap: &SwapInfos,
     mint_key: Pubkey,
     state_bump: u8,
+    sol_vault_seed: &[u8],
     sol_vault_bump: u8,
     amount_in: u64,
     sol_in: bool,
 ) -> Result<()> {
     if sol_in {
-        let seeds: &[&[u8]] = &[b"amm_sol_vault", mint_key.as_ref(), &[sol_vault_bump]];
+        let seeds: &[&[u8]] = &[sol_vault_seed, mint_key.as_ref(), &[sol_vault_bump]];
         anchor_lang::solana_program::program::invoke_signed(
             &anchor_lang::solana_program::system_instruction::transfer(
                 &swap.sol_vault.key(),
@@ -315,4 +347,6 @@ pub enum ErrorCode {
     InvalidMarketState,
     #[msg("No offers were taken last night — nothing to buy back")]
     NoFillsToBuyBack,
+    #[msg("Invalid SOL price oracle")]
+    InvalidOracle,
 }

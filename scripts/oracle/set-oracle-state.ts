@@ -1,4 +1,3 @@
-
 import * as anchor from "@coral-xyz/anchor";
 import * as fs from "fs";
 import * as path from "path";

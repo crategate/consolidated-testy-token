@@ -69,8 +69,8 @@ async function main() {
     // 4. Token Metadata Configuration
     const metadata: TokenMetadata = {
         mint: mint.publicKey,
-        name: 'claimoffer',
-        symbol: '8-18',
+        name: 'winning',
+        symbol: '8-15',
         uri: 'https://copper-quick-koi-488.mypinata.cloud/ipfs/bafkreiblskodz5bwtelz4id437rnhsndtq3rfh7jjsgaj72wb55cgnbbea',
         additionalMetadata: [['description', 'combining concepts and learning the basics']],
     };

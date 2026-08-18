@@ -10,6 +10,7 @@ pub fn handler(
     ctx: Context<InitializeAmm>,
     spot_oracle: Pubkey,
     staking_pool: Pubkey,
+    sol_oracle: Pubkey,
 ) -> Result<()> {
     // initialize the POSR vault
     // during minting, % of coins will get stored here
@@ -46,8 +47,11 @@ pub fn handler(
     amm_state.staking_pool = staking_pool;
     amm_state.usdc_rewards = ctx.accounts.usdc_rewards.key();
     amm_state.rewards_day_index = 0;
+    amm_state.sol_oracle = sol_oracle;
+    amm_state.sol_rewards = ctx.accounts.sol_rewards.key();
     amm_state.bump = ctx.bumps.amm_state;
     amm_state.sol_vault_bump = ctx.bumps.sol_vault;
+    amm_state.sol_rewards_bump = ctx.bumps.sol_rewards;
 
     offer_list.owner = ctx.accounts.authority.key();
     offer_list.seed = 0;
@@ -147,6 +151,16 @@ pub struct InitializeAmm<'info> {
         space = 8,
     )]
     pub sol_vault: AccountInfo<'info>,
+    /// CHECK: holding PDA for the stakers' 10% share of SOL proceeds
+    /// (same rent-funded space-8 system-PDA pattern as sol_vault/sol_dip)
+    #[account(
+        init,
+        payer = authority,
+        seeds = [b"amm_sol_rewards", nyseh_mint.key().as_ref()],
+        bump,
+        space = 8,
+    )]
+    pub sol_rewards: AccountInfo<'info>,
     #[account(
         init,
         payer = authority,
