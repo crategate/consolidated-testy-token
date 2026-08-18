@@ -26,10 +26,12 @@ pub struct CalcCompletedOffers<'info> {
     #[account(mut, seeds = [b"accepted_offers", amm_state.nyseh_mint.as_ref()], bump)]
     pub accepted_offers: Account<'info, AcceptedOffers>,
 
-    /// CHECK: live price oracle — raw u64 stub (first 8 bytes), same pattern as
-    /// offer_claim::read_live_price. Test-settable on devnet (mock-dex-pool's
-    /// mock_price PDA). MAINNET TODO: absolute-price source in the same units
-    /// as highest_buyback_basis (raw USDC-in x 1e6 / raw NYSEH-out).
+    /// CHECK: live absolute-price oracle — raw u64 stub (first 8 bytes), same
+    /// pattern as offer_claim::read_live_price. Address pinned at init
+    /// (mock-dex-pool's mock_price PDA on devnet). MAINNET TODO: absolute-price
+    /// source in the same units as highest_buyback_basis (raw USDC-in x 1e6 /
+    /// raw NYSEH-out).
+    #[account(address = amm_state.spot_oracle)]
     pub price_oracle: UncheckedAccount<'info>,
 }
 

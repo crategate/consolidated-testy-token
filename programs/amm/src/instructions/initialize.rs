@@ -6,7 +6,11 @@ use anchor_spl::{
     token_interface::{Mint, TokenAccount, TokenInterface},
 };
 
-pub fn handler(ctx: Context<InitializeAmm>) -> Result<()> {
+pub fn handler(
+    ctx: Context<InitializeAmm>,
+    spot_oracle: Pubkey,
+    staking_pool: Pubkey,
+) -> Result<()> {
     // initialize the POSR vault
     // during minting, % of coins will get stored here
 
@@ -38,6 +42,10 @@ pub fn handler(ctx: Context<InitializeAmm>) -> Result<()> {
     amm_state.bb_slice_count = 0;
     amm_state.bb_last_slot = 0;
     amm_state.untaken_days = 0;
+    amm_state.spot_oracle = spot_oracle;
+    amm_state.staking_pool = staking_pool;
+    amm_state.usdc_rewards = ctx.accounts.usdc_rewards.key();
+    amm_state.rewards_day_index = 0;
     amm_state.bump = ctx.bumps.amm_state;
     amm_state.sol_vault_bump = ctx.bumps.sol_vault;
 
@@ -113,6 +121,14 @@ pub struct InitializeAmm<'info> {
         associated_token::token_program = token_program,
     )]
     pub usdc_dip: Box<InterfaceAccount<'info, TokenAccount>>,
+    /// Holding vault for the stakers' 10% USDC share (created by the init
+    /// script; same pattern as usdc_dip)
+    #[account(
+        associated_token::mint = usdc_mint,
+        associated_token::authority = amm_state,
+        associated_token::token_program = token_program,
+    )]
+    pub usdc_rewards: Box<InterfaceAccount<'info, TokenAccount>>,
     /// CHECK: sol vault for buybacks on dips
     #[account(
         init,

@@ -79,6 +79,9 @@ describe("ratchet floor decay", () => {
                 bigOffered: sheet.big[0], bigRemaining: sheet.big[1],
                 medOffered: sheet.med[0], medRemaining: sheet.med[1],
                 smlOffered: sheet.sml[0], smlRemaining: sheet.sml[1],
+                bigLotTier: 0, bigDiscountBps: 0, bigVestingDays: 0,
+                medLotTier: 0, medDiscountBps: 0, medVestingDays: 0,
+                smlLotTier: 0, smlDiscountBps: 0, smlVestingDays: 0,
             })
             .accounts({
                 authority: payer.publicKey,
@@ -127,9 +130,10 @@ describe("ratchet floor decay", () => {
         const nysehVault = await createAtaOffCurve(nysehMint, ammStatePda, TOKEN_2022_PROGRAM_ID);
         const usdcVault = await createAtaOffCurve(usdcMint, ammStatePda, TOKEN_PROGRAM_ID);
         const usdcDip = await createAtaOffCurve(usdcMint, ammStatePda, TOKEN_PROGRAM_ID);
+        const usdcRewards = await createAtaOffCurve(usdcMint, ammStatePda, TOKEN_PROGRAM_ID);
 
         await amm.methods
-            .initializeAmm()
+            .initializeAmm(mockPricePda, PublicKey.default)
             .accounts({
                 authority: payer.publicKey,
                 nysehMint,
@@ -138,6 +142,7 @@ describe("ratchet floor decay", () => {
                 nysehVault,
                 usdcVault,
                 usdcDip,
+                usdcRewards,
                 solDip: solDipPda,
                 solVault,
                 offerList: offerListPda,

@@ -112,6 +112,23 @@ pub struct AmmState {
     // live price (calc_completed_offers). Reset to 0 by any fill.
     pub untaken_days: u16,
 
+    // Absolute-price oracle read by offer_claim / calc_completed_offers
+    // (raw-u64 mock PDA on devnet; real DEX/oracle adapter at mainnet).
+    // Distinct from price_oracle, which is the Switchboard [status, price]
+    // quote carrying the 24h price CHANGE for metrics.
+    pub spot_oracle: Pubkey,
+
+    // Staking pool the offer desk CPIs into (purchased NYSEH vest here;
+    // the daily staker share is deposited here after conversion).
+    pub staking_pool: Pubkey,
+
+    // Holding vault for the stakers' 10% share of USDC proceeds. Accumulates
+    // per claim; distribute_staker_rewards converts it to NYSEH and deposits
+    // into the staking reward vault once per trading day.
+    pub usdc_rewards: Pubkey,
+    // Idempotency guard for distribute_staker_rewards.
+    pub rewards_day_index: u64,
+
     pub bump: u8,
     pub sol_vault_bump: u8,
 }

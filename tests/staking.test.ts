@@ -2,6 +2,8 @@ import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { Staking } from "../target/types/staking";
 import { CrankOracle } from "../target/types/crank_oracle";
+import { Amm } from "../target/types/amm";
+import { expect } from "chai";
 import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
 import {
     createMint,
@@ -18,6 +20,7 @@ describe("NYSEH Staking", () => {
 
     const stakingProgram = anchor.workspace.Staking as Program<Staking>;
     const crankProgram = anchor.workspace.CrankOracle as Program<CrankOracle>;
+    const ammProgram = anchor.workspace.Amm as Program<Amm>;
 
     let mint: PublicKey;
     let adminToken: PublicKey;
@@ -153,6 +156,7 @@ describe("NYSEH Staking", () => {
                 AH_PENALTY,
                 CLOSED_PENALTY,
                 HALTED_PENALTY,
+                ammProgram.programId,
             )
             .accounts({
                 authority: provider.wallet.publicKey,
@@ -161,7 +165,7 @@ describe("NYSEH Staking", () => {
                 vault: vaultPda,
                 rewardVault: rewardVaultPda,
                 penaltyVault: penaltyVaultPda,
-                posrVault: posrVaultPda,
+                nysehVault: posrVaultPda,
                 marketStatusPda,
                 tokenProgram: TOKEN_2022_PROGRAM_ID,
                 systemProgram: SystemProgram.programId,
@@ -183,7 +187,7 @@ describe("NYSEH Staking", () => {
         const positionPda = getPositionPda(userKeypair.publicKey, 0);
 
         await stakingProgram.methods
-            .stake(new anchor.BN(10_000 * 10 ** 9), new anchor.BN(0))
+            .stake(new anchor.BN(10_000 * 10 ** 9), new anchor.BN(0), 0)
             .accounts({
                 owner: userKeypair.publicKey,
                 mint,
@@ -249,7 +253,7 @@ describe("NYSEH Staking", () => {
                 pool: poolPda,
                 position: positionPda,
                 rewardVault: rewardVaultPda,
-                posrVault: posrVaultPda,
+                nysehVault: posrVaultPda,
                 ownerToken: userToken,
                 marketStatus: marketStatusPda,
                 tokenProgram: TOKEN_2022_PROGRAM_ID,
@@ -281,7 +285,7 @@ describe("NYSEH Staking", () => {
                     pool: poolPda,
                     position: positionPda,
                     rewardVault: rewardVaultPda,
-                    posrVault: posrVaultPda,
+                    nysehVault: posrVaultPda,
                     ownerToken: userToken,
                     marketStatus: marketStatusPda,
                     tokenProgram: TOKEN_2022_PROGRAM_ID,
@@ -314,7 +318,7 @@ describe("NYSEH Staking", () => {
                 vault: vaultPda,
                 rewardVault: rewardVaultPda,
                 penaltyVault: penaltyVaultPda,
-                posrVault: posrVaultPda,
+                nysehVault: posrVaultPda,
                 ownerToken: userToken,
                 marketStatus: marketStatusPda,
                 tokenProgram: TOKEN_2022_PROGRAM_ID,

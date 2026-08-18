@@ -68,21 +68,23 @@ pub struct DexBuyback<'info> {
 }
 
 // AccountInfo clones handed to the swap adapter, collected before amm_state
-// is mutably borrowed (avoids whole-struct borrow conflicts).
-struct SwapInfos<'info> {
-    amm_state: AccountInfo<'info>,
-    usdc_vault: AccountInfo<'info>,
-    nyseh_vault: AccountInfo<'info>,
-    sol_vault: AccountInfo<'info>,
-    pool_state: AccountInfo<'info>,
-    pool_nyseh: AccountInfo<'info>,
-    pool_usdc: AccountInfo<'info>,
-    pool_sol: AccountInfo<'info>,
-    nyseh_mint: AccountInfo<'info>,
-    dex_program: AccountInfo<'info>,
-    token_program: AccountInfo<'info>,
-    token_2022_program: AccountInfo<'info>,
-    system_program: AccountInfo<'info>,
+// is mutably borrowed (avoids whole-struct borrow conflicts). Shared with
+// distribute_staker_rewards — the `usdc_vault` slot holds whichever USDC
+// account funds the swap (buyback vault or staker-rewards holding vault).
+pub(crate) struct SwapInfos<'info> {
+    pub amm_state: AccountInfo<'info>,
+    pub usdc_vault: AccountInfo<'info>,
+    pub nyseh_vault: AccountInfo<'info>,
+    pub sol_vault: AccountInfo<'info>,
+    pub pool_state: AccountInfo<'info>,
+    pub pool_nyseh: AccountInfo<'info>,
+    pub pool_usdc: AccountInfo<'info>,
+    pub pool_sol: AccountInfo<'info>,
+    pub nyseh_mint: AccountInfo<'info>,
+    pub dex_program: AccountInfo<'info>,
+    pub token_program: AccountInfo<'info>,
+    pub token_2022_program: AccountInfo<'info>,
+    pub system_program: AccountInfo<'info>,
 }
 
 pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
@@ -235,7 +237,7 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
 // amm_state, or SOL lamport transfer signed by the sol_vault PDA).
 // Out-leg: CPI send_nyseh on the configured dex_program (mock fixed-rate
 // dispenser today). Everything else in this file is swap-agnostic.
-fn execute_swap(
+pub(crate) fn execute_swap(
     swap: &SwapInfos,
     mint_key: Pubkey,
     state_bump: u8,
@@ -297,7 +299,7 @@ fn execute_swap(
 // NOTE: units are (input raw × 1e6) / nyseh raw — the SOL leg is NOT in the
 // same units as the USDC leg; the real-DEX adapter must report USDC-
 // denominated execution price. Fine for the stub era.
-pub fn ratchet_buyback_basis(amm_state: &mut AmmState, executed_price: u64) {
+pub(crate) fn ratchet_buyback_basis(amm_state: &mut AmmState, executed_price: u64) {
     if executed_price > amm_state.highest_buyback_basis {
         amm_state.highest_buyback_basis = executed_price;
     }

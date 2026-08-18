@@ -105,6 +105,7 @@ dependencies = [
  "anchor-lang",
  "anchor-spl",
  "mock-dex-pool",
+ "staking",
  "switchboard-on-demand",
 ]
 

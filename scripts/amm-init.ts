@@ -84,6 +84,18 @@ async function main() {
     ).publicKey;
     console.log("📍 DEX program (stub):", DEX_PROGRAM_ID.toBase58());
 
+    // ── 3c. Staking program + pool (offer_claim CPIs into it; run pool-init first) ──
+    const stakingKeyPath = path.join(
+        process.cwd(), "target", "deploy", "staking-keypair.json"
+    );
+    if (!fs.existsSync(stakingKeyPath)) {
+        throw new Error("staking-keypair.json not found. Run 'anchor build' first.");
+    }
+    const STAKING_PROGRAM_ID = Keypair.fromSecretKey(
+        new Uint8Array(JSON.parse(fs.readFileSync(stakingKeyPath, "utf-8")))
+    ).publicKey;
+    console.log("📍 Staking program:", STAKING_PROGRAM_ID.toBase58());
+
     // ── 4. Derive all AMM PDAs ──
     const [ammStatePda] = PublicKey.findProgramAddressSync(
         [Buffer.from("amm_state"), NYSEH_MINT.toBuffer()],
@@ -114,6 +126,25 @@ async function main() {
         ammStatePda,       // The authority/owner of the vault
         true,              // allowOwnerOffCurve = true (Required because ammStatePda is a PDA)
         TOKEN_PROGRAM_ID   // Standard Token Program ID
+    );
+    // Holding vault for the stakers' 10% USDC share (converted to NYSEH and
+    // deposited into staking once per trading day by distributeStakerRewards)
+    const usdcRewardsAta = getAssociatedTokenAddressSync(
+        USDC_MINT,
+        ammStatePda,
+        true,
+        TOKEN_PROGRAM_ID
+    );
+    // Absolute spot price (devnet stub: mock-dex-pool's mock_price PDA;
+    // MAINNET: real absolute-price source in highest_buyback_basis units)
+    const [spotOraclePda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("mock_price"), NYSEH_MINT.toBuffer()],
+        DEX_PROGRAM_ID
+    );
+    // Staking pool PDA (seeds [b"pool", mint] under the staking program)
+    const [stakingPoolPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("pool"), NYSEH_MINT.toBuffer()],
+        STAKING_PROGRAM_ID
     );
 
     const [solDipPda] = PublicKey.findProgramAddressSync(
@@ -189,6 +220,14 @@ async function main() {
             USDC_MINT, TOKEN_PROGRAM_ID
         ));
     }
+    const usdcRewardsInfo = await provider.connection.getAccountInfo(usdcRewardsAta);
+    if (!usdcRewardsInfo) {
+        console.log("  Creating USDC rewards holding vault (standard Token)...");
+        preIxs.push(createAssociatedTokenAccountInstruction(
+            provider.wallet.publicKey, usdcRewardsAta, ammStatePda,
+            USDC_MINT, TOKEN_PROGRAM_ID
+        ));
+    }
     if (preIxs.length > 0) {
         const tx = new Transaction().add(...preIxs);
         const { blockhash } = await provider.connection.getLatestBlockhash("confirmed");
@@ -201,7 +240,7 @@ async function main() {
     console.log("\n🚀 Initializing AMM accounts...");
     try {
         const tx = await ammProgram.methods
-            .initializeAmm()
+            .initializeAmm(spotOraclePda, stakingPoolPda)
             .accounts({
                 authority: provider.wallet.publicKey,
                 nysehMint: NYSEH_MINT,
@@ -210,6 +249,7 @@ async function main() {
                 usdcVault: usdcVaultAta,
                 nysehVault: nysehVaultAta,
                 usdcDip: usdcDipAta,
+                usdcRewards: usdcRewardsAta,
                 solDip: solDipPda,
                 ammState: ammStatePda,
                 offerList: offerListPda,

@@ -48,18 +48,16 @@ export default function AmmPage() {
                     </button>
                 </div>
             </header>
-            {ammData && (
-                <main className="dash-board">
-                    {ammData.sections.map((s) => (
-                        <Section key={s.title} section={s} hideOfferSection={hideOfferSection} />
-                    ))}
-                    {ammData.missing.length > 0 && (
-                        <footer className="dash-missing">
-                            Not found on-chain: {ammData.missing.join(' · ')}
-                        </footer>
-                    )}
-                </main>
-            )}
-        </div>
+            {<div className="dash-error">RPC error: {} — showing last known state</div>}
+            {!data && <div className="dash-loading">Loading deployment + chain state…</div>}
+            {
+                data && (
+                    <main className="dash-board">
+
+                        {console.log(data)}
+                    </main>
+                )
+            }
+        </div >
     );
 }

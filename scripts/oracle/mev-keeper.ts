@@ -183,6 +183,7 @@ async function main() {
                 if (dayEnded) {
                     console.log(`📈 Day ended (${prevState} → ${newStatus.currentState}). Firing update_tradeday_stats + make_offers...`);
                     try {
+                        const ammStateForStats = await (ammProgram.account as any).ammState.fetch(ammStatePda);
                         const statsIx = await ammProgram.methods
                             .updateTradedayStats()
                             .accountsStrict({
@@ -191,6 +192,8 @@ async function main() {
                                 marketMetrics: metricsPda,
                                 marketStatus: marketStatusPda,
                                 priceOracle: quoteAccount,
+                                stakingPool: ammStateForStats.stakingPool,
+                                nysehMint,
                             })
                             .instruction();
                         const statsTx = await sb.asV0Tx({
@@ -284,6 +287,68 @@ async function main() {
                         }
                     } catch (e) {
                         console.error("❌ calc_completed_offers failed:", e);
+                    }
+
+                    // Staker distribution: swap yesterday's 10% USDC share to
+                    // NYSEH and deposit into the staking reward vault. Once per
+                    // day (on-chain day_index guard); a sim failure (nothing
+                    // collected / no stakers) is expected and skipped.
+                    try {
+                        const ammStateForDist = await (ammProgram.account as any).ammState.fetch(ammStatePda);
+                        const dexProgramId = new PublicKey(ammStateForDist.dexProgram);
+                        const usdcMint = new PublicKey(ammStateForDist.usdcMint);
+                        const [poolState] = PublicKey.findProgramAddressSync(
+                            [Buffer.from("mock_pool"), nysehMint.toBuffer()],
+                            dexProgramId
+                        );
+                        const poolNyseh = getAssociatedTokenAddressSync(nysehMint, poolState, true, TOKEN_2022_PROGRAM_ID);
+                        const poolUsdc = getAssociatedTokenAddressSync(usdcMint, poolState, true, TOKEN_PROGRAM_ID);
+                        const stakingPoolPda = new PublicKey(ammStateForDist.stakingPool);
+                        const stakingIdl = JSON.parse(fs.readFileSync(path.join(process.cwd(), "target", "idl", "staking.json"), "utf-8"));
+                        const stakingProgramId = new PublicKey(stakingIdl.address ?? stakingIdl.metadata?.address);
+                        const [stakingRewardVault] = PublicKey.findProgramAddressSync(
+                            [Buffer.from("rewards"), stakingPoolPda.toBuffer()],
+                            stakingProgramId
+                        );
+                        const distIx = await ammProgram.methods
+                            .distributeStakerRewards()
+                            .accountsStrict({
+                                cranker: keypair.publicKey,
+                                ammState: ammStatePda,
+                                marketStatus: marketStatusPda,
+                                usdcRewards: ammStateForDist.usdcRewards,
+                                nysehVault: ammStateForDist.nysehVault,
+                                solVault: ammStateForDist.solVault,
+                                nysehMint,
+                                poolState,
+                                poolNyseh,
+                                poolUsdc,
+                                poolSol: poolState,
+                                dexProgram: dexProgramId,
+                                stakingProgram: stakingProgramId,
+                                stakingPool: stakingPoolPda,
+                                stakingRewardVault,
+                                tokenProgram: TOKEN_PROGRAM_ID,
+                                token2022Program: TOKEN_2022_PROGRAM_ID,
+                                systemProgram: anchor.web3.SystemProgram.programId,
+                            })
+                            .instruction();
+                        const distTx = await sb.asV0Tx({
+                            connection,
+                            ixs: [distIx],
+                            signers: [keypair],
+                            computeUnitPrice: 20_000,
+                        });
+                        const distSim = await connection.simulateTransaction(distTx);
+                        if (distSim.value.err) {
+                            console.log("distribute_staker_rewards skipped (already done / nothing to distribute / no stakers).");
+                        } else {
+                            const distSig = await connection.sendTransaction(distTx);
+                            await connection.confirmTransaction(distSig, "confirmed");
+                            console.log(`✅ distribute_staker_rewards fired! ${distSig}`);
+                        }
+                    } catch (e) {
+                        console.error("❌ distribute_staker_rewards failed:", (e as Error).message);
                     }
                 }
             } else {
