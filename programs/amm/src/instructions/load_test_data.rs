@@ -49,8 +49,16 @@ pub struct TestMetrics {
     pub med_remaining: u8,
     pub sml_offered: u8,
     pub sml_remaining: u8,
+    pub big_lot_tier: u8,
+    pub big_discount_bps: u8,
+    pub big_vesting_days: u8,
+    pub med_lot_tier: u8,
+    pub med_discount_bps: u8,
+    pub med_vesting_days: u8,
+    pub sml_lot_tier: u8,
+    pub sml_discount_bps: u8,
+    pub sml_vesting_days: u8,
 }
-
 pub fn handler(ctx: Context<LoadTestData>, data: TestMetrics) -> Result<()> {
     let metrics = &mut ctx.accounts.metrics;
     metrics.price_changes = data.price_changes;
@@ -92,3 +100,4 @@ pub fn handler(ctx: Context<LoadTestData>, data: TestMetrics) -> Result<()> {
     msg!("test data loaded into metrics + accepted_offers");
     Ok(())
 }
+
