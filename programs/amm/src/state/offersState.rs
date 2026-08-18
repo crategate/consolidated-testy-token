@@ -129,8 +129,17 @@ pub struct AmmState {
     // Idempotency guard for distribute_staker_rewards.
     pub rewards_day_index: u64,
 
+    // SOL/USD price oracle (same raw-u64 mock-PDA pattern as spot_oracle;
+    // real SOL/USD feed at mainnet). Prices SOL-denominated offer claims and
+    // converts SOL-leg swap fills into USDC units for the ratchet floor.
+    pub sol_oracle: Pubkey,
+    // Holding vault (system PDA) for the stakers' 10% share of SOL proceeds —
+    // swapped to NYSEH by distribute_staker_rewards alongside usdc_rewards.
+    pub sol_rewards: Pubkey,
+
     pub bump: u8,
     pub sol_vault_bump: u8,
+    pub sol_rewards_bump: u8,
 }
 
 // update beginning of trading day plz

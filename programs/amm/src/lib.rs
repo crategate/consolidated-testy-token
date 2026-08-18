@@ -20,8 +20,9 @@ pub mod amm {
         ctx: Context<InitializeAmm>,
         spot_oracle: Pubkey,
         staking_pool: Pubkey,
+        sol_oracle: Pubkey,
     ) -> Result<()> {
-        initialize::handler(ctx, spot_oracle, staking_pool)
+        initialize::handler(ctx, spot_oracle, staking_pool, sol_oracle)
     }
     pub fn make_offers(ctx: Context<MakeOffers>) -> Result<()> {
         make_offers::handler(ctx)
@@ -53,6 +54,18 @@ pub mod amm {
     // against the current day's sheet.
     pub fn offer_claim(ctx: Context<OfferClaim>, tier: u8, units: u8, index: u64) -> Result<()> {
         offer_claim::handler(ctx, tier, units, index)
+    }
+
+    // Same desk, SOL payment: the USDC-terms cost (same floor, same discount)
+    // is converted to lamports at the sol_oracle rate and splits 80/10/10
+    // into the SOL buyback / dip / staker-rewards holding vaults.
+    pub fn offer_claim_sol(
+        ctx: Context<OfferClaimSol>,
+        tier: u8,
+        units: u8,
+        index: u64,
+    ) -> Result<()> {
+        offer_claim::handler_sol(ctx, tier, units, index)
     }
 
     // Start-of-day staker distribution: swap yesterday's 10% USDC share into

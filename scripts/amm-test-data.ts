@@ -53,6 +53,10 @@ async function main() {
         bigOffered: 0, bigRemaining: 0,
         medOffered: 0, medRemaining: 0,
         smlOffered: 0, smlRemaining: 0,
+        // offer terms — zeroed alongside the sheet (no claimable offers)
+        bigLotTier: 0, bigDiscountBps: 0, bigVestingDays: 0,
+        medLotTier: 0, medDiscountBps: 0, medVestingDays: 0,
+        smlLotTier: 0, smlDiscountBps: 0, smlVestingDays: 0,
     };
 
     const sig = await ammProgram.methods

@@ -32,6 +32,7 @@ describe("dex_buyback", () => {
     let nysehVault: PublicKey;
     let usdcVault: PublicKey;
     let solVault: PublicKey;
+    let solOraclePda: PublicKey;
     let poolState: PublicKey;
     let poolNyseh: PublicKey;
     let poolUsdc: PublicKey;
@@ -88,6 +89,7 @@ describe("dex_buyback", () => {
                 usdcVault,
                 nysehVault,
                 solVault,
+                solOracle: solOraclePda,
                 nysehMint,
                 poolState,
                 poolNyseh,
@@ -126,9 +128,13 @@ describe("dex_buyback", () => {
         const usdcDip = await createAtaOffCurve(usdcMint, ammStatePda, TOKEN_PROGRAM_ID);
         const usdcRewards = await createAtaOffCurve(usdcMint, ammStatePda, TOKEN_PROGRAM_ID);
         const [mockPricePda] = PublicKey.findProgramAddressSync([Buffer.from("mock_price"), nysehMint.toBuffer()], mock.programId);
+        // SOL/USD oracle (same mock pattern, seeded with a stand-in mint —
+        // the SOL leg never fires in this suite, so it stays unset)
+        [solOraclePda] = PublicKey.findProgramAddressSync([Buffer.from("mock_price"), usdcMint.toBuffer()], mock.programId);
+        const [solRewardsPda] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_rewards"), nysehMint.toBuffer()], amm.programId);
 
         await amm.methods
-            .initializeAmm(mockPricePda, PublicKey.default)
+            .initializeAmm(mockPricePda, PublicKey.default, solOraclePda)
             .accounts({
                 authority: payer.publicKey,
                 nysehMint,
@@ -138,6 +144,7 @@ describe("dex_buyback", () => {
                 usdcVault,
                 usdcDip,
                 usdcRewards,
+                solRewards: solRewardsPda,
                 solDip: solDipPda,
                 solVault,
                 offerList: offerListPda,
