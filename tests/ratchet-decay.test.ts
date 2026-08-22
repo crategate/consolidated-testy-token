@@ -68,6 +68,8 @@ describe("ratchet floor decay", () => {
             .loadTestData({
                 priceChanges: new Array(20).fill(0),
                 sampleHead: 0,
+                spotPrices: new Array(32).fill(new anchor.BN(0)),
+                spotHead: 0,
                 trailingStakeHealth: new Array(5).fill(50),
                 totalStaked: new anchor.BN(0),
                 totalSupply: new anchor.BN(0),
@@ -132,8 +134,9 @@ describe("ratchet floor decay", () => {
 
         const nysehVault = await createAtaOffCurve(nysehMint, ammStatePda, TOKEN_2022_PROGRAM_ID);
         const usdcVault = await createAtaOffCurve(usdcMint, ammStatePda, TOKEN_PROGRAM_ID);
-        const usdcDip = await createAtaOffCurve(usdcMint, ammStatePda, TOKEN_PROGRAM_ID);
-        const usdcRewards = await createAtaOffCurve(usdcMint, ammStatePda, TOKEN_PROGRAM_ID);
+        // dip/rewards USDC vaults are PDA token accounts created by initialize_amm
+        const [usdcDip] = PublicKey.findProgramAddressSync([Buffer.from("amm_usdc_dip"), nysehMint.toBuffer()], amm.programId);
+        const [usdcRewards] = PublicKey.findProgramAddressSync([Buffer.from("amm_usdc_rewards"), nysehMint.toBuffer()], amm.programId);
 
         await amm.methods
             .initializeAmm(mockPricePda, PublicKey.default, solOraclePda)

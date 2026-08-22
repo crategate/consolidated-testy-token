@@ -125,8 +125,9 @@ describe("dex_buyback", () => {
 
         nysehVault = await createAtaOffCurve(nysehMint, ammStatePda, TOKEN_2022_PROGRAM_ID);
         usdcVault = await createAtaOffCurve(usdcMint, ammStatePda, TOKEN_PROGRAM_ID);
-        const usdcDip = await createAtaOffCurve(usdcMint, ammStatePda, TOKEN_PROGRAM_ID);
-        const usdcRewards = await createAtaOffCurve(usdcMint, ammStatePda, TOKEN_PROGRAM_ID);
+        // dip/rewards USDC vaults are PDA token accounts created by initialize_amm
+        const [usdcDip] = PublicKey.findProgramAddressSync([Buffer.from("amm_usdc_dip"), nysehMint.toBuffer()], amm.programId);
+        const [usdcRewards] = PublicKey.findProgramAddressSync([Buffer.from("amm_usdc_rewards"), nysehMint.toBuffer()], amm.programId);
         const [mockPricePda] = PublicKey.findProgramAddressSync([Buffer.from("mock_price"), nysehMint.toBuffer()], mock.programId);
         // SOL/USD oracle (same mock pattern, seeded with a stand-in mint —
         // the SOL leg never fires in this suite, so it stays unset)
@@ -197,6 +198,8 @@ describe("dex_buyback", () => {
             .loadTestData({
                 priceChanges: new Array(20).fill(0),
                 sampleHead: 0,
+                spotPrices: new Array(32).fill(new anchor.BN(0)),
+                spotHead: 0,
                 trailingStakeHealth: new Array(5).fill(50),
                 totalStaked: new anchor.BN(0),
                 totalSupply: new anchor.BN(0),
@@ -223,9 +226,9 @@ describe("dex_buyback", () => {
         const nysehAfter = await nysehBalance();
         const slice = usdcBefore - usdcAfter;
         assert.isAbove(slice, 0, "slice executed");
-        // first-hour weight 15% x factor 0.5-1.5 -> 7.5%..22.5% of budget
-        assert.isAtLeast(slice, USDC_FUND * 0.05, "slice >= 5% of budget");
-        assert.isAtMost(slice, USDC_FUND * 0.25, "slice <= 25% of budget");
+        // first-hour weight 1.9% x factor 0.5-1.5 -> 0.95%..2.85% of budget
+        assert.isAtLeast(slice, USDC_FUND * 0.005, "slice >= 0.5% of budget");
+        assert.isAtMost(slice, USDC_FUND * 0.03, "slice <= 3% of budget");
         assert.equal(nysehAfter - nysehBefore, slice * 100_000, "mock rate out-leg");
 
         const state = await amm.account.ammState.fetch(ammStatePda);

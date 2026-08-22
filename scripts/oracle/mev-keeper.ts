@@ -413,6 +413,64 @@ async function main() {
                 // Never let a buyback attempt kill the crank loop
                 console.error("❌ dex_buyback attempt failed:", (e as Error).message);
             }
+
+            // buy_the_dip: attempt EVERY loop, any market state — the dip
+            // buyer is always on. Calling it is also what keeps the spot-price
+            // ring sampled. On-chain pacing + trigger turn most fires into
+            // cheap no-ops; sim failures (cold start, no dip, day cap) are
+            // expected.
+            try {
+                const ammState = await (ammProgram.account as any).ammState.fetch(ammStatePda);
+                const dexProgramId = new PublicKey(ammState.dexProgram);
+                const usdcMint = new PublicKey(ammState.usdcMint);
+                // mock-dex-pool: pool token accounts are ATAs of the pool PDA
+                const [poolState] = PublicKey.findProgramAddressSync(
+                    [Buffer.from("mock_pool"), nysehMint.toBuffer()],
+                    dexProgramId
+                );
+                const poolNyseh = getAssociatedTokenAddressSync(nysehMint, poolState, true, TOKEN_2022_PROGRAM_ID);
+                const poolUsdc = getAssociatedTokenAddressSync(usdcMint, poolState, true, TOKEN_PROGRAM_ID);
+                const dipIx = await ammProgram.methods
+                    .buyTheDip()
+                    .accountsStrict({
+                        cranker: keypair.publicKey,
+                        ammState: ammStatePda,
+                        marketStatus: marketStatusPda,
+                        metrics: metricsPda,
+                        spotOracle: ammState.spotOracle,
+                        solOracle: ammState.solOracle,
+                        usdcDip: ammState.usdcDip,
+                        solDip: ammState.solDip,
+                        nysehVault: ammState.nysehVault,
+                        nysehMint,
+                        poolState,
+                        poolNyseh,
+                        poolUsdc,
+                        poolSol: poolState,
+                        dexProgram: dexProgramId,
+                        tokenProgram: TOKEN_PROGRAM_ID,
+                        token2022Program: TOKEN_2022_PROGRAM_ID,
+                        systemProgram: anchor.web3.SystemProgram.programId,
+                    })
+                    .instruction();
+                const dipTx = await sb.asV0Tx({
+                    connection,
+                    ixs: [dipIx],
+                    signers: [keypair],
+                    computeUnitPrice: 20_000,
+                });
+                const dipSim = await connection.simulateTransaction(dipTx);
+                if (dipSim.value.err) {
+                    console.log("buy_the_dip skipped (cold start / no dip / pacing / cap).");
+                } else {
+                    const dipSig = await connection.sendTransaction(dipTx);
+                    await connection.confirmTransaction(dipSig, "confirmed");
+                    console.log(`✅ buy_the_dip slice fired! ${dipSig}`);
+                }
+            } catch (e) {
+                // Never let a dip attempt kill the crank loop
+                console.error("❌ buy_the_dip attempt failed:", (e as Error).message);
+            }
         } catch (e) {
             console.error("❌ Crank attempt failed:", e);
         }

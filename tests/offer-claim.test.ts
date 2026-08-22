@@ -228,8 +228,10 @@ describe("offer_claim + distribute_staker_rewards", () => {
 
         nysehVault = await createAtaOffCurve(nysehMint, ammStatePda, TOKEN_2022_PROGRAM_ID);
         usdcVault = await createAtaOffCurve(usdcMint, ammStatePda, TOKEN_PROGRAM_ID);
-        usdcDip = await createAtaOffCurve(usdcMint, ammStatePda, TOKEN_PROGRAM_ID);
-        usdcRewards = await createAtaOffCurve(usdcMint, ammStatePda, TOKEN_PROGRAM_ID);
+        // dip/rewards USDC vaults are PDA token accounts created by initialize_amm
+        // (NOT ATAs — the (usdcMint, ammState) ATA is usdcVault itself)
+        [usdcDip] = PublicKey.findProgramAddressSync([Buffer.from("amm_usdc_dip"), nysehMint.toBuffer()], amm.programId);
+        [usdcRewards] = PublicKey.findProgramAddressSync([Buffer.from("amm_usdc_rewards"), nysehMint.toBuffer()], amm.programId);
 
         await amm.methods
             .initializeAmm(mockPricePda, poolPda, solOraclePda)
@@ -290,6 +292,8 @@ describe("offer_claim + distribute_staker_rewards", () => {
             .loadTestData({
                 priceChanges: new Array(20).fill(0),
                 sampleHead: 0,
+                spotPrices: new Array(32).fill(new anchor.BN(0)),
+                spotHead: 0,
                 trailingStakeHealth: new Array(5).fill(50),
                 totalStaked: new anchor.BN(0),
                 totalSupply: new anchor.BN(0),
@@ -355,7 +359,7 @@ describe("offer_claim + distribute_staker_rewards", () => {
         // 1 lot = 10 NYSEH at effective price 9 → cost 90_000 raw USDC
         //   → lamports = 90_000 × 1e6 / 200_000 = 450_000
         const expectedLamports = 450_000;
-        const rent = await provider.connection.getMinimumBalanceForRentExemption(8);
+        const rent = await provider.connection.getMinimumBalanceForRentExemption(0);
         const vaultBefore = await provider.connection.getBalance(solVault);
         const dipBefore = await provider.connection.getBalance(solDip);
         const rewBefore = await provider.connection.getBalance(solRewardsPda);
@@ -434,7 +438,7 @@ describe("offer_claim + distribute_staker_rewards", () => {
         // SOL leg fires too: 45_000 lamports (from the SOL claim test) at
         // mock rate 10_000 NYSEH/SOL → 4.5e8 raw; USDC leg 18_000 × 100_000
         // → 1.8e9 raw. Combined deposit: 2.25e9 NYSEH raw.
-        const solRent = await provider.connection.getMinimumBalanceForRentExemption(8);
+        const solRent = await provider.connection.getMinimumBalanceForRentExemption(0);
         const solRewBal = await provider.connection.getBalance(solRewardsPda);
         assert.equal(solRewBal, solRent, "SOL holding vault drained to rent floor");
 

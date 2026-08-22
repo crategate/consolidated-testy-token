@@ -127,9 +127,9 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
         ErrorCode::AlreadyDistributed
     );
 
-    // Rent floor for the space-8 system PDA — never swap the lamports that
+    // Rent floor for the space-0 system PDA — never swap the lamports that
     // keep the account alive.
-    let sol_floor = Rent::get()?.minimum_balance(8);
+    let sol_floor = Rent::get()?.minimum_balance(0);
     let usdc_in = ctx.accounts.usdc_rewards.amount;
     let sol_in = ctx.accounts.sol_rewards.lamports().saturating_sub(sol_floor);
     if usdc_in == 0 && sol_in == 0 {

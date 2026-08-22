@@ -137,6 +137,18 @@ pub struct AmmState {
     // swapped to NYSEH by distribute_staker_rewards alongside usdc_rewards.
     pub sol_rewards: Pubkey,
 
+    // Buy-the-dip day schedule (mirrors bb_*): dip-reserve snapshot at the
+    // first dip call of a trading day; the day's slices are capped at
+    // DAY_CAP of the snapshot and paced by dip_last_slot.
+    pub dip_day_index: u64,
+    pub dip_day_usdc: u64,
+    pub dip_day_sol: u64,
+    pub dip_spent_usdc: u64,
+    pub dip_spent_sol: u64,
+    pub dip_last_slot: u64,
+    pub dip_slice_count: u16,
+    pub sol_dip_bump: u8,
+
     pub bump: u8,
     pub sol_vault_bump: u8,
     pub sol_rewards_bump: u8,
@@ -164,4 +176,12 @@ pub struct MarketMetrics {
     pub total_staked: u64,
     pub total_supply: u64,
     pub trailing_stake_health: [u8; 5], // used to calculate stake health, simple whole number %
+
+    // High-frequency spot-price ring (floor units: usdc_raw x 1e6 / nyseh_raw),
+    // self-sampled by buy_the_dip (throttled to one sample per SPOT_SAMPLE_SLOTS).
+    // This — not the 24h change feed — is the dip trigger's reference: a dip is
+    // the live spot price sitting below the recent mean of this ring. 0 = empty.
+    pub spot_prices: [u64; 32],
+    pub spot_head: u8, // next write index into spot_prices
+    pub spot_last_slot: u64,
 }

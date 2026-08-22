@@ -41,6 +41,10 @@ pub struct TestMetrics {
     // Ratchet-decay test knobs. buyback_basis only overwritten when > 0.
     pub buyback_basis: u64,
     pub untaken_days: u16,
+    // Dip-buyer test knobs: high-frequency spot ring (floor units). Only
+    // overwritten when any entry is nonzero (pass zeros to leave it alone).
+    pub spot_prices: [u64; 32],
+    pub spot_head: u8,
     // Offer sheet writes (total_offered/remaining per tier) — always applied,
     // so tests can clear a sheet by passing zeros.
     pub big_offered: u8,
@@ -70,6 +74,13 @@ pub fn handler(ctx: Context<LoadTestData>, data: TestMetrics) -> Result<()> {
     if data.total_supply > 0 {
         metrics.total_staked = data.total_staked;
         metrics.total_supply = data.total_supply;
+    }
+    if data.spot_prices.iter().any(|&p| p > 0) {
+        metrics.spot_prices = data.spot_prices;
+        metrics.spot_head = data.spot_head;
+        // Pretend the ring was just sampled so the next buy_the_dip call
+        // evaluates the trigger immediately instead of re-sampling first.
+        metrics.spot_last_slot = Clock::get()?.slot;
     }
 
     let accepted = &mut ctx.accounts.accepted_offers;

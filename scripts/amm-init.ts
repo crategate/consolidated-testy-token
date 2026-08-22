@@ -122,19 +122,16 @@ async function main() {
         true,
         TOKEN_2022_PROGRAM_ID
     );
-    const usdcDipAta = getAssociatedTokenAddressSync(
-        USDC_MINT,
-        ammStatePda,       // The authority/owner of the vault
-        true,              // allowOwnerOffCurve = true (Required because ammStatePda is a PDA)
-        TOKEN_PROGRAM_ID   // Standard Token Program ID
+    // 10% dip reserve + 10% staker-rewards holding vault: PDA token accounts
+    // created by initialize_amm itself (NOT ATAs — the (USDC, ammState) ATA is
+    // the buyback vault, so ATA-based dip/rewards vaults would alias it).
+    const [usdcDipPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("amm_usdc_dip"), NYSEH_MINT.toBuffer()],
+        AMM_PROGRAM_ID
     );
-    // Holding vault for the stakers' 10% USDC share (converted to NYSEH and
-    // deposited into staking once per trading day by distributeStakerRewards)
-    const usdcRewardsAta = getAssociatedTokenAddressSync(
-        USDC_MINT,
-        ammStatePda,
-        true,
-        TOKEN_PROGRAM_ID
+    const [usdcRewardsPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("amm_usdc_rewards"), NYSEH_MINT.toBuffer()],
+        AMM_PROGRAM_ID
     );
     // Absolute spot price (devnet stub: mock-dex-pool's mock_price PDA;
     // MAINNET: real absolute-price source in highest_buyback_basis units)
@@ -224,22 +221,8 @@ async function main() {
             USDC_MINT, TOKEN_PROGRAM_ID  // <-- Standard Token
         ));
     }
-    const usdcDipInfo = await provider.connection.getAccountInfo(usdcDipAta);
-    if (!usdcDipInfo) {
-        console.log("  Creating USDC dip vault (standard Token)...");
-        preIxs.push(createAssociatedTokenAccountIdempotentInstruction(
-            provider.wallet.publicKey, usdcDipAta, ammStatePda,
-            USDC_MINT, TOKEN_PROGRAM_ID
-        ));
-    }
-    const usdcRewardsInfo = await provider.connection.getAccountInfo(usdcRewardsAta);
-    if (!usdcRewardsInfo) {
-        console.log("  Creating USDC rewards holding vault (standard Token)...");
-        preIxs.push(createAssociatedTokenAccountInstruction(
-            provider.wallet.publicKey, usdcRewardsAta, ammStatePda,
-            USDC_MINT, TOKEN_PROGRAM_ID
-        ));
-    }
+    // USDC dip/rewards vaults are created by initialize_amm (PDA token accounts) —
+    // no pre-creation here.
     if (preIxs.length > 0) {
         const tx = new Transaction().add(...preIxs);
         const { blockhash } = await provider.connection.getLatestBlockhash("confirmed");
@@ -260,8 +243,8 @@ async function main() {
                 solVault: solVaultPda,
                 usdcVault: usdcVaultAta,
                 nysehVault: nysehVaultAta,
-                usdcDip: usdcDipAta,
-                usdcRewards: usdcRewardsAta,
+                usdcDip: usdcDipPda,
+                usdcRewards: usdcRewardsPda,
                 solRewards: solRewardsPda,
                 solDip: solDipPda,
                 ammState: ammStatePda,

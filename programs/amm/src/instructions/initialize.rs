@@ -25,6 +25,8 @@ pub fn handler(
     amm_state.usdc_mint = ctx.accounts.usdc_mint.key();
     amm_state.sol_vault = ctx.accounts.sol_vault.key();
     amm_state.usdc_vault = ctx.accounts.usdc_vault.key();
+    amm_state.sol_dip = ctx.accounts.sol_dip.key();
+    amm_state.usdc_dip = ctx.accounts.usdc_dip.key();
     amm_state.nyseh_vault = ctx.accounts.nyseh_vault.key();
     amm_state.offer_list = offer_list.key();
     amm_state.accepted_offers = ctx.accounts.accepted_offers.key();
@@ -49,6 +51,14 @@ pub fn handler(
     amm_state.rewards_day_index = 0;
     amm_state.sol_oracle = sol_oracle;
     amm_state.sol_rewards = ctx.accounts.sol_rewards.key();
+    amm_state.dip_day_index = 0;
+    amm_state.dip_day_usdc = 0;
+    amm_state.dip_day_sol = 0;
+    amm_state.dip_spent_usdc = 0;
+    amm_state.dip_spent_sol = 0;
+    amm_state.dip_last_slot = 0;
+    amm_state.dip_slice_count = 0;
+    amm_state.sol_dip_bump = ctx.bumps.sol_dip;
     amm_state.bump = ctx.bumps.amm_state;
     amm_state.sol_vault_bump = ctx.bumps.sol_vault;
     amm_state.sol_rewards_bump = ctx.bumps.sol_rewards;
@@ -84,6 +94,35 @@ pub fn handler(
     metrics.total_staked = 0;
     metrics.total_supply = 0;
     metrics.trailing_stake_health = [0; 5];
+    metrics.spot_prices = [0; 32];
+    metrics.spot_head = 0;
+    metrics.spot_last_slot = 0;
+
+    // Fund the three space-0 SOL holding PDAs with the rent-exempt minimum.
+    // The system transfer creates them system-owned with NO data — outbound
+    // system transfers (dex_buyback / distribute_staker_rewards SOL legs)
+    // fail from data-carrying or program-owned accounts.
+    let sol_rent = Rent::get()?.minimum_balance(0);
+    for info in [
+        ctx.accounts.sol_dip.to_account_info(),
+        ctx.accounts.sol_vault.to_account_info(),
+        ctx.accounts.sol_rewards.to_account_info(),
+    ] {
+        if info.lamports() < sol_rent {
+            anchor_lang::solana_program::program::invoke(
+                &anchor_lang::solana_program::system_instruction::transfer(
+                    &ctx.accounts.authority.key(),
+                    &info.key(),
+                    sol_rent - info.lamports(),
+                ),
+                &[
+                    ctx.accounts.authority.to_account_info(),
+                    info,
+                    ctx.accounts.system_program.to_account_info(),
+                ],
+            )?;
+        }
+    }
     msg!(
         "did initialize the AMM empty state for mint {}",
         amm_state.nyseh_mint
@@ -119,47 +158,42 @@ pub struct InitializeAmm<'info> {
         associated_token::token_program = token_program,
     )]
     pub usdc_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    /// 10% — dip reserve. PDA-derived token account, NOT an ATA: the ATA of
+    /// (usdc_mint, amm_state) IS usdc_vault, so "three ATAs" would be one
+    /// account and the 80/10/10 split would collapse into it.
     #[account(
-        associated_token::mint = usdc_mint,
-        associated_token::authority = amm_state,
-        associated_token::token_program = token_program,
+        init,
+        payer = authority,
+        seeds = [b"amm_usdc_dip", nyseh_mint.key().as_ref()],
+        bump,
+        token::mint = usdc_mint,
+        token::authority = amm_state,
+        token::token_program = token_program,
     )]
     pub usdc_dip: Box<InterfaceAccount<'info, TokenAccount>>,
-    /// Holding vault for the stakers' 10% USDC share (created by the init
-    /// script; same pattern as usdc_dip)
+    /// Holding vault for the stakers' 10% USDC share (same PDA-token pattern
+    /// as usdc_dip — distinct address from usdc_vault by construction)
     #[account(
-        associated_token::mint = usdc_mint,
-        associated_token::authority = amm_state,
-        associated_token::token_program = token_program,
+        init,
+        payer = authority,
+        seeds = [b"amm_usdc_rewards", nyseh_mint.key().as_ref()],
+        bump,
+        token::mint = usdc_mint,
+        token::authority = amm_state,
+        token::token_program = token_program,
     )]
     pub usdc_rewards: Box<InterfaceAccount<'info, TokenAccount>>,
-    /// CHECK: sol vault for buybacks on dips
-    #[account(
-        init,
-        payer = authority,
-        seeds = [b"amm_sol_dip", nyseh_mint.key().as_ref()],
-        bump,
-        space = 8,
-    )]
+    /// CHECK: SOL dip reserve (system PDA, seeds [b"amm_sol_dip", mint]).
+    /// Space-0, system-owned — a data-carrying or program-owned account
+    /// fails outbound system transfers ("Transfer: from must not carry
+    /// data"). Funded with rent-exempt minimum in the handler below.
+    #[account(mut, seeds = [b"amm_sol_dip", nyseh_mint.key().as_ref()], bump)]
     pub sol_dip: AccountInfo<'info>,
-    /// CHECK: sol vault pda to hold sol
-    #[account(
-        init,
-        payer = authority,
-        seeds = [b"amm_sol_vault", nyseh_mint.key().as_ref()],
-        bump,
-        space = 8,
-    )]
+    /// CHECK: SOL buyback vault (same space-0 system-PDA pattern)
+    #[account(mut, seeds = [b"amm_sol_vault", nyseh_mint.key().as_ref()], bump)]
     pub sol_vault: AccountInfo<'info>,
-    /// CHECK: holding PDA for the stakers' 10% share of SOL proceeds
-    /// (same rent-funded space-8 system-PDA pattern as sol_vault/sol_dip)
-    #[account(
-        init,
-        payer = authority,
-        seeds = [b"amm_sol_rewards", nyseh_mint.key().as_ref()],
-        bump,
-        space = 8,
-    )]
+    /// CHECK: holding PDA for the stakers' 10% share of SOL proceeds (same)
+    #[account(mut, seeds = [b"amm_sol_rewards", nyseh_mint.key().as_ref()], bump)]
     pub sol_rewards: AccountInfo<'info>,
     #[account(
         init,
@@ -168,7 +202,7 @@ pub struct InitializeAmm<'info> {
         bump,
         space = 8 + OfferList::INIT_SPACE,
     )]
-    pub offer_list: Account<'info, OfferList>,
+    pub offer_list: Box<Account<'info, OfferList>>,
     #[account(
         init,
         payer = authority,
@@ -176,7 +210,7 @@ pub struct InitializeAmm<'info> {
         bump,
         space = 8 + AcceptedOffers::INIT_SPACE,
     )]
-    pub accepted_offers: Account<'info, AcceptedOffers>,
+    pub accepted_offers: Box<Account<'info, AcceptedOffers>>,
     #[account(
         init,
         payer = authority,
@@ -184,7 +218,7 @@ pub struct InitializeAmm<'info> {
         bump,
         space = 8 + MarketMetrics::INIT_SPACE,
     )]
-    pub metrics: Account<'info, MarketMetrics>,
+    pub metrics: Box<Account<'info, MarketMetrics>>,
 
     /// CHECK: verfiy seeds derive against crank
     #[account(

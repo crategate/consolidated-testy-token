@@ -8,9 +8,10 @@ use super::offer_claim::read_live_price;
 // Minimum slots between slices (~1 min) — pacing so one crank burst can't
 // drain the day's budget in a single block.
 const MIN_SLICE_SLOTS: u64 = 150;
-// Slice weights: 15% of remaining budget during the first hour after open,
-// 5% after. With ~1 slice/min most volume lands in the first hour.
-const FIRST_HOUR_WEIGHT_BPS: u64 = 1_500;
+// Slice weights: 1.9% of remaining budget during the first hour after open,
+// 5% after. With ~1 slice/min (36 first-hour slices) ~50% of the day's volume
+// lands in the first hour on average; the 5% tail spends the rest by close.
+const FIRST_HOUR_WEIGHT_BPS: u64 = 190;
 const TAIL_WEIGHT_BPS: u64 = 500;
 
 #[derive(Accounts)]
@@ -136,9 +137,9 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
     require!(had_fills, ErrorCode::NoFillsToBuyBack);
 
     let clock = Clock::get()?;
-    // Rent floor for the space-8 system PDA sol_vault — never buy back with
+    // Rent floor for the space-0 system PDA sol_vault — never buy back with
     // the lamports that keep the account alive.
-    let sol_floor = Rent::get()?.minimum_balance(8);
+    let sol_floor = Rent::get()?.minimum_balance(0);
 
     // New trading day: snapshot the vault balances as today's budget. Unspent
     // budget simply stays in the vaults — rollover needs no bookkeeping.

@@ -78,10 +78,14 @@ pub mod amm {
     pub fn dex_buyback(ctx: Context<DexBuyback>) -> Result<()> {
         // executes at start of every trading day
         // uses 80% of funds made from all last night's claimed offers
-        //
-        // set limit orders with 10% to catch dips
-        // thes dip catching mechanism should be "always on", not just during trade hours
         dex_buyback::handler(ctx)
+    }
+
+    // The "always on" dip buyer: spends the 10% dip reserve whenever the live
+    // spot price sits >=3% below the recent spot-ring norm; size is quadratic
+    // in depth and scaled by the 20-day trend slope. Any market state.
+    pub fn buy_the_dip(ctx: Context<BuyTheDip>) -> Result<()> {
+        buy_the_dip::handler(ctx)
     }
 }
 #[derive(Accounts)]
