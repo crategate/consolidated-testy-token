@@ -1,0 +1,64 @@
+// Pure offer-desk math — mirrors programs/amm/src/state/offersState.rs
+// (lot_sizer) and programs/amm/src/instructions/offer_claim.rs (quote_claim).
+// All integer math is BigInt so the estimate tracks the on-chain u64/u128
+// arithmetic exactly; the UI still labels the result "approximate" because
+// the live price can move between quote and claim.
+
+// Port of lot_sizer(): offer.lot_size is a TIER INDEX, not a token amount.
+export const LOT_SIZES: readonly number[] = [
+    0, 10, 25, 50, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000, 15000,
+    20000, 50000, 100000, 250000, 500000, 1000000, 2500000, 5000000,
+];
+
+export function lotTokens(lotTier: number): number {
+    return LOT_SIZES[lotTier] ?? 0;
+}
+
+// Price units (both the spot oracle and the ratchet floor):
+//   (usdc_raw × 1e6) / nyseh_raw   — "floor units"
+// discount_bps is stored in tenths of a percent (115 = 11.5%) → ×10 = bps.
+export function effectivePrice(livePrice: bigint, discountTenths: number, floor: bigint): bigint {
+    const bps = BigInt(discountTenths) * 10n;
+    const discounted = livePrice - (livePrice * bps) / 10_000n;
+    return discounted > floor ? discounted : floor;
+}
+
+export function ratchetActive(livePrice: bigint, discountTenths: number, floor: bigint): boolean {
+    const bps = BigInt(discountTenths) * 10n;
+    const discounted = livePrice - (livePrice * bps) / 10_000n;
+    return floor > discounted;
+}
+
+// Cost in raw USDC for `units` lots — mirrors quote_claim:
+//   total_raw = lot_tokens × units × 10^nyseh_decimals
+//   cost_usdc = total_raw × effective_price / 1e6
+export function quoteCostRaw(
+    livePrice: bigint,
+    discountTenths: number,
+    floor: bigint,
+    lotTier: number,
+    units: number,
+    nysehDecimals: number,
+): bigint {
+    if (units <= 0 || livePrice <= 0n) return 0n;
+    const unit = 10n ** BigInt(nysehDecimals);
+    const totalRaw = BigInt(lotTokens(lotTier)) * BigInt(units) * unit;
+    return (totalRaw * effectivePrice(livePrice, discountTenths, floor)) / 1_000_000n;
+}
+
+export function formatUsdc(raw: bigint, usdcDecimals = 6): string {
+    const unit = 10n ** BigInt(usdcDecimals);
+    const whole = raw / unit;
+    const frac = (raw % unit).toString().padStart(usdcDecimals, '0').slice(0, 2);
+    return `${whole.toLocaleString('en-US')}.${frac}`;
+}
+
+// Price of one whole NYSEH in USDC, from floor units.
+export function pricePerToken(floorUnits: bigint, nysehDecimals: number, usdcDecimals = 6): number {
+    if (floorUnits <= 0n) return 0;
+    return Number(floorUnits) * 10 ** (nysehDecimals - 6 - usdcDecimals);
+}
+
+export function formatTokens(n: number): string {
+    return n.toLocaleString('en-US');
+}

@@ -1,63 +1,34 @@
-import { useState } from 'react';
-import { useAmmData, type AmmSection } from '../hooks/amm/useAmmData.ts';
+import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import OfferLists from '../components/amm/OfferLists.tsx';
-import './Dash.css';
+import { useAmmData } from '../hooks/amm/useAmmData.ts';
+import './AmmPage.css';
 
-function StatusDot({ on }: { on: boolean }) {
-    return <span className={`dash-dot ${on ? 'on' : 'off'}`} title={on ? 'initialized' : 'not initialized'} />;
-}
-
-function Section({ section, hideOfferSection }: { section: AmmSection; hideOfferSection: boolean }) {
-    return (
-        <section className={`dash-section ${section.initialized ? 'active' : ''}`}>
-            <header className="dash-section-header">
-                <StatusDot on={section.initialized} />
-                <h2>{section.title}</h2>
-                <span className="dash-state-label">{section.initialized ? 'active' : 'not initialized'}</span>
-            </header>
-            <div className="dash-grid">
-                {section.fields.map((f) => (
-                    <div className="dash-row" key={f.label}>
-                        <span className="dash-label">{f.label}</span>
-                        <span className="dash-value">{f.value}</span>
-                    </div>
-                ))}
-                {hideOfferSection && <h2>No Offers Available</h2>
-                }
-            </div>
-        </section>
-    );
-}
+const MARKET_LABELS = ['Market open', 'After-hours', 'Market closed', 'Market halted'];
 
 export default function AmmPage() {
-    const ammData = useAmmData();
-    const [hideOfferSection, setHideOfferSection] = useState(true);
-    const [offersLive, setoffersLive] = useState(true);
-    document.title = "Bond Offer Desk | NYSEH"
-
-
+    const { marketState, offersLive, deskOpen, updatedAt } = useAmmData();
+    document.title = 'Bond Offer Desk | NYSEH';
 
     return (
         <div className="amm-page-shell">
-            <header className="dash-topbar">
-                <h1 className="offers-live">{offersLive ? "Offers Are Live!" : "No Offers Available, Check Back End of Next Trading Day"}</h1>
-                <div className="dash-controls">
-                    {ammData && <span className="dash-updated">updated {new Date(ammData.updatedAt).toLocaleTimeString()}</span>}
-                    <button className="dash-toggle" onClick={() => setHideOfferSection((v) => !v)}>
-                        {hideOfferSection ? 'Show addresses' : 'Hide all addresses'}
-                    </button>
+            <header className="amm-topbar">
+                <div className="amm-title">
+                    <h1>Bond Offer Desk</h1>
+                    <span className={`market-badge ${deskOpen ? 'open' : ''}`}>
+                        {marketState !== null ? MARKET_LABELS[marketState] ?? 'Unknown' : 'Market status unknown'}
+                        {deskOpen ? ' · desk open' : ''}
+                        {!deskOpen && marketState !== null && !offersLive ? ' · no live offers' : ''}
+                    </span>
+                </div>
+                <div className="amm-controls">
+                    {updatedAt && (
+                        <span className="amm-updated">updated {new Date(updatedAt).toLocaleTimeString()}</span>
+                    )}
+                    <WalletMultiButton />
                 </div>
             </header>
-            {<div className="dash-error">RPC error: {} — showing last known state</div>}
-            {!data && <div className="dash-loading">Loading deployment + chain state…</div>}
-            {
-                data && (
-                    <main className="dash-board">
 
-                        {console.log(data)}
-                    </main>
-                )
-            }
-        </div >
+            <OfferLists />
+        </div>
     );
 }

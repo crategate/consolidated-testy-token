@@ -3,9 +3,12 @@
 //   - price_changes ring: slight daily increases (0.3% -> 2.2% over 20 days)
 //   - accepted offers: increasing buy-up trend across all tiers
 //   - stake health: steady ~40% participation (trailing + live ratio)
+//   - a plausible offer sheet (big/med/sml) so the offer-desk UI has data
 //
-// DEVNET ONLY. Run after amm-init. Then call make_offers (or let the keeper
-// fire it at day end) and inspect the constructed offer sheet.
+// DEVNET ONLY. Run after amm-init. Note: load_test_data does NOT set
+// offer_list.day_index, so the seeded sheet is only claimable while the
+// market-status day matches the sheet's existing day_index — the desk UI
+// shows a "sheet hasn't posted" state otherwise.
 //
 // Usage: npx ts-node ./scripts/amm-test-data.ts   (or: anchor run amm-test-data)
 
@@ -47,16 +50,20 @@ async function main() {
         bigAccepted: [10, 20, 30, 40, 50],
         medAccepted: [20, 35, 50, 60, 70],
         smlAccepted: [30, 45, 55, 65, 75],
-        // ratchet-decay knobs: leave floor/counter/offer sheet untouched
+        // ratchet-decay knobs: leave floor/counter untouched
         buybackBasis: new anchor.BN(0),
         untakenDays: 0,
-        bigOffered: 0, bigRemaining: 0,
-        medOffered: 0, medRemaining: 0,
-        smlOffered: 0, smlRemaining: 0,
-        // offer terms — zeroed alongside the sheet (no claimable offers)
-        bigLotTier: 0, bigDiscountBps: 0, bigVestingDays: 0,
-        medLotTier: 0, medDiscountBps: 0, medVestingDays: 0,
-        smlLotTier: 0, smlDiscountBps: 0, smlVestingDays: 0,
+        // Plausible tonight's sheet (lot tiers via lot_sizer: 15 = 50k NYSEH,
+        // 10 = 5k, 5 = 250; discount_bps in tenths of a percent):
+        //   big 3 offered / 2 remaining, tier 15, 11.5% off, 30-day vest
+        //   med 5 / 4, tier 10, 9% off, 20-day vest
+        //   sml 10 / 8, tier 5, 7.5% off, 10-day vest
+        bigOffered: 3, bigRemaining: 2,
+        medOffered: 5, medRemaining: 4,
+        smlOffered: 10, smlRemaining: 8,
+        bigLotTier: 15, bigDiscountBps: 115, bigVestingDays: 30,
+        medLotTier: 10, medDiscountBps: 90, medVestingDays: 20,
+        smlLotTier: 5, smlDiscountBps: 75, smlVestingDays: 10,
     };
 
     const sig = await ammProgram.methods
@@ -74,6 +81,7 @@ async function main() {
     console.log("   price_changes: +0.30% -> +2.20% daily over 20 days");
     console.log("   accepted offers rising (big 10→50, med 20→70, sml 30→75)");
     console.log("   stake health steady at 40%");
+    console.log("   offer sheet: big 3/2 @50k 11.5% 30d · med 5/4 @5k 9% 20d · sml 10/8 @250 7.5% 10d");
 }
 
 main().catch((e) => {
