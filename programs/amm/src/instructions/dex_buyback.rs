@@ -1,7 +1,7 @@
 use crate::state::offersState::{AcceptedOffers, AmmState};
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
-use mock_dex_pool::cpi::accounts::SendNyseh;
+use mock_dex_pool::cpi::accounts::SendAfho;
 
 use super::offer_claim::read_live_price;
 
@@ -18,7 +18,7 @@ const TAIL_WEIGHT_BPS: u64 = 500;
 pub struct DexBuyback<'info> {
     #[account(mut)]
     pub cranker: Signer<'info>,
-    #[account(mut, seeds = [b"amm_state", amm_state.nyseh_mint.as_ref()], bump = amm_state.bump,)]
+    #[account(mut, seeds = [b"amm_state", amm_state.afho_mint.as_ref()], bump = amm_state.bump,)]
     pub amm_state: Box<Account<'info, AmmState>>,
 
     /// CHECK: market status PDA (state byte + open timestamp + day index)
@@ -30,13 +30,13 @@ pub struct DexBuyback<'info> {
     pub market_status: UncheckedAccount<'info>,
 
     /// Fill evidence: buybacks only run on days after offers were taken.
-    #[account(seeds = [b"accepted_offers", amm_state.nyseh_mint.as_ref()], bump)]
+    #[account(seeds = [b"accepted_offers", amm_state.afho_mint.as_ref()], bump)]
     pub accepted_offers: Box<Account<'info, AcceptedOffers>>,
 
     #[account(mut, address = amm_state.usdc_vault)]
     pub usdc_vault: Box<InterfaceAccount<'info, TokenAccount>>,
-    #[account(mut, address = amm_state.nyseh_vault)]
-    pub nyseh_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(mut, address = amm_state.afho_vault)]
+    pub afho_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     /// CHECK: SOL buyback funds (system PDA, seeds [b"amm_sol_vault", mint])
     #[account(mut, address = amm_state.sol_vault)]
     pub sol_vault: AccountInfo<'info>,
@@ -45,19 +45,19 @@ pub struct DexBuyback<'info> {
     /// devnet; real SOL/USD feed at mainnet)
     #[account(address = amm_state.sol_oracle)]
     pub sol_oracle: UncheckedAccount<'info>,
-    pub nyseh_mint: Box<InterfaceAccount<'info, Mint>>,
+    pub afho_mint: Box<InterfaceAccount<'info, Mint>>,
 
     // --- swap adapter accounts (mock-dex-pool today; real DEX at launch) ---
     /// CHECK: pool state PDA, verified against the configured dex_program
     #[account(
         mut,
-        seeds = [b"mock_pool", nyseh_mint.key().as_ref()],
+        seeds = [b"mock_pool", afho_mint.key().as_ref()],
         seeds::program = amm_state.dex_program,
         bump
     )]
     pub pool_state: UncheckedAccount<'info>,
-    #[account(mut, constraint = pool_nyseh.mint == amm_state.nyseh_mint)]
-    pub pool_nyseh: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(mut, constraint = pool_afho.mint == amm_state.afho_mint)]
+    pub pool_afho: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, constraint = pool_usdc.mint == amm_state.usdc_mint)]
     pub pool_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
     /// CHECK: lamport destination for the SOL leg (any system account; the
@@ -70,7 +70,7 @@ pub struct DexBuyback<'info> {
 
     /// Classic SPL (USDC in-leg)
     pub token_program: Interface<'info, TokenInterface>,
-    /// Token-2022 (NYSEH out-leg via the pool)
+    /// Token-2022 (AFHO out-leg via the pool)
     pub token_2022_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
 }
@@ -83,13 +83,13 @@ pub struct DexBuyback<'info> {
 pub(crate) struct SwapInfos<'info> {
     pub amm_state: AccountInfo<'info>,
     pub usdc_vault: AccountInfo<'info>,
-    pub nyseh_vault: AccountInfo<'info>,
+    pub afho_vault: AccountInfo<'info>,
     pub sol_vault: AccountInfo<'info>,
     pub pool_state: AccountInfo<'info>,
-    pub pool_nyseh: AccountInfo<'info>,
+    pub pool_afho: AccountInfo<'info>,
     pub pool_usdc: AccountInfo<'info>,
     pub pool_sol: AccountInfo<'info>,
-    pub nyseh_mint: AccountInfo<'info>,
+    pub afho_mint: AccountInfo<'info>,
     pub dex_program: AccountInfo<'info>,
     pub token_program: AccountInfo<'info>,
     pub token_2022_program: AccountInfo<'info>,
@@ -100,13 +100,13 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
     let swap = SwapInfos {
         amm_state: ctx.accounts.amm_state.to_account_info(),
         usdc_vault: ctx.accounts.usdc_vault.to_account_info(),
-        nyseh_vault: ctx.accounts.nyseh_vault.to_account_info(),
+        afho_vault: ctx.accounts.afho_vault.to_account_info(),
         sol_vault: ctx.accounts.sol_vault.to_account_info(),
         pool_state: ctx.accounts.pool_state.to_account_info(),
-        pool_nyseh: ctx.accounts.pool_nyseh.to_account_info(),
+        pool_afho: ctx.accounts.pool_afho.to_account_info(),
         pool_usdc: ctx.accounts.pool_usdc.to_account_info(),
         pool_sol: ctx.accounts.pool_sol.to_account_info(),
-        nyseh_mint: ctx.accounts.nyseh_mint.to_account_info(),
+        afho_mint: ctx.accounts.afho_mint.to_account_info(),
         dex_program: ctx.accounts.dex_program.to_account_info(),
         token_program: ctx.accounts.token_program.to_account_info(),
         token_2022_program: ctx.accounts.token_2022_program.to_account_info(),
@@ -192,7 +192,7 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
     let x = clock.slot ^ (current_day << 16) ^ amm_state.bb_slice_count as u64;
     let factor_bps = 5_000 + (x % 10_001);
 
-    let mint_key = amm_state.nyseh_mint;
+    let mint_key = amm_state.afho_mint;
     let state_bump = amm_state.bump;
     let sol_vault_bump = amm_state.sol_vault_bump;
 
@@ -201,7 +201,7 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
         / 100_000_000u128) as u64;
     let slice_usdc = slice_usdc.min(remaining_usdc);
     if slice_usdc > 0 {
-        let before = ctx.accounts.nyseh_vault.amount;
+        let before = ctx.accounts.afho_vault.amount;
         execute_swap(
             &swap,
             mint_key,
@@ -211,8 +211,8 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
             slice_usdc,
             false,
         )?;
-        ctx.accounts.nyseh_vault.reload()?;
-        let out = ctx.accounts.nyseh_vault.amount.saturating_sub(before);
+        ctx.accounts.afho_vault.reload()?;
+        let out = ctx.accounts.afho_vault.amount.saturating_sub(before);
         if out > 0 {
             ratchet_buyback_basis(amm_state, (slice_usdc as u128 * 1_000_000 / out as u128) as u64);
         }
@@ -224,7 +224,7 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
         / 100_000_000u128) as u64;
     let slice_sol = slice_sol.min(remaining_sol);
     if slice_sol > 0 {
-        let before = ctx.accounts.nyseh_vault.amount;
+        let before = ctx.accounts.afho_vault.amount;
         execute_swap(
             &swap,
             mint_key,
@@ -234,11 +234,11 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
             slice_sol,
             true,
         )?;
-        ctx.accounts.nyseh_vault.reload()?;
-        let out = ctx.accounts.nyseh_vault.amount.saturating_sub(before);
+        ctx.accounts.afho_vault.reload()?;
+        let out = ctx.accounts.afho_vault.amount.saturating_sub(before);
         if out > 0 {
             // Ratchet in USDC units: lamports × sol_price / out equals
-            // (usdc_raw × 1e6) / nyseh_raw — same units as the USDC leg.
+            // (usdc_raw × 1e6) / afho_raw — same units as the USDC leg.
             let sol_price = read_live_price(&ctx.accounts.sol_oracle.to_account_info())?;
             require!(sol_price > 0, ErrorCode::InvalidOracle);
             let px = (slice_sol as u128).saturating_mul(sol_price as u128) / out as u128;
@@ -265,7 +265,7 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
 // Swap adapter — THE function to replace when plugging in the real DEX pool.
 // In-leg: amm pays from its own vaults (USDC token transfer signed by
 // amm_state, or SOL lamport transfer signed by the sol_vault PDA).
-// Out-leg: CPI send_nyseh on the configured dex_program (mock fixed-rate
+// Out-leg: CPI send_afho on the configured dex_program (mock fixed-rate
 // dispenser today). Everything else in this file is swap-agnostic.
 // `sol_vault_seed`/`sol_vault_bump` name the system PDA funding a SOL in-leg:
 // b"amm_sol_vault" for buybacks, b"amm_sol_rewards" for the staker share.
@@ -308,14 +308,14 @@ pub(crate) fn execute_swap(
             amount_in,
         )?;
     }
-    mock_dex_pool::cpi::send_nyseh(
+    mock_dex_pool::cpi::send_afho(
         CpiContext::new(
             swap.dex_program.to_account_info(),
-            SendNyseh {
+            SendAfho {
                 pool_state: swap.pool_state.to_account_info(),
-                pool_nyseh: swap.pool_nyseh.to_account_info(),
-                user_nyseh: swap.nyseh_vault.to_account_info(),
-                nyseh_mint: swap.nyseh_mint.to_account_info(),
+                pool_afho: swap.pool_afho.to_account_info(),
+                user_afho: swap.afho_vault.to_account_info(),
+                afho_mint: swap.afho_mint.to_account_info(),
                 token_program: swap.token_2022_program.to_account_info(),
             },
         ),
@@ -329,7 +329,7 @@ pub(crate) fn execute_swap(
 // make_offers may never price a lot below the highest realized buyback price,
 // so when the live price falls to the floor the desk goes dark on its own.
 // It therefore only ever moves UP — call once per executed buyback fill.
-// NOTE: units are (input raw × 1e6) / nyseh raw — the SOL leg is NOT in the
+// NOTE: units are (input raw × 1e6) / afho raw — the SOL leg is NOT in the
 // same units as the USDC leg; the real-DEX adapter must report USDC-
 // denominated execution price. Fine for the stub era.
 pub(crate) fn ratchet_buyback_basis(amm_state: &mut AmmState, executed_price: u64) {

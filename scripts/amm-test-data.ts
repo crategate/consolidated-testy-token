@@ -53,7 +53,7 @@ async function main() {
         // ratchet-decay knobs: leave floor/counter untouched
         buybackBasis: new anchor.BN(0),
         untakenDays: 0,
-        // Plausible tonight's sheet (lot tiers via lot_sizer: 15 = 50k NYSEH,
+        // Plausible tonight's sheet (lot tiers via lot_sizer: 15 = 50k AFHO,
         // 10 = 5k, 5 = 250; discount_bps in tenths of a percent):
         //   big 3 offered / 2 remaining, tier 15, 11.5% off, 30-day vest
         //   med 5 / 4, tier 10, 9% off, 20-day vest

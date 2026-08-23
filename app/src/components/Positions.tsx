@@ -65,7 +65,7 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
                     {!claimsOpen ? 'Claim Available After Opening Bell' : claimLoading ? 'Collecting…' : 'Collect All Claims'}
                 </button>
                 <span className="grand-total">
-                    Total available: <strong>{grandTotalDisplay} NYSEH</strong>
+                    Total available: <strong>{grandTotalDisplay} AFHO</strong>
                 </span>
             </div>
 
@@ -73,7 +73,7 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
                 {displayPositions.map((pos) => (
                     <div key={pos.index} className="position-card">
                         <div className="position-row">
-                            <span><strong>{(pos.amount / 1e9).toFixed(2)} </strong> NYSEH</span>
+                            <span><strong>{(pos.amount / 1e9).toFixed(2)} </strong> AFHO</span>
                             {'multiplierDisplay' in pos && pos.multiplierDisplay !== '—' && (
                                 <span className="multiplier-badge">{pos.multiplierDisplay}x</span>
                             )}
@@ -89,12 +89,12 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
                                 </div>
                                 {'penaltyRaw' in pos && pos.penaltyRaw > 0 && (
                                     <div className="penalty-warning">
-                                        ⚠️ Market penalty: –{pos.penaltyRaw.toFixed(4)} NYSEH
+                                        ⚠️ Market penalty: –{pos.penaltyRaw.toFixed(4)} AFHO
                                     </div>
                                 )}
                                 {'posrTaxRaw' in pos && pos.posrTaxRaw > 0 && (
                                     <div className="posr-line">
-                                        Protocol tax: –{pos.posrTaxRaw.toFixed(4)} NYSEH
+                                        Protocol tax: –{pos.posrTaxRaw.toFixed(4)} AFHO
                                     </div>
                                 )}
                             </>

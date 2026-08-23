@@ -8,7 +8,7 @@ pub struct SetKeeper<'info> {
     pub authority: Signer<'info>,
     #[account(
         mut,
-        seeds = [b"amm_state", amm_state.nyseh_mint.as_ref()],
+        seeds = [b"amm_state", amm_state.afho_mint.as_ref()],
         bump = amm_state.bump,
         has_one = authority,
     )]

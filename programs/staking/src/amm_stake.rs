@@ -83,8 +83,8 @@ pub fn create_amm_position(
     Ok(())
 }
 
-// The AMM's daily staker-distribution: NYSEH (converted from the 10% USDC
-// share by the AMM's swap adapter) moves from the AMM's NYSEH vault into the
+// The AMM's daily staker-distribution: AFHO (converted from the 10% USDC
+// share by the AMM's swap adapter) moves from the AMM's AFHO vault into the
 // reward_vault, and the MasterChef index is bumped so it is immediately
 // claimable pro-rata by current stakers.
 pub fn deposit_rewards_from_amm(ctx: Context<DepositRewardsFromAmm>, amount: u64) -> Result<()> {
@@ -100,7 +100,7 @@ pub fn deposit_rewards_from_amm(ctx: Context<DepositRewardsFromAmm>, amount: u64
         (amount as u128 * 1_000_000_000_000u128) / pool.total_weighted_stake;
 
     let cpi_accounts = TransferChecked {
-        from: ctx.accounts.amm_nyseh_vault.to_account_info(),
+        from: ctx.accounts.amm_afho_vault.to_account_info(),
         mint: ctx.accounts.mint.to_account_info(),
         to: ctx.accounts.reward_vault.to_account_info(),
         authority: ctx.accounts.amm_state.to_account_info(),
@@ -176,7 +176,7 @@ pub struct CreateAmmPosition<'info> {
     )]
     pub position: Box<Account<'info, StakePosition>>,
 
-    /// AMM's NYSEH vault — authority is the amm_state PDA signing this CPI
+    /// AMM's AFHO vault — authority is the amm_state PDA signing this CPI
     #[account(mut, token::mint = mint, token::authority = amm_state)]
     pub source_token: Box<InterfaceAccount<'info, TokenAccount>>,
 
@@ -212,9 +212,9 @@ pub struct DepositRewardsFromAmm<'info> {
     )]
     pub amm_state: Signer<'info>,
 
-    /// Source: AMM's NYSEH vault (authority = amm_state PDA)
+    /// Source: AMM's AFHO vault (authority = amm_state PDA)
     #[account(mut, token::mint = mint, token::authority = amm_state)]
-    pub amm_nyseh_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub amm_afho_vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(mut, address = pool.reward_vault)]
     pub reward_vault: Box<InterfaceAccount<'info, TokenAccount>>,

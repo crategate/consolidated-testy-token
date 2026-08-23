@@ -1,4 +1,4 @@
-# NYSEH Mainnet Checklist
+# AFHO Mainnet Checklist
 
 Everything required to go from the current devnet build to a mainnet launch, in rough dependency order. Source: full codebase audit (2026-08-22) + AGENTS.md gotchas. File:line refs point at the code as of that audit.
 
@@ -13,17 +13,17 @@ Everything required to go from the current devnet build to a mainnet launch, in 
 - [ ] **L3 — unbounded penalty/tax bps at `initialize_pool`** (`staking/src/lib.rs:84-130`): penalty > 10_000 bps drains the shared vault via the rewards leg. `require!(each_bps <= 10_000)`.
 - [ ] **L4 — unbounded `market_state` / empty feed panic** (`crank-oracle/src/lib.rs:65-82`): `require!(market_state <= 3)`, `require!(!feeds.is_empty())`.
 - [ ] **L5 — bounty vault drain-to-zero / no rotation** (`crank-oracle/src/lib.rs:96-103, 194-211`): keep a rent floor (`>= bounty + minimum_balance(1)`), add authority-gated setters for `bounty_amount`/authority.
-- [ ] **Frontend claim/unstake broken against current IDL** — `app/src/hooks/stake/useClaimAll.ts:47-58` and `useUnstake.ts:73-85` pass `posrVault` and omit the required `nysehVault`; rename `posrVault` → `nysehVault` (same `[b"posr", pool]` PDA). As written, UI claim/exit transactions fail to build.
+- [ ] **Frontend claim/unstake broken against current IDL** — `app/src/hooks/stake/useClaimAll.ts:47-58` and `useUnstake.ts:73-85` pass `posrVault` and omit the required `afhoVault`; rename `posrVault` → `afhoVault` (same `[b"posr", pool]` PDA). As written, UI claim/exit transactions fail to build.
 
 ## 2. Remove devnet-only code
 
-- [ ] `programs/mock-dex-pool` entirely — its `send_nyseh` is a permissionless free-NYSEH faucet; **fatal if shipped**.
+- [ ] `programs/mock-dex-pool` entirely — its `send_afho` is a permissionless free-AFHO faucet; **fatal if shipped**.
 - [ ] `load_test_data` (amm), `test_set_state` (crank-oracle), `update_amm_program` (staking).
 - [ ] Permissionless `set_price` mock oracle PDAs.
 
 ## 3. Real price oracles (replace raw-u64 stubs)
 
-- [ ] `price_oracle` / `spot_oracle`: real absolute-price source in floor units (usdc_raw×1e6/nyseh_raw) — `read_live_price` (`offer_claim.rs:579`) currently trusts one stale-able u64 with no staleness/validity check. Claims, floor decay, dip trigger all depend on it. Add staleness bounds.
+- [ ] `price_oracle` / `spot_oracle`: real absolute-price source in floor units (usdc_raw×1e6/afho_raw) — `read_live_price` (`offer_claim.rs:579`) currently trusts one stale-able u64 with no staleness/validity check. Claims, floor decay, dip trigger all depend on it. Add staleness bounds.
 - [ ] `sol_oracle`: real SOL/USD feed for SOL-leg pricing/ratchets (`dex_buyback.rs:241`, `buy_the_dip.rs:299`).
 - [ ] Switchboard combined `[status, price]` quote resolves on mainnet once Jupiter indexes the mint (devnet gotcha disappears); keeper fallback path still worth keeping.
 
@@ -34,10 +34,10 @@ Everything required to go from the current devnet build to a mainnet launch, in 
 - [ ] `amm_state.dex_program` pointed at the real pool program at init.
 - [ ] Close H1's account-validation gap in the same pass.
 
-## 5. Liquidity pool (Raydium CPMM — supports Token-2022, NYSEH-compatible)
+## 5. Liquidity pool (Raydium CPMM — supports Token-2022, AFHO-compatible)
 
 - [ ] **Launch split 25% LP / 75% protocol vault**: do it manually at launch via the Raydium UI — it's a one-off; codifying buys nothing. (Automating = a custom init-time CPI creating the CPMM pool + deposit; real risk, zero recurring value.)
-- [ ] **1% of bond sales → LP until target size**: requires (a) a 4th split leg in `offer_claim` routing 1% of proceeds to an LP-funding vault, (b) a target-size check, (c) a periodic permissionless `lp_fund` instruction that CPI-deposits into the CPMM pool (both sides — NYSEH from `nyseh_vault` + USDC/SOL from the skim) until the pool's liquidity ≥ target. Moderate lift (~1 new instruction + split change + keeper hook), blocked on §4's real pool existing. Keeper calls it per loop like `buyTheDip`.
+- [ ] **1% of bond sales → LP until target size**: requires (a) a 4th split leg in `offer_claim` routing 1% of proceeds to an LP-funding vault, (b) a target-size check, (c) a periodic permissionless `lp_fund` instruction that CPI-deposits into the CPMM pool (both sides — AFHO from `afho_vault` + USDC/SOL from the skim) until the pool's liquidity ≥ target. Moderate lift (~1 new instruction + split change + keeper hook), blocked on §4's real pool existing. Keeper calls it per loop like `buyTheDip`.
 - [ ] Decide LP custody: burned/locked LP tokens vs. protocol-owned PDA (affects withdrawal risk and the "target size" measurement).
 
 ## 6. Ops / launch sequence

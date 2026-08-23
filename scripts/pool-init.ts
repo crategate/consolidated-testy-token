@@ -33,16 +33,16 @@ async function main() {
     console.log("Staking program:", stakingKeypair.publicKey.toBase58());
     console.log("Crank oracle program:", CRANK_PROGRAM_ID.toBase58());
 
-    // ── 3. Load or prompt for NYSEH mint ──
+    // ── 3. Load or prompt for AFHO mint ──
     // Option A: Read from a saved file (recommended after first deployment)
-    const mintKeyPath = path.join(process.cwd(), "target", "deploy", "nyseh_token-keypair.json");
-    let NYSEH_MINT: PublicKey;
+    const mintKeyPath = path.join(process.cwd(), "target", "deploy", "afho_token-keypair.json");
+    let AFHO_MINT: PublicKey;
 
     if (fs.existsSync(mintKeyPath)) {
         const mintKeyData = JSON.parse(fs.readFileSync(mintKeyPath, "utf-8"));
         const mintKeypair = Keypair.fromSecretKey(new Uint8Array(mintKeyData));
-        NYSEH_MINT = mintKeypair.publicKey;
-        console.log("Loaded NYSEH mint:", NYSEH_MINT.toBase58());
+        AFHO_MINT = mintKeypair.publicKey;
+        console.log("Loaded AFHO mint:", AFHO_MINT.toBase58());
     } else {
         // Option B: Pass as command line argument
         const mintArg = process.argv[2];
@@ -51,8 +51,8 @@ async function main() {
             console.error("   Or deploy the token first with mint-launch.ts to auto-detect");
             process.exit(1);
         }
-        NYSEH_MINT = new PublicKey(mintArg);
-        console.log("Using mint from argument:", NYSEH_MINT.toBase58());
+        AFHO_MINT = new PublicKey(mintArg);
+        console.log("Using mint from argument:", AFHO_MINT.toBase58());
     }
     const ammKeyPath = path.join(process.cwd(), "target", "deploy", "amm-keypair.json");
     let AMM_PROGRAM_ID: PublicKey;
@@ -67,7 +67,7 @@ async function main() {
     }
     // ── 4. Derive all PDAs ──
     const [poolPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("pool"), NYSEH_MINT.toBuffer()],
+        [Buffer.from("pool"), AFHO_MINT.toBuffer()],
         stakingProgram.programId
     );
     const [vaultPda] = PublicKey.findProgramAddressSync(
@@ -101,7 +101,7 @@ async function main() {
 
     writeDeploymentState({
         cluster: "devnet",
-        mint: pubkey(NYSEH_MINT),
+        mint: pubkey(AFHO_MINT),
         stakingProgram: pubkey(stakingProgram.programId),
         crankProgram: pubkey(CRANK_PROGRAM_ID),
         ammProgram: pubkey(AMM_PROGRAM_ID),
@@ -128,12 +128,12 @@ async function main() {
             )
             .accounts({
                 authority: provider.wallet.publicKey,
-                mint: NYSEH_MINT,
+                mint: AFHO_MINT,
                 pool: poolPda,
                 vault: vaultPda,
                 rewardVault: rewardVaultPda,
                 penaltyVault: penaltyVaultPda,
-                nysehVault: posrVaultPda,
+                afhoVault: posrVaultPda,
                 marketStatusPda,
                 tokenProgram: new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"), // TOKEN_2022
                 systemProgram: anchor.web3.SystemProgram.programId,

@@ -4,7 +4,7 @@ export function UnderConstruction() {
             <h1>NYSE Hours</h1>
             <h2>An Experimental Token with TradFi Time Restrictions</h2>
 
-            <p>NYSEH has rewards & penalties structured around the market status of the NYSE.</p>
+            <p>AFHO has rewards & penalties structured around the market status of the NYSE.</p>
 
             <p>It uses a Switchboard Oracle to reliably read when the market is opened, closed, extended hours, or halted.</p>
 
@@ -22,7 +22,7 @@ export function UnderConstruction() {
                 <li>10% remains reserved for favorable buybacks</li>
             </ul>
 
-            <p>The size, discount, and total available sales depend on the market performance of NYSEH. During bear cycles, there are no deals available at all.</p>
+            <p>The size, discount, and total available sales depend on the market performance of AFHO. During bear cycles, there are no deals available at all.</p>
         </div>
     );
 

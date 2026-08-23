@@ -7,7 +7,7 @@ const MARKET_LABELS = ['Market open', 'After-hours', 'Market closed', 'Market ha
 
 export default function AmmPage() {
     const { marketState, offersLive, deskOpen, updatedAt } = useAmmData();
-    document.title = 'Bond Offer Desk | NYSEH';
+    document.title = 'Bond Offer Desk | AFHO';
 
     return (
         <div className="amm-page-shell">

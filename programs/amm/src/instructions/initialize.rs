@@ -21,13 +21,13 @@ pub fn handler(
     amm_state.authority = ctx.accounts.authority.key();
     // Single-wallet setups (devnet) work out of the box; rotate for mainnet.
     amm_state.keeper = ctx.accounts.authority.key();
-    amm_state.nyseh_mint = ctx.accounts.nyseh_mint.key();
+    amm_state.afho_mint = ctx.accounts.afho_mint.key();
     amm_state.usdc_mint = ctx.accounts.usdc_mint.key();
     amm_state.sol_vault = ctx.accounts.sol_vault.key();
     amm_state.usdc_vault = ctx.accounts.usdc_vault.key();
     amm_state.sol_dip = ctx.accounts.sol_dip.key();
     amm_state.usdc_dip = ctx.accounts.usdc_dip.key();
-    amm_state.nyseh_vault = ctx.accounts.nyseh_vault.key();
+    amm_state.afho_vault = ctx.accounts.afho_vault.key();
     amm_state.offer_list = offer_list.key();
     amm_state.accepted_offers = ctx.accounts.accepted_offers.key();
     amm_state.market_status_pda = ctx.accounts.market_status_pda.key();
@@ -125,7 +125,7 @@ pub fn handler(
     }
     msg!(
         "did initialize the AMM empty state for mint {}",
-        amm_state.nyseh_mint
+        amm_state.afho_mint
     );
     Ok(())
 }
@@ -134,23 +134,23 @@ pub fn handler(
 pub struct InitializeAmm<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
-    pub nyseh_mint: Box<InterfaceAccount<'info, Mint>>,
+    pub afho_mint: Box<InterfaceAccount<'info, Mint>>,
     pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(
         init,
         payer=authority,
-        seeds=[b"amm_state", nyseh_mint.key().as_ref()],
+        seeds=[b"amm_state", afho_mint.key().as_ref()],
         bump,
         space = 8 + AmmState::INIT_SPACE,
     )]
     pub amm_state: Box<Account<'info, AmmState>>,
-    /// CHECK: nyseh vault
+    /// CHECK: afho vault
     #[account(
-        associated_token::mint = nyseh_mint,
+        associated_token::mint = afho_mint,
         associated_token::authority = amm_state,
         associated_token::token_program = token_2022_program,
     )]
-    pub nyseh_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub afho_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     /// CHECK: usdc vault
     #[account(
        associated_token::mint = usdc_mint,
@@ -164,7 +164,7 @@ pub struct InitializeAmm<'info> {
     #[account(
         init,
         payer = authority,
-        seeds = [b"amm_usdc_dip", nyseh_mint.key().as_ref()],
+        seeds = [b"amm_usdc_dip", afho_mint.key().as_ref()],
         bump,
         token::mint = usdc_mint,
         token::authority = amm_state,
@@ -176,7 +176,7 @@ pub struct InitializeAmm<'info> {
     #[account(
         init,
         payer = authority,
-        seeds = [b"amm_usdc_rewards", nyseh_mint.key().as_ref()],
+        seeds = [b"amm_usdc_rewards", afho_mint.key().as_ref()],
         bump,
         token::mint = usdc_mint,
         token::authority = amm_state,
@@ -187,18 +187,18 @@ pub struct InitializeAmm<'info> {
     /// Space-0, system-owned — a data-carrying or program-owned account
     /// fails outbound system transfers ("Transfer: from must not carry
     /// data"). Funded with rent-exempt minimum in the handler below.
-    #[account(mut, seeds = [b"amm_sol_dip", nyseh_mint.key().as_ref()], bump)]
+    #[account(mut, seeds = [b"amm_sol_dip", afho_mint.key().as_ref()], bump)]
     pub sol_dip: AccountInfo<'info>,
     /// CHECK: SOL buyback vault (same space-0 system-PDA pattern)
-    #[account(mut, seeds = [b"amm_sol_vault", nyseh_mint.key().as_ref()], bump)]
+    #[account(mut, seeds = [b"amm_sol_vault", afho_mint.key().as_ref()], bump)]
     pub sol_vault: AccountInfo<'info>,
     /// CHECK: holding PDA for the stakers' 10% share of SOL proceeds (same)
-    #[account(mut, seeds = [b"amm_sol_rewards", nyseh_mint.key().as_ref()], bump)]
+    #[account(mut, seeds = [b"amm_sol_rewards", afho_mint.key().as_ref()], bump)]
     pub sol_rewards: AccountInfo<'info>,
     #[account(
         init,
         payer = authority,
-        seeds = [b"offer_list", nyseh_mint.key().as_ref()],
+        seeds = [b"offer_list", afho_mint.key().as_ref()],
         bump,
         space = 8 + OfferList::INIT_SPACE,
     )]
@@ -206,7 +206,7 @@ pub struct InitializeAmm<'info> {
     #[account(
         init,
         payer = authority,
-        seeds = [b"accepted_offers", nyseh_mint.key().as_ref()],
+        seeds = [b"accepted_offers", afho_mint.key().as_ref()],
         bump,
         space = 8 + AcceptedOffers::INIT_SPACE,
     )]
@@ -214,7 +214,7 @@ pub struct InitializeAmm<'info> {
     #[account(
         init,
         payer = authority,
-        seeds = [b"metrics", nyseh_mint.key().as_ref()],
+        seeds = [b"metrics", afho_mint.key().as_ref()],
         bump,
         space = 8 + MarketMetrics::INIT_SPACE,
     )]

@@ -48,7 +48,7 @@ pub mod amm {
 
     // Night-desk taking instruction. Buyer pays USDC (SOL support at
     // mainnet); payment splits 80% buyback vault / 10% dip reserve / 10%
-    // staker-rewards holding vault at claim time. Purchased NYSEH goes
+    // staker-rewards holding vault at claim time. Purchased AFHO goes
     // directly into a vesting StakePosition via CPI — it never sits in the
     // buyer's wallet. Claims only while the market is after-hours/closed,
     // against the current day's sheet.
@@ -69,7 +69,7 @@ pub mod amm {
     }
 
     // Start-of-day staker distribution: swap yesterday's 10% USDC share into
-    // NYSEH and deposit it into the staking reward vault (MasterChef index
+    // AFHO and deposit it into the staking reward vault (MasterChef index
     // bump → instantly claimable pro-rata). Once per trading day.
     pub fn distribute_staker_rewards(ctx: Context<DistributeStakerRewards>) -> Result<()> {
         distribute_staker_rewards::handler(ctx)

@@ -2,7 +2,7 @@
 
 Rust-ready spec. Units match the on-chain Offer account where practical:
 discount in bps (on-chain u8 is tenth-percent: onchain_disc = disc_bps // 10),
-vesting in trading days, lot_size in whole NYSEH tokens (on-chain uses the
+vesting in trading days, lot_size in whole AFHO tokens (on-chain uses the
 lot_sizer() tier index; the desk would snap to the nearest rung).
 
 Sheet tiers (order matters everywhere): sml, med, big.

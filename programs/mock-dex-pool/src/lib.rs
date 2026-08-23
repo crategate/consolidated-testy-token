@@ -1,6 +1,6 @@
-// STUB "DEX pool" for localnet/devnet: a fixed-rate NYSEH dispenser.
+// STUB "DEX pool" for localnet/devnet: a fixed-rate AFHO dispenser.
 // The caller (amm's dex_buyback) performs the in-leg transfer (USDC token
-// transfer / SOL lamport transfer) itself, then CPIs send_nyseh for the
+// transfer / SOL lamport transfer) itself, then CPIs send_afho for the
 // out-leg. At launch this is replaced by a real DEX pool CPI — dex_buyback's
 // adapter boundary is built so only that one function changes.
 //  MAINNET change needed
@@ -10,10 +10,10 @@ use anchor_spl::token_interface::{transfer, Mint, TokenAccount, TokenInterface, 
 
 declare_id!("3fgSPE55km8DrbFPmyi7x3YRLmpQ8BYZHUUr85Miwbod");
 
-// raw NYSEH (9 dec) dispensed per raw USDC (6 dec): 1 USDC -> 100 NYSEH (0.01 USDC/NYSEH)
-pub const NYSEH_PER_USDC_RAW: u64 = 100_000;
-// raw NYSEH per lamport: 1 SOL -> 10_000 NYSEH
-pub const NYSEH_PER_SOL_RAW: u64 = 10_000;
+// raw AFHO (9 dec) dispensed per raw USDC (6 dec): 1 USDC -> 100 AFHO (0.01 USDC/AFHO)
+pub const AFHO_PER_USDC_RAW: u64 = 100_000;
+// raw AFHO per lamport: 1 SOL -> 10_000 AFHO
+pub const AFHO_PER_SOL_RAW: u64 = 10_000;
 
 #[program]
 pub mod mock_dex_pool {
@@ -24,22 +24,22 @@ pub mod mock_dex_pool {
         Ok(())
     }
 
-    pub fn send_nyseh(ctx: Context<SendNyseh>, amount_in: u64, sol_in: bool) -> Result<()> {
+    pub fn send_afho(ctx: Context<SendAfho>, amount_in: u64, sol_in: bool) -> Result<()> {
         let mul = if sol_in {
-            NYSEH_PER_SOL_RAW
+            AFHO_PER_SOL_RAW
         } else {
-            NYSEH_PER_USDC_RAW
+            AFHO_PER_USDC_RAW
         };
         let out = (amount_in as u128 * mul as u128) as u64;
-        let mint_key = ctx.accounts.nyseh_mint.key();
+        let mint_key = ctx.accounts.afho_mint.key();
         let bump = ctx.accounts.pool_state.bump;
         let seeds: &[&[u8]] = &[b"mock_pool", mint_key.as_ref(), &[bump]];
         transfer(
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
                 Transfer {
-                    from: ctx.accounts.pool_nyseh.to_account_info(),
-                    to: ctx.accounts.user_nyseh.to_account_info(),
+                    from: ctx.accounts.pool_afho.to_account_info(),
+                    to: ctx.accounts.user_afho.to_account_info(),
                     authority: ctx.accounts.pool_state.to_account_info(),
                 },
                 &[seeds],
@@ -47,7 +47,7 @@ pub mod mock_dex_pool {
             out,
         )?;
         msg!(
-            "mock swap: in {} (sol={}) -> out {} NYSEH raw",
+            "mock swap: in {} (sol={}) -> out {} AFHO raw",
             amount_in,
             sol_in,
             out
@@ -62,7 +62,7 @@ pub mod mock_dex_pool {
     pub fn set_price(ctx: Context<SetPrice>, price: u64) -> Result<()> {
         let price_ai = &ctx.accounts.mock_price;
         if price_ai.data_is_empty() {
-            let mint_key = ctx.accounts.nyseh_mint.key();
+            let mint_key = ctx.accounts.afho_mint.key();
             let bump = ctx.bumps.mock_price;
             let seeds: &[&[u8]] = &[b"mock_price", mint_key.as_ref(), &[bump]];
             let rent = Rent::get()?.minimum_balance(8);
@@ -92,9 +92,9 @@ pub mod mock_dex_pool {
 pub struct SetPrice<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
-    pub nyseh_mint: InterfaceAccount<'info, Mint>,
+    pub afho_mint: InterfaceAccount<'info, Mint>,
     /// CHECK: raw 8-byte price PDA (no anchor disc) — first 8 bytes are the price
-    #[account(mut, seeds = [b"mock_price", nyseh_mint.key().as_ref()], bump)]
+    #[account(mut, seeds = [b"mock_price", afho_mint.key().as_ref()], bump)]
     pub mock_price: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
 }
@@ -108,12 +108,12 @@ pub struct PoolState {
 pub struct InitPool<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
-    pub nyseh_mint: InterfaceAccount<'info, Mint>,
+    pub afho_mint: InterfaceAccount<'info, Mint>,
     pub usdc_mint: InterfaceAccount<'info, Mint>,
     #[account(
         init,
         payer = payer,
-        seeds = [b"mock_pool", nyseh_mint.key().as_ref()],
+        seeds = [b"mock_pool", afho_mint.key().as_ref()],
         bump,
         space = 8 + 1,
     )]
@@ -122,11 +122,11 @@ pub struct InitPool<'info> {
     #[account(
         init,
         payer = payer,
-        associated_token::mint = nyseh_mint,
+        associated_token::mint = afho_mint,
         associated_token::authority = pool_state,
         associated_token::token_program = token_2022_program,
     )]
-    pub pool_nyseh: InterfaceAccount<'info, TokenAccount>,
+    pub pool_afho: InterfaceAccount<'info, TokenAccount>,
     #[account(
         init,
         payer = payer,
@@ -142,13 +142,13 @@ pub struct InitPool<'info> {
 }
 
 #[derive(Accounts)]
-pub struct SendNyseh<'info> {
-    #[account(seeds = [b"mock_pool", nyseh_mint.key().as_ref()], bump = pool_state.bump)]
+pub struct SendAfho<'info> {
+    #[account(seeds = [b"mock_pool", afho_mint.key().as_ref()], bump = pool_state.bump)]
     pub pool_state: Account<'info, PoolState>,
-    #[account(mut, constraint = pool_nyseh.owner == pool_state.key())]
-    pub pool_nyseh: InterfaceAccount<'info, TokenAccount>,
+    #[account(mut, constraint = pool_afho.owner == pool_state.key())]
+    pub pool_afho: InterfaceAccount<'info, TokenAccount>,
     #[account(mut)]
-    pub user_nyseh: InterfaceAccount<'info, TokenAccount>,
-    pub nyseh_mint: InterfaceAccount<'info, Mint>,
+    pub user_afho: InterfaceAccount<'info, TokenAccount>,
+    pub afho_mint: InterfaceAccount<'info, Mint>,
     pub token_program: Interface<'info, TokenInterface>,
 }

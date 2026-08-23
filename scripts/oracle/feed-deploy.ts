@@ -1,6 +1,6 @@
-// Deploys the Switchboard oracle feeds NYSEH depends on, in one run:
+// Deploys the Switchboard oracle feeds AFHO depends on, in one run:
 //   1. Market status feed (massive.com primary, earningsapi.com fallback) -> u8 state
-//   2. NYSEH price feed (Jupiter Price API v3) -> priceChange24h in centi-percent
+//   2. AFHO price feed (Jupiter Price API v3) -> priceChange24h in centi-percent
 //      (multiplyTask x100: 1.29% -> 129; negative moves stay negative)
 //
 // Feed IDs are deterministic from the job definitions, so reruns are idempotent.
@@ -28,13 +28,13 @@ function requireEnv(name: string): string {
 }
 
 function loadMint(): string {
-    if (process.env.NYSEH_MINT) return process.env.NYSEH_MINT;
+    if (process.env.AFHO_MINT) return process.env.AFHO_MINT;
     const deploymentPath = path.join(process.cwd(), "app", "public", "deployment.json");
     if (fs.existsSync(deploymentPath)) {
         const mint = JSON.parse(fs.readFileSync(deploymentPath, "utf-8")).mint;
         if (mint) return mint;
     }
-    throw new Error("No mint found: set NYSEH_MINT or run the mint script first");
+    throw new Error("No mint found: set AFHO_MINT or run the mint script first");
 }
 
 const marketStatusJob = OracleJob.fromObject({
@@ -110,7 +110,7 @@ async function main() {
     const mint = loadMint();
 
     const statusFeed = { name: "NYSE market status", jobs: [{ tasks: marketStatusJob.tasks }] };
-    const priceFeed = { name: `NYSEH priceChange24h (${mint})`, jobs: [{ tasks: priceChangeJob(mint).tasks }] };
+    const priceFeed = { name: `AFHO priceChange24h (${mint})`, jobs: [{ tasks: priceChangeJob(mint).tasks }] };
 
     // Store job definitions on crossbar (idempotent) and compute feed IDs
     await crossbar.storeOracleFeed(statusFeed);

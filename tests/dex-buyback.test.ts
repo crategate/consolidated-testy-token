@@ -23,18 +23,18 @@ describe("dex_buyback", () => {
     const crank = anchor.workspace.CrankOracle as Program<CrankOracle>;
     const mock = anchor.workspace.MockDexPool as Program<MockDexPool>;
 
-    let nysehMint: PublicKey;
+    let afhoMint: PublicKey;
     let usdcMint: PublicKey;
     let marketStatusPda: PublicKey;
     let ammStatePda: PublicKey;
     let acceptedOffersPda: PublicKey;
     let metricsPda: PublicKey;
-    let nysehVault: PublicKey;
+    let afhoVault: PublicKey;
     let usdcVault: PublicKey;
     let solVault: PublicKey;
     let solOraclePda: PublicKey;
     let poolState: PublicKey;
-    let poolNyseh: PublicKey;
+    let poolAfho: PublicKey;
     let poolUsdc: PublicKey;
     let offerListPda: PublicKey;
 
@@ -87,12 +87,12 @@ describe("dex_buyback", () => {
                 marketStatus: marketStatusPda,
                 acceptedOffers: acceptedOffersPda,
                 usdcVault,
-                nysehVault,
+                afhoVault,
                 solVault,
                 solOracle: solOraclePda,
-                nysehMint,
+                afhoMint,
                 poolState,
-                poolNyseh,
+                poolAfho,
                 poolUsdc,
                 poolSol: poolState,
                 dexProgram: mock.programId,
@@ -104,11 +104,11 @@ describe("dex_buyback", () => {
 
     const usdcBalance = async () =>
         Number((await provider.connection.getTokenAccountBalance(usdcVault)).value.amount);
-    const nysehBalance = async () =>
-        Number((await provider.connection.getTokenAccountBalance(nysehVault)).value.amount);
+    const afhoBalance = async () =>
+        Number((await provider.connection.getTokenAccountBalance(afhoVault)).value.amount);
 
     before(async () => {
-        nysehMint = await createMint(provider.connection, payer, payer.publicKey, null, 9, undefined, undefined, TOKEN_2022_PROGRAM_ID);
+        afhoMint = await createMint(provider.connection, payer, payer.publicKey, null, 9, undefined, undefined, TOKEN_2022_PROGRAM_ID);
         usdcMint = await createMint(provider.connection, payer, payer.publicKey, null, 6);
 
         [marketStatusPda] = PublicKey.findProgramAddressSync([Buffer.from("market_status")], crank.programId);
@@ -116,32 +116,32 @@ describe("dex_buyback", () => {
             await crank.methods.initializeState().accounts({ marketStatus: marketStatusPda, payer: payer.publicKey }).rpc();
         }
 
-        [ammStatePda] = PublicKey.findProgramAddressSync([Buffer.from("amm_state"), nysehMint.toBuffer()], amm.programId);
-        [acceptedOffersPda] = PublicKey.findProgramAddressSync([Buffer.from("accepted_offers"), nysehMint.toBuffer()], amm.programId);
-        [metricsPda] = PublicKey.findProgramAddressSync([Buffer.from("metrics"), nysehMint.toBuffer()], amm.programId);
-        [offerListPda] = PublicKey.findProgramAddressSync([Buffer.from("offer_list"), nysehMint.toBuffer()], amm.programId);
-        const [solDipPda] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_dip"), nysehMint.toBuffer()], amm.programId);
-        [solVault] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_vault"), nysehMint.toBuffer()], amm.programId);
+        [ammStatePda] = PublicKey.findProgramAddressSync([Buffer.from("amm_state"), afhoMint.toBuffer()], amm.programId);
+        [acceptedOffersPda] = PublicKey.findProgramAddressSync([Buffer.from("accepted_offers"), afhoMint.toBuffer()], amm.programId);
+        [metricsPda] = PublicKey.findProgramAddressSync([Buffer.from("metrics"), afhoMint.toBuffer()], amm.programId);
+        [offerListPda] = PublicKey.findProgramAddressSync([Buffer.from("offer_list"), afhoMint.toBuffer()], amm.programId);
+        const [solDipPda] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_dip"), afhoMint.toBuffer()], amm.programId);
+        [solVault] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_vault"), afhoMint.toBuffer()], amm.programId);
 
-        nysehVault = await createAtaOffCurve(nysehMint, ammStatePda, TOKEN_2022_PROGRAM_ID);
+        afhoVault = await createAtaOffCurve(afhoMint, ammStatePda, TOKEN_2022_PROGRAM_ID);
         usdcVault = await createAtaOffCurve(usdcMint, ammStatePda, TOKEN_PROGRAM_ID);
         // dip/rewards USDC vaults are PDA token accounts created by initialize_amm
-        const [usdcDip] = PublicKey.findProgramAddressSync([Buffer.from("amm_usdc_dip"), nysehMint.toBuffer()], amm.programId);
-        const [usdcRewards] = PublicKey.findProgramAddressSync([Buffer.from("amm_usdc_rewards"), nysehMint.toBuffer()], amm.programId);
-        const [mockPricePda] = PublicKey.findProgramAddressSync([Buffer.from("mock_price"), nysehMint.toBuffer()], mock.programId);
+        const [usdcDip] = PublicKey.findProgramAddressSync([Buffer.from("amm_usdc_dip"), afhoMint.toBuffer()], amm.programId);
+        const [usdcRewards] = PublicKey.findProgramAddressSync([Buffer.from("amm_usdc_rewards"), afhoMint.toBuffer()], amm.programId);
+        const [mockPricePda] = PublicKey.findProgramAddressSync([Buffer.from("mock_price"), afhoMint.toBuffer()], mock.programId);
         // SOL/USD oracle (same mock pattern, seeded with a stand-in mint —
         // the SOL leg never fires in this suite, so it stays unset)
         [solOraclePda] = PublicKey.findProgramAddressSync([Buffer.from("mock_price"), usdcMint.toBuffer()], mock.programId);
-        const [solRewardsPda] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_rewards"), nysehMint.toBuffer()], amm.programId);
+        const [solRewardsPda] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_rewards"), afhoMint.toBuffer()], amm.programId);
 
         await amm.methods
             .initializeAmm(mockPricePda, PublicKey.default, solOraclePda)
             .accounts({
                 authority: payer.publicKey,
-                nysehMint,
+                afhoMint,
                 usdcMint,
                 ammState: ammStatePda,
-                nysehVault,
+                afhoVault,
                 usdcVault,
                 usdcDip,
                 usdcRewards,
@@ -161,26 +161,26 @@ describe("dex_buyback", () => {
             .rpc();
 
         // mock pool (pool token accounts are ATAs of the pool PDA)
-        [poolState] = PublicKey.findProgramAddressSync([Buffer.from("mock_pool"), nysehMint.toBuffer()], mock.programId);
-        poolNyseh = getAssociatedTokenAddressSync(nysehMint, poolState, true, TOKEN_2022_PROGRAM_ID);
+        [poolState] = PublicKey.findProgramAddressSync([Buffer.from("mock_pool"), afhoMint.toBuffer()], mock.programId);
+        poolAfho = getAssociatedTokenAddressSync(afhoMint, poolState, true, TOKEN_2022_PROGRAM_ID);
         poolUsdc = getAssociatedTokenAddressSync(usdcMint, poolState, true, TOKEN_PROGRAM_ID);
         await mock.methods
             .initPool()
             .accounts({
                 payer: payer.publicKey,
-                nysehMint,
+                afhoMint,
                 usdcMint,
                 poolState,
-                poolNyseh,
+                poolAfho,
                 poolUsdc,
                 tokenProgram: TOKEN_PROGRAM_ID,
                 token2022Program: TOKEN_2022_PROGRAM_ID,
             })
             .rpc();
 
-        // fund: USDC in the amm vault (mock "proceeds"), NYSEH liquidity in the pool
+        // fund: USDC in the amm vault (mock "proceeds"), AFHO liquidity in the pool
         await mintTo(provider.connection, payer, usdcMint, usdcVault, payer.publicKey, USDC_FUND);
-        await mintTo(provider.connection, payer, nysehMint, poolNyseh, payer.publicKey, 1_000_000_000_000_000, undefined, undefined, TOKEN_2022_PROGRAM_ID);
+        await mintTo(provider.connection, payer, afhoMint, poolAfho, payer.publicKey, 1_000_000_000_000_000, undefined, undefined, TOKEN_2022_PROGRAM_ID);
     });
 
     it("rejects buybacks while the market is closed", async () => {
@@ -219,17 +219,17 @@ describe("dex_buyback", () => {
             .rpc();
 
         const usdcBefore = await usdcBalance();
-        const nysehBefore = await nysehBalance();
+        const afhoBefore = await afhoBalance();
         await buybackTx();
 
         const usdcAfter = await usdcBalance();
-        const nysehAfter = await nysehBalance();
+        const afhoAfter = await afhoBalance();
         const slice = usdcBefore - usdcAfter;
         assert.isAbove(slice, 0, "slice executed");
         // first-hour weight 1.9% x factor 0.5-1.5 -> 0.95%..2.85% of budget
         assert.isAtLeast(slice, USDC_FUND * 0.005, "slice >= 0.5% of budget");
         assert.isAtMost(slice, USDC_FUND * 0.03, "slice <= 3% of budget");
-        assert.equal(nysehAfter - nysehBefore, slice * 100_000, "mock rate out-leg");
+        assert.equal(afhoAfter - afhoBefore, slice * 100_000, "mock rate out-leg");
 
         const state = await amm.account.ammState.fetch(ammStatePda);
         assert.equal(state.highestBuybackBasis.toNumber(), MOCK_EXEC_PRICE, "ratchet");

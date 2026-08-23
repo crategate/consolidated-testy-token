@@ -2,8 +2,8 @@
 //
 // The stakers' 10%: once per trading day, while the market is OPEN, swap the
 // balances accumulated in the rewards holding vaults (last night's claim
-// share — USDC and/or SOL) into NYSEH via the same swap adapter dex_buyback
-// uses, then CPI the staking program to deposit the combined NYSEH into
+// share — USDC and/or SOL) into AFHO via the same swap adapter dex_buyback
+// uses, then CPI the staking program to deposit the combined AFHO into
 // reward_vault — the MasterChef index bump (divided by total_WEIGHTED_stake,
 // so lock multipliers are respected) makes it instantly claimable pro-rata.
 // Distributing the PREVIOUS day's proceeds at the start of the day is
@@ -24,7 +24,7 @@ use super::offer_claim::read_live_price;
 pub struct DistributeStakerRewards<'info> {
     #[account(mut)]
     pub cranker: Signer<'info>,
-    #[account(mut, seeds = [b"amm_state", amm_state.nyseh_mint.as_ref()], bump = amm_state.bump,)]
+    #[account(mut, seeds = [b"amm_state", amm_state.afho_mint.as_ref()], bump = amm_state.bump,)]
     pub amm_state: Box<Account<'info, AmmState>>,
 
     /// CHECK: market status PDA (state byte + day index)
@@ -48,21 +48,21 @@ pub struct DistributeStakerRewards<'info> {
     #[account(address = amm_state.sol_oracle)]
     pub sol_oracle: UncheckedAccount<'info>,
     /// Swap out-leg destination + deposit source
-    #[account(mut, address = amm_state.nyseh_vault)]
-    pub nyseh_vault: Box<InterfaceAccount<'info, TokenAccount>>,
-    pub nyseh_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(mut, address = amm_state.afho_vault)]
+    pub afho_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub afho_mint: Box<InterfaceAccount<'info, Mint>>,
 
     // --- swap adapter accounts (mock-dex-pool today; real DEX at launch) ---
     /// CHECK: pool state PDA, verified against the configured dex_program
     #[account(
         mut,
-        seeds = [b"mock_pool", nyseh_mint.key().as_ref()],
+        seeds = [b"mock_pool", afho_mint.key().as_ref()],
         seeds::program = amm_state.dex_program,
         bump
     )]
     pub pool_state: UncheckedAccount<'info>,
-    #[account(mut, constraint = pool_nyseh.mint == amm_state.nyseh_mint)]
-    pub pool_nyseh: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(mut, constraint = pool_afho.mint == amm_state.afho_mint)]
+    pub pool_afho: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, constraint = pool_usdc.mint == amm_state.usdc_mint)]
     pub pool_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
     /// CHECK: lamport destination for the SOL in-leg (any system account; the
@@ -82,7 +82,7 @@ pub struct DistributeStakerRewards<'info> {
 
     /// Classic SPL (USDC in-leg)
     pub token_program: Interface<'info, TokenInterface>,
-    /// Token-2022 (NYSEH out-leg + staking deposit)
+    /// Token-2022 (AFHO out-leg + staking deposit)
     pub token_2022_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
 }
@@ -94,13 +94,13 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
     let swap = SwapInfos {
         amm_state: ctx.accounts.amm_state.to_account_info(),
         usdc_vault: ctx.accounts.usdc_rewards.to_account_info(),
-        nyseh_vault: ctx.accounts.nyseh_vault.to_account_info(),
+        afho_vault: ctx.accounts.afho_vault.to_account_info(),
         sol_vault: ctx.accounts.sol_rewards.to_account_info(),
         pool_state: ctx.accounts.pool_state.to_account_info(),
-        pool_nyseh: ctx.accounts.pool_nyseh.to_account_info(),
+        pool_afho: ctx.accounts.pool_afho.to_account_info(),
         pool_usdc: ctx.accounts.pool_usdc.to_account_info(),
         pool_sol: ctx.accounts.pool_sol.to_account_info(),
-        nyseh_mint: ctx.accounts.nyseh_mint.to_account_info(),
+        afho_mint: ctx.accounts.afho_mint.to_account_info(),
         dex_program: ctx.accounts.dex_program.to_account_info(),
         token_program: ctx.accounts.token_program.to_account_info(),
         token_2022_program: ctx.accounts.token_2022_program.to_account_info(),
@@ -143,7 +143,7 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
         return Ok(());
     }
 
-    let mint_key = amm_state.nyseh_mint;
+    let mint_key = amm_state.afho_mint;
     let state_bump = amm_state.bump;
     let sol_rewards_bump = amm_state.sol_rewards_bump;
 
@@ -151,7 +151,7 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
 
     // ── USDC leg ──
     if usdc_in > 0 {
-        let before = ctx.accounts.nyseh_vault.amount;
+        let before = ctx.accounts.afho_vault.amount;
         execute_swap(
             &swap,
             mint_key,
@@ -161,10 +161,10 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
             usdc_in,
             false,
         )?;
-        ctx.accounts.nyseh_vault.reload()?;
-        let out = ctx.accounts.nyseh_vault.amount.saturating_sub(before);
+        ctx.accounts.afho_vault.reload()?;
+        let out = ctx.accounts.afho_vault.amount.saturating_sub(before);
         if out > 0 {
-            // USDC leg: (usdc_raw × 1e6) / nyseh_raw — already floor units.
+            // USDC leg: (usdc_raw × 1e6) / afho_raw — already floor units.
             ratchet_buyback_basis(amm_state, (usdc_in as u128 * 1_000_000 / out as u128) as u64);
         }
         total_out = total_out.saturating_add(out);
@@ -172,7 +172,7 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
 
     // ── SOL leg ──
     if sol_in > 0 {
-        let before = ctx.accounts.nyseh_vault.amount;
+        let before = ctx.accounts.afho_vault.amount;
         execute_swap(
             &swap,
             mint_key,
@@ -182,11 +182,11 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
             sol_in,
             true,
         )?;
-        ctx.accounts.nyseh_vault.reload()?;
-        let out = ctx.accounts.nyseh_vault.amount.saturating_sub(before);
+        ctx.accounts.afho_vault.reload()?;
+        let out = ctx.accounts.afho_vault.amount.saturating_sub(before);
         if out > 0 {
             // Convert to USDC units before ratcheting: lamports × sol_price /
-            // out == (usdc_raw × 1e6) / nyseh_raw — never mix units in floor.
+            // out == (usdc_raw × 1e6) / afho_raw — never mix units in floor.
             let sol_price = read_live_price(&ctx.accounts.sol_oracle.to_account_info())?;
             require!(sol_price > 0, ErrorCode::InvalidOracle);
             let px = (sol_in as u128).saturating_mul(sol_price as u128) / out as u128;
@@ -198,16 +198,16 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
     require!(total_out > 0, ErrorCode::SwapReturnedNothing);
     amm_state.rewards_day_index = current_day;
 
-    // ── Deposit the NYSEH into the staking reward vault ──
+    // ── Deposit the AFHO into the staking reward vault ──
     let seeds: &[&[u8]] = &[b"amm_state", mint_key.as_ref(), &[state_bump]];
     staking::cpi::deposit_rewards_from_amm(
         CpiContext::new_with_signer(
             ctx.accounts.staking_program.to_account_info(),
             staking::cpi::accounts::DepositRewardsFromAmm {
-                mint: ctx.accounts.nyseh_mint.to_account_info(),
+                mint: ctx.accounts.afho_mint.to_account_info(),
                 pool: ctx.accounts.staking_pool.to_account_info(),
                 amm_state: ctx.accounts.amm_state.to_account_info(),
-                amm_nyseh_vault: ctx.accounts.nyseh_vault.to_account_info(),
+                amm_afho_vault: ctx.accounts.afho_vault.to_account_info(),
                 reward_vault: ctx.accounts.staking_reward_vault.to_account_info(),
                 token_program: ctx.accounts.token_2022_program.to_account_info(),
             },
@@ -217,7 +217,7 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
     )?;
 
     msg!(
-        "day {}: distributed {} usdc + {} lamports -> {} NYSEH to stakers",
+        "day {}: distributed {} usdc + {} lamports -> {} AFHO to stakers",
         current_day,
         usdc_in,
         sol_in,

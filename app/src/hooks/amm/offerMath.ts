@@ -15,7 +15,7 @@ export function lotTokens(lotTier: number): number {
 }
 
 // Price units (both the spot oracle and the ratchet floor):
-//   (usdc_raw × 1e6) / nyseh_raw   — "floor units"
+//   (usdc_raw × 1e6) / afho_raw   — "floor units"
 // discount_bps is stored in tenths of a percent (115 = 11.5%) → ×10 = bps.
 export function effectivePrice(livePrice: bigint, discountTenths: number, floor: bigint): bigint {
     const bps = BigInt(discountTenths) * 10n;
@@ -30,7 +30,7 @@ export function ratchetActive(livePrice: bigint, discountTenths: number, floor: 
 }
 
 // Cost in raw USDC for `units` lots — mirrors quote_claim:
-//   total_raw = lot_tokens × units × 10^nyseh_decimals
+//   total_raw = lot_tokens × units × 10^afho_decimals
 //   cost_usdc = total_raw × effective_price / 1e6
 export function quoteCostRaw(
     livePrice: bigint,
@@ -38,10 +38,10 @@ export function quoteCostRaw(
     floor: bigint,
     lotTier: number,
     units: number,
-    nysehDecimals: number,
+    afhoDecimals: number,
 ): bigint {
     if (units <= 0 || livePrice <= 0n) return 0n;
-    const unit = 10n ** BigInt(nysehDecimals);
+    const unit = 10n ** BigInt(afhoDecimals);
     const totalRaw = BigInt(lotTokens(lotTier)) * BigInt(units) * unit;
     return (totalRaw * effectivePrice(livePrice, discountTenths, floor)) / 1_000_000n;
 }
@@ -53,10 +53,10 @@ export function formatUsdc(raw: bigint, usdcDecimals = 6): string {
     return `${whole.toLocaleString('en-US')}.${frac}`;
 }
 
-// Price of one whole NYSEH in USDC, from floor units.
-export function pricePerToken(floorUnits: bigint, nysehDecimals: number, usdcDecimals = 6): number {
+// Price of one whole AFHO in USDC, from floor units.
+export function pricePerToken(floorUnits: bigint, afhoDecimals: number, usdcDecimals = 6): number {
     if (floorUnits <= 0n) return 0;
-    return Number(floorUnits) * 10 ** (nysehDecimals - 6 - usdcDecimals);
+    return Number(floorUnits) * 10 ** (afhoDecimals - 6 - usdcDecimals);
 }
 
 export function formatTokens(n: number): string {

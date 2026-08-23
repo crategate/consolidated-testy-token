@@ -48,7 +48,7 @@ export default function OfferLists() {
     const estCostRaw = data.tiers.reduce(
         (sum, t) => sum + quoteCostRaw(
             data.livePrice ?? 0n, t.discountBps, data.floorBasis,
-            t.lotTier, quantities[t.key] ?? 0, data.nysehDecimals,
+            t.lotTier, quantities[t.key] ?? 0, data.afhoDecimals,
         ),
         0n,
     );
@@ -87,7 +87,7 @@ export default function OfferLists() {
             )}
             {data.deskOpen && (
                 <div className="desk-banner open">
-                    Desk open — purchased NYSEH goes straight into a vesting stake position, not your wallet.
+                    Desk open — purchased AFHO goes straight into a vesting stake position, not your wallet.
                 </div>
             )}
 
@@ -97,7 +97,7 @@ export default function OfferLists() {
                     quantities={quantities}
                     livePrice={data.livePrice}
                     floorBasis={data.floorBasis}
-                    nysehDecimals={data.nysehDecimals}
+                    afhoDecimals={data.afhoDecimals}
                     usdcDecimals={data.usdcDecimals}
                     disabled={!data.deskOpen || status === 'pending'}
                     onQtyChange={setQty}
@@ -114,7 +114,7 @@ export default function OfferLists() {
                     </strong>
                     {totalLots > 0 && (
                         <span className="order-total-sub">
-                            {formatTokens(totalTokens)} NYSEH · {totalLots} lot{totalLots !== 1 ? 's' : ''}
+                            {formatTokens(totalTokens)} AFHO · {totalLots} lot{totalLots !== 1 ? 's' : ''}
                             {ratchet && ' · buyback-floor ratchet active'}
                         </span>
                     )}
@@ -135,7 +135,7 @@ export default function OfferLists() {
 
             {status === 'success' && txSig && (
                 <div className="desk-banner success">
-                    Claim submitted — NYSEH is vesting in your stake positions.{' '}
+                    Claim submitted — AFHO is vesting in your stake positions.{' '}
                     <a href={`https://explorer.solana.com/tx/${txSig}?cluster=devnet`} target="_blank" rel="noreferrer">
                         View transaction
                     </a>

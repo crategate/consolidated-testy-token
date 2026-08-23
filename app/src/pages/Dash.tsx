@@ -40,7 +40,7 @@ export default function Dash() {
     return (
         <div className="dash-shell">
             <header className="dash-topbar">
-                <h1>NYSEH dev dashboard</h1>
+                <h1>AFHO dev dashboard</h1>
                 <div className="dash-controls">
                     {data && <span className="dash-updated">updated {new Date(data.updatedAt).toLocaleTimeString()}</span>}
                     <button className="dash-toggle" onClick={() => setHideAddresses((v) => !v)}>

@@ -25,7 +25,7 @@ describe("ratchet floor decay", () => {
     const crank = anchor.workspace.CrankOracle as Program<CrankOracle>;
     const mock = anchor.workspace.MockDexPool as Program<MockDexPool>;
 
-    let nysehMint: PublicKey;
+    let afhoMint: PublicKey;
     let marketStatusPda: PublicKey;
     let ammStatePda: PublicKey;
     let acceptedOffersPda: PublicKey;
@@ -54,7 +54,7 @@ describe("ratchet floor decay", () => {
     async function setPrice(price: number) {
         await mock.methods
             .setPrice(new anchor.BN(price))
-            .accounts({ payer: payer.publicKey, nysehMint, mockPrice: mockPricePda })
+            .accounts({ payer: payer.publicKey, afhoMint, mockPrice: mockPricePda })
             .rpc();
     }
 
@@ -113,7 +113,7 @@ describe("ratchet floor decay", () => {
     }
 
     before(async () => {
-        nysehMint = await createMint(provider.connection, payer, payer.publicKey, null, 9, undefined, undefined, TOKEN_2022_PROGRAM_ID);
+        afhoMint = await createMint(provider.connection, payer, payer.publicKey, null, 9, undefined, undefined, TOKEN_2022_PROGRAM_ID);
         const usdcMint = await createMint(provider.connection, payer, payer.publicKey, null, 6);
 
         [marketStatusPda] = PublicKey.findProgramAddressSync([Buffer.from("market_status")], crank.programId);
@@ -121,31 +121,31 @@ describe("ratchet floor decay", () => {
             await crank.methods.initializeState().accounts({ marketStatus: marketStatusPda, payer: payer.publicKey }).rpc();
         }
 
-        [ammStatePda] = PublicKey.findProgramAddressSync([Buffer.from("amm_state"), nysehMint.toBuffer()], amm.programId);
-        [acceptedOffersPda] = PublicKey.findProgramAddressSync([Buffer.from("accepted_offers"), nysehMint.toBuffer()], amm.programId);
-        [metricsPda] = PublicKey.findProgramAddressSync([Buffer.from("metrics"), nysehMint.toBuffer()], amm.programId);
-        [offerListPda] = PublicKey.findProgramAddressSync([Buffer.from("offer_list"), nysehMint.toBuffer()], amm.programId);
-        [mockPricePda] = PublicKey.findProgramAddressSync([Buffer.from("mock_price"), nysehMint.toBuffer()], mock.programId);
+        [ammStatePda] = PublicKey.findProgramAddressSync([Buffer.from("amm_state"), afhoMint.toBuffer()], amm.programId);
+        [acceptedOffersPda] = PublicKey.findProgramAddressSync([Buffer.from("accepted_offers"), afhoMint.toBuffer()], amm.programId);
+        [metricsPda] = PublicKey.findProgramAddressSync([Buffer.from("metrics"), afhoMint.toBuffer()], amm.programId);
+        [offerListPda] = PublicKey.findProgramAddressSync([Buffer.from("offer_list"), afhoMint.toBuffer()], amm.programId);
+        [mockPricePda] = PublicKey.findProgramAddressSync([Buffer.from("mock_price"), afhoMint.toBuffer()], mock.programId);
         // SOL/USD oracle + SOL rewards holding PDA (SOL leg unused in this suite)
         const [solOraclePda] = PublicKey.findProgramAddressSync([Buffer.from("mock_price"), usdcMint.toBuffer()], mock.programId);
-        const [solRewardsPda] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_rewards"), nysehMint.toBuffer()], amm.programId);
-        const [solDipPda] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_dip"), nysehMint.toBuffer()], amm.programId);
-        const [solVault] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_vault"), nysehMint.toBuffer()], amm.programId);
+        const [solRewardsPda] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_rewards"), afhoMint.toBuffer()], amm.programId);
+        const [solDipPda] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_dip"), afhoMint.toBuffer()], amm.programId);
+        const [solVault] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_vault"), afhoMint.toBuffer()], amm.programId);
 
-        const nysehVault = await createAtaOffCurve(nysehMint, ammStatePda, TOKEN_2022_PROGRAM_ID);
+        const afhoVault = await createAtaOffCurve(afhoMint, ammStatePda, TOKEN_2022_PROGRAM_ID);
         const usdcVault = await createAtaOffCurve(usdcMint, ammStatePda, TOKEN_PROGRAM_ID);
         // dip/rewards USDC vaults are PDA token accounts created by initialize_amm
-        const [usdcDip] = PublicKey.findProgramAddressSync([Buffer.from("amm_usdc_dip"), nysehMint.toBuffer()], amm.programId);
-        const [usdcRewards] = PublicKey.findProgramAddressSync([Buffer.from("amm_usdc_rewards"), nysehMint.toBuffer()], amm.programId);
+        const [usdcDip] = PublicKey.findProgramAddressSync([Buffer.from("amm_usdc_dip"), afhoMint.toBuffer()], amm.programId);
+        const [usdcRewards] = PublicKey.findProgramAddressSync([Buffer.from("amm_usdc_rewards"), afhoMint.toBuffer()], amm.programId);
 
         await amm.methods
             .initializeAmm(mockPricePda, PublicKey.default, solOraclePda)
             .accounts({
                 authority: payer.publicKey,
-                nysehMint,
+                afhoMint,
                 usdcMint,
                 ammState: ammStatePda,
-                nysehVault,
+                afhoVault,
                 usdcVault,
                 usdcDip,
                 usdcRewards,

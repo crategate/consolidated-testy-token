@@ -1,4 +1,4 @@
-"""Minimal stdlib raster canvas + PNG writer for the NYSEH sim explainers.
+"""Minimal stdlib raster canvas + PNG writer for the AFHO sim explainers.
 
 No dependencies. RGB pixel buffer (list of bytearrays), Bresenham lines,
 rects, a 3x5 bitmap font, a Plot helper (axes/ticks/labels/series with

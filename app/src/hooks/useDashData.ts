@@ -14,7 +14,7 @@ type DashConfig = DeploymentConfig & {
     ammOfferList?: string;
     ammSolVault?: string;
     ammUsdcVault?: string;
-    ammNysehVault?: string;
+    ammAfhoVault?: string;
 };
 
 export type DashField = { label: string; value: string };
@@ -178,7 +178,7 @@ async function buildDashData(
         offerList: pk(config.ammOfferList),
         acceptedOffers: acceptedOffersPda,
         metrics: metricsPda,
-        ammNysehVault: pk(config.ammNysehVault),
+        ammAfhoVault: pk(config.ammAfhoVault),
         ammUsdcVault: pk(config.ammUsdcVault),
         ammSolVault: pk(config.ammSolVault),
     };
@@ -230,7 +230,7 @@ async function buildDashData(
         }
         offerFields.push({
             label: 'Total sold',
-            value: `${field(offerList, 'totalComplete', 'total_complete')} NYSEH`,
+            value: `${field(offerList, 'totalComplete', 'total_complete')} AFHO`,
         });
     }
     if (metrics) {
@@ -279,10 +279,10 @@ async function buildDashData(
             },
         );
     }
-    const ammNyseh = token('ammNysehVault');
+    const ammAfho = token('ammAfhoVault');
     const ammUsdc = token('ammUsdcVault');
     const ammSol = account('ammSolVault');
-    if (ammNyseh !== null) ammFields.push({ label: 'NYSEH vault', value: fmtToken(ammNyseh, decimals) });
+    if (ammAfho !== null) ammFields.push({ label: 'AFHO vault', value: fmtToken(ammAfho, decimals) });
     if (ammUsdc !== null) ammFields.push({ label: 'USDC vault', value: fmtToken(ammUsdc, 6) });
     if (ammSol) ammFields.push({ label: 'SOL vault', value: fmtSol(ammSol.lamports) });
     if (!ammState) missing.push('amm_state');
@@ -362,7 +362,7 @@ async function buildDashData(
             fields: ammFields,
             addresses: [
                 addr('AmmState', 'ammState'),
-                addr('NYSEH vault', 'ammNysehVault'),
+                addr('AFHO vault', 'ammAfhoVault'),
                 addr('USDC vault', 'ammUsdcVault'),
                 addr('SOL vault', 'ammSolVault'),
             ],

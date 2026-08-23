@@ -9,18 +9,18 @@ pub struct LoadTestData<'info> {
     pub authority: Signer<'info>,
     #[account(
         mut,
-        seeds = [b"amm_state", amm_state.nyseh_mint.as_ref()],
+        seeds = [b"amm_state", amm_state.afho_mint.as_ref()],
         bump = amm_state.bump,
         has_one = authority,
     )]
     pub amm_state: Account<'info, AmmState>,
-    #[account(mut, seeds = [b"metrics", amm_state.nyseh_mint.as_ref()], bump)]
+    #[account(mut, seeds = [b"metrics", amm_state.afho_mint.as_ref()], bump)]
     pub metrics: Account<'info, MarketMetrics>,
-    #[account(mut, seeds = [b"accepted_offers", amm_state.nyseh_mint.as_ref()], bump)]
+    #[account(mut, seeds = [b"accepted_offers", amm_state.afho_mint.as_ref()], bump)]
     pub accepted_offers: Account<'info, AcceptedOffers>,
     #[account(
         mut,
-        seeds = [b"offer_list", amm_state.nyseh_mint.as_ref()],
+        seeds = [b"offer_list", amm_state.afho_mint.as_ref()],
         bump = offer_list.bump,
     )]
     pub offer_list: Account<'info, OfferList>,

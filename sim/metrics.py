@@ -1,4 +1,4 @@
-"""Exact Python ports of the on-chain NYSEH offer-desk metrics.
+"""Exact Python ports of the on-chain AFHO offer-desk metrics.
 
 Sources (read-only reference, do not modify):
   - programs/amm/src/instructions/make_offers.rs

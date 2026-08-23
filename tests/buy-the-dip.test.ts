@@ -23,20 +23,20 @@ describe("buy_the_dip", () => {
     const crank = anchor.workspace.CrankOracle as Program<CrankOracle>;
     const mock = anchor.workspace.MockDexPool as Program<MockDexPool>;
 
-    let nysehMint: PublicKey;
+    let afhoMint: PublicKey;
     let usdcMint: PublicKey;
     let marketStatusPda: PublicKey;
     let ammStatePda: PublicKey;
     let acceptedOffersPda: PublicKey;
     let metricsPda: PublicKey;
     let offerListPda: PublicKey;
-    let nysehVault: PublicKey;
+    let afhoVault: PublicKey;
     let usdcDip: PublicKey;
     let solDip: PublicKey;
     let mockPricePda: PublicKey;
     let solOraclePda: PublicKey;
     let poolState: PublicKey;
-    let poolNyseh: PublicKey;
+    let poolAfho: PublicKey;
     let poolUsdc: PublicKey;
 
     const REF_PRICE = 1_000; // spot-ring reference (floor units)
@@ -57,7 +57,7 @@ describe("buy_the_dip", () => {
     async function setPrice(price: number) {
         await mock.methods
             .setPrice(new anchor.BN(price))
-            .accounts({ payer: payer.publicKey, nysehMint, mockPrice: mockPricePda })
+            .accounts({ payer: payer.publicKey, afhoMint, mockPrice: mockPricePda })
             .rpc();
     }
 
@@ -97,10 +97,10 @@ describe("buy_the_dip", () => {
                 solOracle: solOraclePda,
                 usdcDip,
                 solDip,
-                nysehVault,
-                nysehMint,
+                afhoVault,
+                afhoMint,
                 poolState,
-                poolNyseh,
+                poolAfho,
                 poolUsdc,
                 poolSol: poolState,
                 dexProgram: mock.programId,
@@ -141,12 +141,12 @@ describe("buy_the_dip", () => {
 
     const dipBalance = async () =>
         Number((await provider.connection.getTokenAccountBalance(usdcDip)).value.amount);
-    const nysehBalance = async () =>
-        Number((await provider.connection.getTokenAccountBalance(nysehVault)).value.amount);
+    const afhoBalance = async () =>
+        Number((await provider.connection.getTokenAccountBalance(afhoVault)).value.amount);
     const solDipBalance = async () => provider.connection.getBalance(solDip);
 
     before(async () => {
-        nysehMint = await createMint(provider.connection, payer, payer.publicKey, null, 9, undefined, undefined, TOKEN_2022_PROGRAM_ID);
+        afhoMint = await createMint(provider.connection, payer, payer.publicKey, null, 9, undefined, undefined, TOKEN_2022_PROGRAM_ID);
         usdcMint = await createMint(provider.connection, payer, payer.publicKey, null, 6);
 
         [marketStatusPda] = PublicKey.findProgramAddressSync([Buffer.from("market_status")], crank.programId);
@@ -154,31 +154,31 @@ describe("buy_the_dip", () => {
             await crank.methods.initializeState().accounts({ marketStatus: marketStatusPda, payer: payer.publicKey }).rpc();
         }
 
-        [ammStatePda] = PublicKey.findProgramAddressSync([Buffer.from("amm_state"), nysehMint.toBuffer()], amm.programId);
-        [acceptedOffersPda] = PublicKey.findProgramAddressSync([Buffer.from("accepted_offers"), nysehMint.toBuffer()], amm.programId);
-        [metricsPda] = PublicKey.findProgramAddressSync([Buffer.from("metrics"), nysehMint.toBuffer()], amm.programId);
-        [offerListPda] = PublicKey.findProgramAddressSync([Buffer.from("offer_list"), nysehMint.toBuffer()], amm.programId);
-        [mockPricePda] = PublicKey.findProgramAddressSync([Buffer.from("mock_price"), nysehMint.toBuffer()], mock.programId);
+        [ammStatePda] = PublicKey.findProgramAddressSync([Buffer.from("amm_state"), afhoMint.toBuffer()], amm.programId);
+        [acceptedOffersPda] = PublicKey.findProgramAddressSync([Buffer.from("accepted_offers"), afhoMint.toBuffer()], amm.programId);
+        [metricsPda] = PublicKey.findProgramAddressSync([Buffer.from("metrics"), afhoMint.toBuffer()], amm.programId);
+        [offerListPda] = PublicKey.findProgramAddressSync([Buffer.from("offer_list"), afhoMint.toBuffer()], amm.programId);
+        [mockPricePda] = PublicKey.findProgramAddressSync([Buffer.from("mock_price"), afhoMint.toBuffer()], mock.programId);
         // SOL/USD oracle (same mock pattern, seeded with a stand-in mint)
         [solOraclePda] = PublicKey.findProgramAddressSync([Buffer.from("mock_price"), usdcMint.toBuffer()], mock.programId);
-        [solDip] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_dip"), nysehMint.toBuffer()], amm.programId);
-        const [solVault] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_vault"), nysehMint.toBuffer()], amm.programId);
-        const [solRewardsPda] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_rewards"), nysehMint.toBuffer()], amm.programId);
+        [solDip] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_dip"), afhoMint.toBuffer()], amm.programId);
+        const [solVault] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_vault"), afhoMint.toBuffer()], amm.programId);
+        const [solRewardsPda] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_rewards"), afhoMint.toBuffer()], amm.programId);
 
-        nysehVault = await createAtaOffCurve(nysehMint, ammStatePda, TOKEN_2022_PROGRAM_ID);
+        afhoVault = await createAtaOffCurve(afhoMint, ammStatePda, TOKEN_2022_PROGRAM_ID);
         const usdcVault = await createAtaOffCurve(usdcMint, ammStatePda, TOKEN_PROGRAM_ID);
         // dip/rewards USDC vaults are PDA token accounts created by initialize_amm
-        [usdcDip] = PublicKey.findProgramAddressSync([Buffer.from("amm_usdc_dip"), nysehMint.toBuffer()], amm.programId);
-        const [usdcRewards] = PublicKey.findProgramAddressSync([Buffer.from("amm_usdc_rewards"), nysehMint.toBuffer()], amm.programId);
+        [usdcDip] = PublicKey.findProgramAddressSync([Buffer.from("amm_usdc_dip"), afhoMint.toBuffer()], amm.programId);
+        const [usdcRewards] = PublicKey.findProgramAddressSync([Buffer.from("amm_usdc_rewards"), afhoMint.toBuffer()], amm.programId);
 
         await amm.methods
             .initializeAmm(mockPricePda, PublicKey.default, solOraclePda)
             .accounts({
                 authority: payer.publicKey,
-                nysehMint,
+                afhoMint,
                 usdcMint,
                 ammState: ammStatePda,
-                nysehVault,
+                afhoVault,
                 usdcVault,
                 usdcDip,
                 usdcRewards,
@@ -197,24 +197,24 @@ describe("buy_the_dip", () => {
             })
             .rpc();
 
-        // mock pool + NYSEH liquidity
-        [poolState] = PublicKey.findProgramAddressSync([Buffer.from("mock_pool"), nysehMint.toBuffer()], mock.programId);
-        poolNyseh = getAssociatedTokenAddressSync(nysehMint, poolState, true, TOKEN_2022_PROGRAM_ID);
+        // mock pool + AFHO liquidity
+        [poolState] = PublicKey.findProgramAddressSync([Buffer.from("mock_pool"), afhoMint.toBuffer()], mock.programId);
+        poolAfho = getAssociatedTokenAddressSync(afhoMint, poolState, true, TOKEN_2022_PROGRAM_ID);
         poolUsdc = getAssociatedTokenAddressSync(usdcMint, poolState, true, TOKEN_PROGRAM_ID);
         await mock.methods
             .initPool()
             .accounts({
                 payer: payer.publicKey,
-                nysehMint,
+                afhoMint,
                 usdcMint,
                 poolState,
-                poolNyseh,
+                poolAfho,
                 poolUsdc,
                 tokenProgram: TOKEN_PROGRAM_ID,
                 token2022Program: TOKEN_2022_PROGRAM_ID,
             })
             .rpc();
-        await mintTo(provider.connection, payer, nysehMint, poolNyseh, payer.publicKey, 1_000_000_000_000_000, undefined, undefined, TOKEN_2022_PROGRAM_ID);
+        await mintTo(provider.connection, payer, afhoMint, poolAfho, payer.publicKey, 1_000_000_000_000_000, undefined, undefined, TOKEN_2022_PROGRAM_ID);
 
         // fund the USDC dip reserve (SOL reserve is funded in the SOL-leg test
         // so earlier tests exercise the USDC leg alone)
@@ -237,14 +237,14 @@ describe("buy_the_dip", () => {
         await setPrice(900);
 
         const dipBefore = await dipBalance();
-        const nysehBefore = await nysehBalance();
+        const afhoBefore = await afhoBalance();
         await dipTx();
         const dipAfter = await dipBalance();
-        const nysehAfter = await nysehBalance();
+        const afhoAfter = await afhoBalance();
 
         const slice = Math.floor(dipBefore * 0.25); // 2500 bps, full depth
         assert.equal(dipBefore - dipAfter, slice, "spent 25% of the USDC dip reserve");
-        assert.equal(nysehAfter - nysehBefore, slice * 100_000, "mock pool paid out at the fixed rate");
+        assert.equal(afhoAfter - afhoBefore, slice * 100_000, "mock pool paid out at the fixed rate");
         const st = await amm.account.ammState.fetch(ammStatePda);
         assert.equal(st.highestBuybackBasis.toNumber(), MOCK_EXEC_PRICE, "ratchet at exec price");
     });
@@ -279,7 +279,7 @@ describe("buy_the_dip", () => {
         await setMarket(2, 4, now());
         await mock.methods
             .setPrice(new anchor.BN(200_000)) // SOL = $200 in floor units
-            .accounts({ payer: payer.publicKey, nysehMint: usdcMint, mockPrice: solOraclePda })
+            .accounts({ payer: payer.publicKey, afhoMint: usdcMint, mockPrice: solOraclePda })
             .rpc();
         await provider.sendAndConfirm(new Transaction().add(SystemProgram.transfer({
             fromPubkey: payer.publicKey, toPubkey: solDip, lamports: SOL_DIP_FUND, // on top of init's rent
@@ -287,17 +287,17 @@ describe("buy_the_dip", () => {
 
         const solBefore = await solDipBalance();
         const dipBefore = await dipBalance();
-        const nysehBefore = await nysehBalance();
+        const afhoBefore = await afhoBalance();
         await dipTx();
         const solAfter = await solDipBalance();
-        const nysehAfter = await nysehBalance();
+        const afhoAfter = await afhoBalance();
 
         const rent0 = await provider.connection.getMinimumBalanceForRentExemption(0);
         const sliceSol = Math.floor((solBefore - rent0) * 0.25);
         const sliceUsdc = Math.floor(dipBefore * 0.25);
         assert.equal(solBefore - solAfter, sliceSol, "spent 25% of the SOL dip reserve");
-        // mock rates: 100_000 NYSEH per USDC raw, 10_000 per SOL lamport
-        assert.equal(nysehAfter - nysehBefore, sliceUsdc * 100_000 + sliceSol * 10_000, "both legs paid out at the fixed rate");
+        // mock rates: 100_000 AFHO per USDC raw, 10_000 per SOL lamport
+        assert.equal(afhoAfter - afhoBefore, sliceUsdc * 100_000 + sliceSol * 10_000, "both legs paid out at the fixed rate");
     });
 
     it("rejects an unauthorized cranker", async () => {

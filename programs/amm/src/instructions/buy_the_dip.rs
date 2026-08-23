@@ -3,7 +3,7 @@
 // The dip buyer — "always on" counterpart to dex_buyback. Not gated on market
 // state, not gated on offer fills: any time the live spot price sits below
 // the recent norm, the protocol spends a slice of the dip reserve (the 10%
-// claim split) buying NYSEH back.
+// claim split) buying AFHO back.
 //
 // Spec (modeled in sim/dip.py + sim/run_dip.py — see those for evidence):
 //   reference = mean of the nonzero samples in the high-frequency spot ring
@@ -23,7 +23,7 @@
 //
 // Fills ratchet highest_buyback_basis exactly like dex_buyback fills (the
 // ratchet only moves up, so cheap dip buys never lower the offer-desk floor).
-// Bought NYSEH lands in the main nyseh_vault — desk inventory.
+// Bought AFHO lands in the main afho_vault — desk inventory.
 //
 // NOTE (mainnet): spot_oracle / sol_oracle are raw-u64 mock PDAs on devnet;
 // swap in the real price-source adapters with the real DEX pool.
@@ -57,7 +57,7 @@ const SAMPLE_CAP_CP: i64 = 1_000;
 pub struct BuyTheDip<'info> {
     #[account(mut)]
     pub cranker: Signer<'info>,
-    #[account(mut, seeds = [b"amm_state", amm_state.nyseh_mint.as_ref()], bump = amm_state.bump,)]
+    #[account(mut, seeds = [b"amm_state", amm_state.afho_mint.as_ref()], bump = amm_state.bump,)]
     pub amm_state: Box<Account<'info, AmmState>>,
 
     /// CHECK: market status PDA — only the day index is read (dip buys are
@@ -69,7 +69,7 @@ pub struct BuyTheDip<'info> {
     )]
     pub market_status: UncheckedAccount<'info>,
 
-    #[account(mut, seeds = [b"metrics", amm_state.nyseh_mint.as_ref()], bump)]
+    #[account(mut, seeds = [b"metrics", amm_state.afho_mint.as_ref()], bump)]
     pub metrics: Box<Account<'info, MarketMetrics>>,
 
     /// CHECK: live absolute spot price (raw-u64 mock PDA on devnet; real
@@ -88,21 +88,21 @@ pub struct BuyTheDip<'info> {
     #[account(mut, address = amm_state.sol_dip)]
     pub sol_dip: AccountInfo<'info>,
     /// Swap out-leg destination: main desk inventory
-    #[account(mut, address = amm_state.nyseh_vault)]
-    pub nyseh_vault: Box<InterfaceAccount<'info, TokenAccount>>,
-    pub nyseh_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(mut, address = amm_state.afho_vault)]
+    pub afho_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub afho_mint: Box<InterfaceAccount<'info, Mint>>,
 
     // --- swap adapter accounts (mock-dex-pool today; real DEX at launch) ---
     /// CHECK: pool state PDA, verified against the configured dex_program
     #[account(
         mut,
-        seeds = [b"mock_pool", nyseh_mint.key().as_ref()],
+        seeds = [b"mock_pool", afho_mint.key().as_ref()],
         seeds::program = amm_state.dex_program,
         bump
     )]
     pub pool_state: UncheckedAccount<'info>,
-    #[account(mut, constraint = pool_nyseh.mint == amm_state.nyseh_mint)]
-    pub pool_nyseh: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(mut, constraint = pool_afho.mint == amm_state.afho_mint)]
+    pub pool_afho: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, constraint = pool_usdc.mint == amm_state.usdc_mint)]
     pub pool_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
     /// CHECK: lamport destination for the SOL leg (mock ignores it)
@@ -114,7 +114,7 @@ pub struct BuyTheDip<'info> {
 
     /// Classic SPL (USDC in-leg)
     pub token_program: Interface<'info, TokenInterface>,
-    /// Token-2022 (NYSEH out-leg via the pool)
+    /// Token-2022 (AFHO out-leg via the pool)
     pub token_2022_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
 }
@@ -184,13 +184,13 @@ pub fn handler(ctx: Context<BuyTheDip>) -> Result<()> {
         amm_state: ctx.accounts.amm_state.to_account_info(),
         // the vault slots carry the DIP reserve vaults here
         usdc_vault: ctx.accounts.usdc_dip.to_account_info(),
-        nyseh_vault: ctx.accounts.nyseh_vault.to_account_info(),
+        afho_vault: ctx.accounts.afho_vault.to_account_info(),
         sol_vault: ctx.accounts.sol_dip.to_account_info(),
         pool_state: ctx.accounts.pool_state.to_account_info(),
-        pool_nyseh: ctx.accounts.pool_nyseh.to_account_info(),
+        pool_afho: ctx.accounts.pool_afho.to_account_info(),
         pool_usdc: ctx.accounts.pool_usdc.to_account_info(),
         pool_sol: ctx.accounts.pool_sol.to_account_info(),
-        nyseh_mint: ctx.accounts.nyseh_mint.to_account_info(),
+        afho_mint: ctx.accounts.afho_mint.to_account_info(),
         dex_program: ctx.accounts.dex_program.to_account_info(),
         token_program: ctx.accounts.token_program.to_account_info(),
         token_2022_program: ctx.accounts.token_2022_program.to_account_info(),
@@ -262,7 +262,7 @@ pub fn handler(ctx: Context<BuyTheDip>) -> Result<()> {
         return Ok(());
     }
 
-    let mint_key = amm_state.nyseh_mint;
+    let mint_key = amm_state.afho_mint;
     let state_bump = amm_state.bump;
     let sol_dip_bump = amm_state.sol_dip_bump;
 
@@ -272,10 +272,10 @@ pub fn handler(ctx: Context<BuyTheDip>) -> Result<()> {
     let slice_usdc = (ctx.accounts.usdc_dip.amount as u128 * spend_bps as u128 / 10_000u128) as u64;
     let slice_usdc = slice_usdc.min(cap_left_usdc);
     if slice_usdc > 0 {
-        let before = ctx.accounts.nyseh_vault.amount;
+        let before = ctx.accounts.afho_vault.amount;
         execute_swap(&swap, mint_key, state_bump, b"amm_sol_dip", sol_dip_bump, slice_usdc, false)?;
-        ctx.accounts.nyseh_vault.reload()?;
-        let out = ctx.accounts.nyseh_vault.amount.saturating_sub(before);
+        ctx.accounts.afho_vault.reload()?;
+        let out = ctx.accounts.afho_vault.amount.saturating_sub(before);
         if out > 0 {
             ratchet_buyback_basis(amm_state, (slice_usdc as u128 * 1_000_000 / out as u128) as u64);
         }
@@ -289,10 +289,10 @@ pub fn handler(ctx: Context<BuyTheDip>) -> Result<()> {
     let slice_sol = (sol_available as u128 * spend_bps as u128 / 10_000u128) as u64;
     let slice_sol = slice_sol.min(cap_left_sol);
     if slice_sol > 0 {
-        let before = ctx.accounts.nyseh_vault.amount;
+        let before = ctx.accounts.afho_vault.amount;
         execute_swap(&swap, mint_key, state_bump, b"amm_sol_dip", sol_dip_bump, slice_sol, true)?;
-        ctx.accounts.nyseh_vault.reload()?;
-        let out = ctx.accounts.nyseh_vault.amount.saturating_sub(before);
+        ctx.accounts.afho_vault.reload()?;
+        let out = ctx.accounts.afho_vault.amount.saturating_sub(before);
         if out > 0 {
             // Ratchet in USDC units (lamports x sol_price / out), same as
             // dex_buyback's SOL leg — never mix units in the floor.

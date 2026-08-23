@@ -13,12 +13,12 @@ use super::helpers_make_offers::{record_price_change, record_stake_ratio};
 pub struct UpdateTradedayStats<'info> {
     #[account(mut)]
     pub cranker: Signer<'info>,
-    #[account(seeds = [b"amm_state", amm_state.nyseh_mint.as_ref()], bump = amm_state.bump,)]
+    #[account(seeds = [b"amm_state", amm_state.afho_mint.as_ref()], bump = amm_state.bump,)]
     pub amm_state: Account<'info, AmmState>,
 
     #[account(
         mut,
-        seeds = [b"metrics", amm_state.nyseh_mint.as_ref()],
+        seeds = [b"metrics", amm_state.afho_mint.as_ref()],
         bump
     )]
     pub market_metrics: Account<'info, MarketMetrics>,
@@ -37,9 +37,9 @@ pub struct UpdateTradedayStats<'info> {
     /// metric). Typed account: owner + discriminator checked automatically.
     #[account(address = amm_state.staking_pool)]
     pub staking_pool: Box<Account<'info, staking::StakePool>>,
-    /// NYSEH mint — the source of truth for total_supply.
-    #[account(address = amm_state.nyseh_mint)]
-    pub nyseh_mint: Box<InterfaceAccount<'info, Mint>>,
+    /// AFHO mint — the source of truth for total_supply.
+    #[account(address = amm_state.afho_mint)]
+    pub afho_mint: Box<InterfaceAccount<'info, Mint>>,
 }
 
 pub fn handler(ctx: Context<UpdateTradedayStats>) -> Result<()> {
@@ -69,7 +69,7 @@ pub fn handler(ctx: Context<UpdateTradedayStats>) -> Result<()> {
     // Refresh the staking inputs from their on-chain sources of truth before
     // recording today's stake ratio (without this, stake health reads 0).
     ctx.accounts.market_metrics.total_staked = ctx.accounts.staking_pool.total_staked;
-    ctx.accounts.market_metrics.total_supply = ctx.accounts.nyseh_mint.supply;
+    ctx.accounts.market_metrics.total_supply = ctx.accounts.afho_mint.supply;
 
     // End-of-day metric writes (helpers_make_offers.rs)
     record_price_change(

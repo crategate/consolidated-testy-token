@@ -30,7 +30,7 @@ pub fn lot_sizer(tier: u8) -> u32 {
 // each individual offer has index
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, InitSpace)]
 pub struct Offer {
-    pub lot_size: u8, // size in whole NYSEH tokens, 50, 100, 500, 1000, 5k, 10k, translated
+    pub lot_size: u8, // size in whole AFHO tokens, 50, 100, 500, 1000, 5k, 10k, translated
     // with "lot sizer" function
     pub vesting_days: u8, // how many trading days to unlock
     pub discount_bps: u8, // % bps discount from live DEX prices,
@@ -53,7 +53,7 @@ pub struct OfferList {
     pub med_offer: Offer,
 
     pub sml_offer: Offer,
-    pub total_complete: u32, // total whole NYSEH tokens sold
+    pub total_complete: u32, // total whole AFHO tokens sold
 
     pub bump: u8,
 }
@@ -65,10 +65,10 @@ pub struct AmmState {
     // calc_completed_offers). Cannot move funds — those check authority only.
     // Defaults to authority at init; rotate via set_keeper for mainnet.
     pub keeper: Pubkey,
-    pub nyseh_mint: Pubkey,
+    pub afho_mint: Pubkey,
     pub usdc_mint: Pubkey,
     // big main vault, initial supply and where fees/buybacks go
-    pub nyseh_vault: Pubkey,
+    pub afho_vault: Pubkey,
 
     // used for buybacks executed every trading day (following successful Offer Takes at night)
     pub sol_vault: Pubkey,
@@ -118,12 +118,12 @@ pub struct AmmState {
     // quote carrying the 24h price CHANGE for metrics.
     pub spot_oracle: Pubkey,
 
-    // Staking pool the offer desk CPIs into (purchased NYSEH vest here;
+    // Staking pool the offer desk CPIs into (purchased AFHO vest here;
     // the daily staker share is deposited here after conversion).
     pub staking_pool: Pubkey,
 
     // Holding vault for the stakers' 10% share of USDC proceeds. Accumulates
-    // per claim; distribute_staker_rewards converts it to NYSEH and deposits
+    // per claim; distribute_staker_rewards converts it to AFHO and deposits
     // into the staking reward vault once per trading day.
     pub usdc_rewards: Pubkey,
     // Idempotency guard for distribute_staker_rewards.
@@ -134,7 +134,7 @@ pub struct AmmState {
     // converts SOL-leg swap fills into USDC units for the ratchet floor.
     pub sol_oracle: Pubkey,
     // Holding vault (system PDA) for the stakers' 10% share of SOL proceeds —
-    // swapped to NYSEH by distribute_staker_rewards alongside usdc_rewards.
+    // swapped to AFHO by distribute_staker_rewards alongside usdc_rewards.
     pub sol_rewards: Pubkey,
 
     // Buy-the-dip day schedule (mirrors bb_*): dip-reserve snapshot at the
@@ -177,7 +177,7 @@ pub struct MarketMetrics {
     pub total_supply: u64,
     pub trailing_stake_health: [u8; 5], // used to calculate stake health, simple whole number %
 
-    // High-frequency spot-price ring (floor units: usdc_raw x 1e6 / nyseh_raw),
+    // High-frequency spot-price ring (floor units: usdc_raw x 1e6 / afho_raw),
     // self-sampled by buy_the_dip (throttled to one sample per SPOT_SAMPLE_SLOTS).
     // This — not the 24h change feed — is the dip trigger's reference: a dip is
     // the live spot price sitting below the recent mean of this ring. 0 = empty.

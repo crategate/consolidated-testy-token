@@ -1,4 +1,4 @@
-"""NYSEH offer-desk simulation driver — combiner v1 (frozen) vs v3 (pipeline).
+"""AFHO offer-desk simulation driver — combiner v1 (frozen) vs v3 (pipeline).
 
 Usage:
     python3 sim/run.py            # self-test + all scenarios + invariants + E1-E6
@@ -40,10 +40,10 @@ from scenarios import build_scenarios
 DAYS = 40
 SEED = 42
 
-SUPPLY = 1_000_000          # fixed 1M NYSEH
+SUPPLY = 1_000_000          # fixed 1M AFHO
 START_VAULT = 400_000.0     # tokens in the treasury vault
 START_STAKED_PCT = 40.0     # 400k staked
-START_PRICE = 1.0           # USDC per NYSEH
+START_PRICE = 1.0           # USDC per AFHO
 
 IMPACT_K = 1.0              # buyback price-impact knob (0 disables the loop)
 FILL_NOISE = 4.0            # acceptance model noise, fill-%

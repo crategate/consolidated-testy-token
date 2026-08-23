@@ -57,7 +57,7 @@ export interface OfferTierData {
 export interface ClaimAccounts {
     ammState: PublicKey;
     offerList: PublicKey;
-    nysehMint: PublicKey;
+    afhoMint: PublicKey;
     usdcMint: PublicKey;
     spotOracle: PublicKey;
     marketStatus: PublicKey;
@@ -66,14 +66,14 @@ export interface ClaimAccounts {
     ammUsdcVault: PublicKey;
     usdcDip: PublicKey;
     usdcRewards: PublicKey;
-    ammNysehVault: PublicKey;
+    ammAfhoVault: PublicKey;
 }
 
 export interface OfferDeskData {
     tiers: OfferTierData[];
     livePrice: bigint | null;    // raw u64 floor units from the spot oracle
     floorBasis: bigint;          // highest_buyback_basis ratchet floor
-    nysehDecimals: number;
+    afhoDecimals: number;
     usdcDecimals: number;
     marketState: number | null;  // 0 open · 1 after-hours · 2 closed · 3 halted
     tradingDay: number | null;
@@ -96,7 +96,7 @@ const INITIAL: Omit<OfferDeskData, 'refresh'> = {
     tiers: [],
     livePrice: null,
     floorBasis: 0n,
-    nysehDecimals: 9,
+    afhoDecimals: 9,
     usdcDecimals: 6,
     marketState: null,
     tradingDay: null,
@@ -164,7 +164,7 @@ export function useAmmData(): OfferDeskData {
             );
 
             // dependent accounts: price oracle, market status, mints, staking pool
-            const [spotInfo, statusInfo, nysehInfo, usdcInfo, poolInfo] =
+            const [spotInfo, statusInfo, afhoInfo, usdcInfo, poolInfo] =
                 await connection.getMultipleAccountsInfo([
                     spotOracle,
                     marketStatusPda,
@@ -189,7 +189,7 @@ export function useAmmData(): OfferDeskData {
             }
 
             // SPL mint layout: decimals byte at offset 44
-            const nysehDecimals = nysehInfo && nysehInfo.data.length > 44 ? nysehInfo.data[44] : 9;
+            const afhoDecimals = afhoInfo && afhoInfo.data.length > 44 ? afhoInfo.data[44] : 9;
             const usdcDecimals = usdcInfo && usdcInfo.data.length > 44 ? usdcInfo.data[44] : 6;
 
             const pool = poolInfo ? decode(stakingCoder, 'StakePool', poolInfo.data) : null;
@@ -213,13 +213,13 @@ export function useAmmData(): OfferDeskData {
             const usdcVault = pub(ammState, 'usdcVault');
             const usdcDip = pub(ammState, 'usdcDip');
             const usdcRewards = pub(ammState, 'usdcRewards');
-            const nysehVault = pub(ammState, 'nysehVault');
+            const afhoVault = pub(ammState, 'afhoVault');
             const accounts: ClaimAccounts | null =
-                usdcMint && usdcVault && usdcDip && usdcRewards && nysehVault && stakingVault
+                usdcMint && usdcVault && usdcDip && usdcRewards && afhoVault && stakingVault
                     ? {
                         ammState: ammStatePda,
                         offerList: offerListPda,
-                        nysehMint: mint,
+                        afhoMint: mint,
                         usdcMint,
                         spotOracle,
                         marketStatus: marketStatusPda,
@@ -228,7 +228,7 @@ export function useAmmData(): OfferDeskData {
                         ammUsdcVault: usdcVault,
                         usdcDip,
                         usdcRewards,
-                        ammNysehVault: nysehVault,
+                        ammAfhoVault: afhoVault,
                     }
                     : null;
 
@@ -236,7 +236,7 @@ export function useAmmData(): OfferDeskData {
                 tiers,
                 livePrice,
                 floorBasis: big(ammState.highestBuybackBasis),
-                nysehDecimals,
+                afhoDecimals,
                 usdcDecimals,
                 marketState,
                 tradingDay,

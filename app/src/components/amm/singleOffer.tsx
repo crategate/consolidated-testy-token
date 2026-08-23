@@ -6,7 +6,7 @@ interface SingleOfferProps {
     qty: number;
     livePrice: bigint | null;
     floorBasis: bigint;
-    nysehDecimals: number;
+    afhoDecimals: number;
     usdcDecimals: number;
     disabled: boolean;
     onQtyChange: (qty: number) => void;
@@ -17,7 +17,7 @@ export default function SingleOffer({
     qty,
     livePrice,
     floorBasis,
-    nysehDecimals,
+    afhoDecimals,
     usdcDecimals,
     disabled,
     onQtyChange,
@@ -30,7 +30,7 @@ export default function SingleOffer({
     let perLot: string | null = null;
     if (livePrice !== null && livePrice > 0n) {
         const eff = effectivePrice(livePrice, offer.discountBps, floorBasis);
-        const usd = pricePerToken(eff, nysehDecimals, usdcDecimals) * offer.lotTokens;
+        const usd = pricePerToken(eff, afhoDecimals, usdcDecimals) * offer.lotTokens;
         perLot = usd >= 1
             ? usd.toLocaleString('en-US', { maximumFractionDigits: 2 })
             : usd.toPrecision(3);
@@ -44,7 +44,7 @@ export default function SingleOffer({
             </header>
 
             <div className="offer-lot-size">
-                {formatTokens(offer.lotTokens)} <span>NYSEH / lot</span>
+                {formatTokens(offer.lotTokens)} <span>AFHO / lot</span>
             </div>
 
             <dl className="offer-facts">
