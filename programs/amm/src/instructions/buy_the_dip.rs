@@ -32,7 +32,7 @@ use crate::state::offersState::{AmmState, MarketMetrics};
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
-use super::dex_buyback::{execute_swap, ratchet_buyback_basis, SwapInfos};
+use super::dex_buyback::{execute_swap, ratchet_within_band, SwapInfos};
 use super::offer_claim::read_live_price;
 
 // Spot ring: ~30s between samples, 32 slots of history, 5 samples before the
@@ -91,6 +91,8 @@ pub struct BuyTheDip<'info> {
     #[account(mut, address = amm_state.afho_vault)]
     pub afho_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     pub afho_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(address = amm_state.usdc_mint)]
+    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
 
     // --- swap adapter accounts (mock-dex-pool today; real DEX at launch) ---
     /// CHECK: pool state PDA, verified against the configured dex_program
@@ -101,12 +103,25 @@ pub struct BuyTheDip<'info> {
         bump
     )]
     pub pool_state: UncheckedAccount<'info>,
-    #[account(mut, constraint = pool_afho.mint == amm_state.afho_mint)]
+    // H1 — pinned to the pool's own topology (same as dex_buyback): the pool
+    // token accounts are the pool PDA's ATAs, pool_sol is the pool PDA
+    // itself, so a compromised keeper can't redirect the in-leg.
+    #[account(
+        mut,
+        associated_token::mint = afho_mint,
+        associated_token::authority = pool_state,
+        associated_token::token_program = token_2022_program,
+    )]
     pub pool_afho: Box<InterfaceAccount<'info, TokenAccount>>,
-    #[account(mut, constraint = pool_usdc.mint == amm_state.usdc_mint)]
+    #[account(
+        mut,
+        associated_token::mint = usdc_mint,
+        associated_token::authority = pool_state,
+        associated_token::token_program = token_program,
+    )]
     pub pool_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
-    /// CHECK: lamport destination for the SOL leg (mock ignores it)
-    #[account(mut)]
+    /// CHECK: lamport destination for the SOL leg — the pool PDA itself
+    #[account(mut, address = pool_state.key())]
     pub pool_sol: AccountInfo<'info>,
     /// CHECK: configured swap target program
     #[account(address = amm_state.dex_program)]
@@ -277,7 +292,12 @@ pub fn handler(ctx: Context<BuyTheDip>) -> Result<()> {
         ctx.accounts.afho_vault.reload()?;
         let out = ctx.accounts.afho_vault.amount.saturating_sub(before);
         if out > 0 {
-            ratchet_buyback_basis(amm_state, (slice_usdc as u128 * 1_000_000 / out as u128) as u64);
+            // M3: fill must sit inside the slippage band vs spot
+            ratchet_within_band(
+                amm_state,
+                (slice_usdc as u128 * 1_000_000 / out as u128) as u64,
+                spot,
+            )?;
         }
         amm_state.dip_spent_usdc += slice_usdc;
     }
@@ -295,11 +315,12 @@ pub fn handler(ctx: Context<BuyTheDip>) -> Result<()> {
         let out = ctx.accounts.afho_vault.amount.saturating_sub(before);
         if out > 0 {
             // Ratchet in USDC units (lamports x sol_price / out), same as
-            // dex_buyback's SOL leg — never mix units in the floor.
+            // dex_buyback's SOL leg — never mix units in the floor. M3:
+            // band-checked against the AFHO spot price like the USDC leg.
             let sol_price = read_live_price(&ctx.accounts.sol_oracle.to_account_info())?;
             require!(sol_price > 0, ErrorCode::InvalidOracle);
             let px = (slice_sol as u128).saturating_mul(sol_price as u128) / out as u128;
-            ratchet_buyback_basis(amm_state, u64::try_from(px).unwrap_or(u64::MAX));
+            ratchet_within_band(amm_state, u64::try_from(px).unwrap_or(u64::MAX), spot)?;
         }
         amm_state.dip_spent_sol += slice_sol;
     }

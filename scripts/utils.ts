@@ -653,10 +653,14 @@ export async function basicReadOracleIx(
     program: anchor.Program,
     quoteAccount: PublicKey,
     _queue: PublicKey,  // unused but kept to avoid changing callers
-    _payer: PublicKey,  // unused but kept to avoid changing callers
+    payer: PublicKey,
 ): Promise<TransactionInstruction> {
     const [marketStatusPda] = PublicKey.findProgramAddressSync(
         [Buffer.from("market_status")],
+        program.programId
+    );
+    const [bountyConfigPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("bounty_config")],
         program.programId
     );
     const [feeAuthorityPda] = PublicKey.findProgramAddressSync(
@@ -668,6 +672,8 @@ export async function basicReadOracleIx(
     return await program.methods
         .readOracleData()
         .accounts({
+            cranker: payer,
+            bountyConfig: bountyConfigPda,
             quoteAccount: quoteAccount,
             clock: SYSVAR_CLOCK_PUBKEY,        // was clockSysvar
             marketStatus: marketStatusPda,

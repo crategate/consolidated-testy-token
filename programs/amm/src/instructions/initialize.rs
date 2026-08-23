@@ -37,7 +37,12 @@ pub fn handler(
     amm_state.total_sol_proceeds = 0;
     amm_state.total_usdc_proceeds = 0;
     amm_state.highest_buyback_basis = 0;
-    amm_state.bb_day_index = 0;
+    // All day-index guards init to u64::MAX, NOT 0: the first trading day IS
+    // day 0, and the guards are `stored != current_day` — a 0 init would
+    // deadlock make_offers / update_tradeday_stats / calc_completed_offers /
+    // distribute_staker_rewards on launch day (L1). u64::MAX never collides
+    // with a real day index.
+    amm_state.bb_day_index = u64::MAX;
     amm_state.bb_budget_usdc = 0;
     amm_state.bb_spent_usdc = 0;
     amm_state.bb_budget_sol = 0;
@@ -48,10 +53,10 @@ pub fn handler(
     amm_state.spot_oracle = spot_oracle;
     amm_state.staking_pool = staking_pool;
     amm_state.usdc_rewards = ctx.accounts.usdc_rewards.key();
-    amm_state.rewards_day_index = 0;
+    amm_state.rewards_day_index = u64::MAX;
     amm_state.sol_oracle = sol_oracle;
     amm_state.sol_rewards = ctx.accounts.sol_rewards.key();
-    amm_state.dip_day_index = 0;
+    amm_state.dip_day_index = u64::MAX;
     amm_state.dip_day_usdc = 0;
     amm_state.dip_day_sol = 0;
     amm_state.dip_spent_usdc = 0;
@@ -65,7 +70,7 @@ pub fn handler(
 
     offer_list.owner = ctx.accounts.authority.key();
     offer_list.seed = 0;
-    offer_list.day_index = 0;
+    offer_list.day_index = u64::MAX; // L1: see day-index comment above
     offer_list.total_complete = 0;
     offer_list.bump = ctx.bumps.offer_list;
 
@@ -81,13 +86,13 @@ pub fn handler(
     offer_list.sml_offer = empty_offer;
 
     let accepted_offers = &mut ctx.accounts.accepted_offers;
-    accepted_offers.day_index = 0;
+    accepted_offers.day_index = u64::MAX; // L1
     accepted_offers.big_offers_accepted = [0; 5];
     accepted_offers.med_offers_accepted = [0; 5];
     accepted_offers.sml_offers_accepted = [0; 5];
 
     let metrics = &mut ctx.accounts.metrics;
-    metrics.day_index = 0;
+    metrics.day_index = u64::MAX; // L1
     metrics.price_changes = [0; 20];
     metrics.sample_head = 0;
     metrics.treasury_sol = 0;

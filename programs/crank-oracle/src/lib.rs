@@ -10,6 +10,8 @@ pub enum CrankError {
     NoFeeds,
     #[msg("Feed value could not be converted to u8")]
     InvalidFeedValue,
+    #[msg("Market state must be 0-3 (open/after-hours/closed/halted)")]
+    InvalidMarketState,
     #[msg("Wrong authority payer key bounty_config")]
     InvalidAuthority,
     #[msg("Quote provided too stale")]
@@ -62,10 +64,14 @@ pub mod crank_oracle {
         require!(staleness <= max_age, CrankError::QuoteTooStale);
         require!(quote_slot > last_slot, CrankError::StaleQuote);
 
-        let market_state = ctx.accounts.quote_account.feeds[0]
+        let feeds = &ctx.accounts.quote_account.feeds;
+        require!(!feeds.is_empty(), CrankError::NoFeeds);
+
+        let market_state = feeds[0]
             .value()
             .to_u8()
             .ok_or(CrankError::InvalidFeedValue)?;
+        require!(market_state <= 3, CrankError::InvalidMarketState);
 
         let market_status = &mut ctx.accounts.market_status;
         let old_state = market_status.current_state;
@@ -85,7 +91,8 @@ pub mod crank_oracle {
 
         let bounty = ctx.accounts.bounty_config.bounty_amount;
         require!(
-            ctx.accounts.bounty_vault.lamports() >= bounty,
+            ctx.accounts.bounty_vault.lamports()
+                >= bounty + Rent::get()?.minimum_balance(1),
             CrankError::BountyExhausted
         );
 
@@ -111,12 +118,22 @@ pub mod crank_oracle {
         Ok(())
     }
     pub fn read_oracle_data(ctx: Context<ReadOracleData>) -> Result<()> {
+        let quote_slot = ctx.accounts.quote_account.slot;
+        let last_slot = ctx.accounts.bounty_config.last_crank_slot;
+        let current_slot = ctx.accounts.clock.slot;
+        let staleness = current_slot.saturating_sub(quote_slot);
+
+        let max_age = match ctx.accounts.market_status.current_state {
+            0 | 1 => 100,
+            _ => 300,
+        };
+        require!(staleness <= max_age, CrankError::QuoteTooStale);
+        // Read-only monotonic check: no bounty is paid and last_crank_slot is
+        // NOT updated here (that's the paying path, permissionless_crank).
+        require!(quote_slot > last_slot, CrankError::StaleQuote);
+
         let feeds = &ctx.accounts.quote_account.feeds;
         require!(!feeds.is_empty(), CrankError::NoFeeds);
-
-        let current_slot = ctx.accounts.clock.slot;
-        let quote_slot = ctx.accounts.quote_account.slot;
-        let staleness = current_slot.saturating_sub(quote_slot);
 
         msg!(
             "Feeds: {} | Quote slot: {} | Staleness: {}",
@@ -129,6 +146,7 @@ pub mod crank_oracle {
             .value()
             .to_u8()
             .ok_or(CrankError::InvalidFeedValue)?;
+        require!(new_state <= 3, CrankError::InvalidMarketState);
 
         let market_status = &mut ctx.accounts.market_status;
         let old_state = market_status.current_state;
@@ -158,6 +176,18 @@ pub mod crank_oracle {
         state.current_state = 99;
         state.trading_day_index = 0;
         state.last_updated_timestamp = 0;
+        Ok(())
+    }
+
+    pub fn set_bounty_amount(ctx: Context<UpdateBounty>, new_amount: u64) -> Result<()> {
+        ctx.accounts.bounty_config.bounty_amount = new_amount;
+        msg!("Bounty amount set to: {}", new_amount);
+        Ok(())
+    }
+
+    pub fn set_authority(ctx: Context<UpdateBounty>, new_authority: Pubkey) -> Result<()> {
+        ctx.accounts.bounty_config.authority = new_authority;
+        msg!("Bounty authority rotated to: {}", new_authority);
         Ok(())
     }
     // Add this instruction for testing ONLY — remove before mainnet
@@ -229,11 +259,26 @@ pub struct PermissionlessCrank<'info> {
 
 #[derive(Accounts)]
 pub struct ReadOracleData<'info> {
+    pub cranker: Signer<'info>,
+    #[account(seeds = [b"bounty_config"], bump = bounty_config.bump)]
+    pub bounty_config: Account<'info, BountyConfig>,
     #[account(address = quote_account.canonical_key(&default_queue()))]
     pub quote_account: Box<Account<'info, SwitchboardQuote>>,
     pub clock: Sysvar<'info, Clock>,
-    #[account(mut)]
+    #[account(mut, seeds = [b"market_status"], bump)]
     pub market_status: Account<'info, MarketStatus>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateBounty<'info> {
+    pub authority: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"bounty_config"],
+        bump = bounty_config.bump,
+        has_one = authority @ CrankError::InvalidAuthority,
+    )]
+    pub bounty_config: Account<'info, BountyConfig>,
 }
 
 #[account]

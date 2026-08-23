@@ -61,6 +61,16 @@ pub fn handler(ctx: Context<CalcCompletedOffers>) -> Result<()> {
     );
     ctx.accounts.accepted_offers.day_index = current_day;
 
+    // M2 — only score YESTERDAY's sheet. Without this freshness check a missed
+    // make_offers night double-counts the stale sheet's fill %, and a
+    // partially-filled stale sheet keeps resetting untaken_days forever,
+    // permanently blocking ratchet-floor decay. Day 0 has no yesterday's
+    // sheet (L1 inits day_index to u64::MAX), so this correctly errors there.
+    require!(
+        ctx.accounts.offer_list.day_index == current_day.saturating_sub(1),
+        ErrorCode::StaleOfferSheet
+    );
+
     let offer_list = &ctx.accounts.offer_list;
     let big_pct = pct_accepted(&offer_list.big_offer);
     let med_pct = pct_accepted(&offer_list.med_offer);
@@ -156,6 +166,8 @@ pub enum ErrorCode {    #[msg("Unauthorized caller")]
     InvalidMarketState,
     #[msg("Already constructed for this day")]
     AlreadyConstructed,
+    #[msg("Offer sheet is not yesterday's — stale or missing sheet")]
+    StaleOfferSheet,
     #[msg("Invalid price oracle")]
     InvalidOracle,
 }

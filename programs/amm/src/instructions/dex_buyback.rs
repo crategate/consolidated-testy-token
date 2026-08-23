@@ -14,6 +14,12 @@ const MIN_SLICE_SLOTS: u64 = 150;
 const FIRST_HOUR_WEIGHT_BPS: u64 = 190;
 const TAIL_WEIGHT_BPS: u64 = 500;
 
+// M3 — per-fill sanity band vs the spot oracle: a fill whose exec price
+// overpays the oracle by more than this reverts the whole tx (the swap rolls
+// back with it), and the floor ratchets only inside the band — a price spike
+// into a fill can't pin the offer-desk floor above market.
+pub(crate) const MAX_SLIPPAGE_BPS: u64 = 500; // 5%
+
 #[derive(Accounts)]
 pub struct DexBuyback<'info> {
     #[account(mut)]
@@ -45,7 +51,14 @@ pub struct DexBuyback<'info> {
     /// devnet; real SOL/USD feed at mainnet)
     #[account(address = amm_state.sol_oracle)]
     pub sol_oracle: UncheckedAccount<'info>,
+    /// CHECK: live absolute spot price — the M3 slippage band for every fill
+    /// is measured against this (raw-u64 mock PDA on devnet; real price
+    /// source at mainnet). Address pinned at init.
+    #[account(address = amm_state.spot_oracle)]
+    pub spot_oracle: UncheckedAccount<'info>,
     pub afho_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(address = amm_state.usdc_mint)]
+    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
 
     // --- swap adapter accounts (mock-dex-pool today; real DEX at launch) ---
     /// CHECK: pool state PDA, verified against the configured dex_program
@@ -56,13 +69,27 @@ pub struct DexBuyback<'info> {
         bump
     )]
     pub pool_state: UncheckedAccount<'info>,
-    #[account(mut, constraint = pool_afho.mint == amm_state.afho_mint)]
+    // H1 — the swap accounts are pinned to the pool's own topology so a
+    // compromised keeper can't point the in-leg at itself and pocket the
+    // day's spend: pool token accounts are the pool PDA's ATAs (AFHO on
+    // Token-2022, USDC on classic SPL), pool_sol is the pool PDA itself.
+    #[account(
+        mut,
+        associated_token::mint = afho_mint,
+        associated_token::authority = pool_state,
+        associated_token::token_program = token_2022_program,
+    )]
     pub pool_afho: Box<InterfaceAccount<'info, TokenAccount>>,
-    #[account(mut, constraint = pool_usdc.mint == amm_state.usdc_mint)]
+    #[account(
+        mut,
+        associated_token::mint = usdc_mint,
+        associated_token::authority = pool_state,
+        associated_token::token_program = token_program,
+    )]
     pub pool_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
-    /// CHECK: lamport destination for the SOL leg (any system account; the
-    /// mock ignores it, a real pool would constrain this)
-    #[account(mut)]
+    /// CHECK: lamport destination for the SOL leg — the pool PDA itself
+    /// (mock topology; the real-DEX adapter re-pins this)
+    #[account(mut, address = pool_state.key())]
     pub pool_sol: AccountInfo<'info>,
     /// CHECK: configured swap target program
     #[account(address = amm_state.dex_program)]
@@ -214,7 +241,12 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
         ctx.accounts.afho_vault.reload()?;
         let out = ctx.accounts.afho_vault.amount.saturating_sub(before);
         if out > 0 {
-            ratchet_buyback_basis(amm_state, (slice_usdc as u128 * 1_000_000 / out as u128) as u64);
+            let spot = read_live_price(&ctx.accounts.spot_oracle.to_account_info())?;
+            ratchet_within_band(
+                amm_state,
+                (slice_usdc as u128 * 1_000_000 / out as u128) as u64,
+                spot,
+            )?;
         }
         amm_state.bb_spent_usdc += slice_usdc;
     }
@@ -242,7 +274,8 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
             let sol_price = read_live_price(&ctx.accounts.sol_oracle.to_account_info())?;
             require!(sol_price > 0, ErrorCode::InvalidOracle);
             let px = (slice_sol as u128).saturating_mul(sol_price as u128) / out as u128;
-            ratchet_buyback_basis(amm_state, u64::try_from(px).unwrap_or(u64::MAX));
+            let spot = read_live_price(&ctx.accounts.spot_oracle.to_account_info())?;
+            ratchet_within_band(amm_state, u64::try_from(px).unwrap_or(u64::MAX), spot)?;
         }
         amm_state.bb_spent_sol += slice_sol;
     }
@@ -338,6 +371,24 @@ pub(crate) fn ratchet_buyback_basis(amm_state: &mut AmmState, executed_price: u6
     }
 }
 
+// M3 — gate a fill's ratchet on the spot-oracle band (MAX_SLIPPAGE_BPS).
+// Overpaying fills are a hard error, reverting the whole tx — the in-leg
+// transfer and the out-leg CPI roll back with it. In-band fills ratchet;
+// underpaying fills (exec below oracle) ratchet too — they can only move the
+// floor up BELOW market, never pin it above. Missing/unreadable/zero oracle
+// fails closed (read_live_price / the oracle_price check).
+pub(crate) fn ratchet_within_band(
+    amm_state: &mut AmmState,
+    exec_price: u64,
+    oracle_price: u64,
+) -> Result<()> {
+    require!(oracle_price > 0, ErrorCode::InvalidOracle);
+    let cap = (oracle_price as u128 * (10_000 + MAX_SLIPPAGE_BPS) as u128 / 10_000) as u64;
+    require!(exec_price <= cap, ErrorCode::SlippageExceeded);
+    ratchet_buyback_basis(amm_state, exec_price);
+    Ok(())
+}
+
 #[error_code]
 pub enum ErrorCode {
     #[msg("Unauthorized caller")]
@@ -348,6 +399,8 @@ pub enum ErrorCode {
     InvalidMarketState,
     #[msg("No offers were taken last night — nothing to buy back")]
     NoFillsToBuyBack,
+    #[msg("Fill exec price overpays the spot oracle beyond MAX_SLIPPAGE_BPS")]
+    SlippageExceeded,
     #[msg("Invalid SOL price oracle")]
     InvalidOracle,
 }

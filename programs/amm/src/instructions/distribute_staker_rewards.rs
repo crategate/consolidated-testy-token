@@ -17,7 +17,7 @@ use crate::state::offersState::AmmState;
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
-use super::dex_buyback::{execute_swap, ratchet_buyback_basis, SwapInfos};
+use super::dex_buyback::{execute_swap, ratchet_within_band, SwapInfos};
 use super::offer_claim::read_live_price;
 
 #[derive(Accounts)]
@@ -47,10 +47,16 @@ pub struct DistributeStakerRewards<'info> {
     /// units for the ratchet floor
     #[account(address = amm_state.sol_oracle)]
     pub sol_oracle: UncheckedAccount<'info>,
+    /// CHECK: live absolute spot price — the M3 slippage band for every fill
+    /// is measured against this. Address pinned at init.
+    #[account(address = amm_state.spot_oracle)]
+    pub spot_oracle: UncheckedAccount<'info>,
     /// Swap out-leg destination + deposit source
     #[account(mut, address = amm_state.afho_vault)]
     pub afho_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     pub afho_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(address = amm_state.usdc_mint)]
+    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
 
     // --- swap adapter accounts (mock-dex-pool today; real DEX at launch) ---
     /// CHECK: pool state PDA, verified against the configured dex_program
@@ -61,13 +67,25 @@ pub struct DistributeStakerRewards<'info> {
         bump
     )]
     pub pool_state: UncheckedAccount<'info>,
-    #[account(mut, constraint = pool_afho.mint == amm_state.afho_mint)]
+    // H1 — pinned to the pool's own topology (same as dex_buyback): the pool
+    // token accounts are the pool PDA's ATAs, pool_sol is the pool PDA
+    // itself, so a compromised keeper can't redirect the in-leg.
+    #[account(
+        mut,
+        associated_token::mint = afho_mint,
+        associated_token::authority = pool_state,
+        associated_token::token_program = token_2022_program,
+    )]
     pub pool_afho: Box<InterfaceAccount<'info, TokenAccount>>,
-    #[account(mut, constraint = pool_usdc.mint == amm_state.usdc_mint)]
+    #[account(
+        mut,
+        associated_token::mint = usdc_mint,
+        associated_token::authority = pool_state,
+        associated_token::token_program = token_program,
+    )]
     pub pool_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
-    /// CHECK: lamport destination for the SOL in-leg (any system account; the
-    /// mock ignores it, a real pool would constrain this)
-    #[account(mut)]
+    /// CHECK: lamport destination for the SOL in-leg — the pool PDA itself
+    #[account(mut, address = pool_state.key())]
     pub pool_sol: AccountInfo<'info>,
     /// CHECK: configured swap target program
     #[account(address = amm_state.dex_program)]
@@ -165,7 +183,13 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
         let out = ctx.accounts.afho_vault.amount.saturating_sub(before);
         if out > 0 {
             // USDC leg: (usdc_raw × 1e6) / afho_raw — already floor units.
-            ratchet_buyback_basis(amm_state, (usdc_in as u128 * 1_000_000 / out as u128) as u64);
+            // M3: band-checked against the spot oracle.
+            let spot = read_live_price(&ctx.accounts.spot_oracle.to_account_info())?;
+            ratchet_within_band(
+                amm_state,
+                (usdc_in as u128 * 1_000_000 / out as u128) as u64,
+                spot,
+            )?;
         }
         total_out = total_out.saturating_add(out);
     }
@@ -187,10 +211,12 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
         if out > 0 {
             // Convert to USDC units before ratcheting: lamports × sol_price /
             // out == (usdc_raw × 1e6) / afho_raw — never mix units in floor.
+            // M3: band-checked against the spot oracle like the USDC leg.
             let sol_price = read_live_price(&ctx.accounts.sol_oracle.to_account_info())?;
             require!(sol_price > 0, ErrorCode::InvalidOracle);
             let px = (sol_in as u128).saturating_mul(sol_price as u128) / out as u128;
-            ratchet_buyback_basis(amm_state, u64::try_from(px).unwrap_or(u64::MAX));
+            let spot = read_live_price(&ctx.accounts.spot_oracle.to_account_info())?;
+            ratchet_within_band(amm_state, u64::try_from(px).unwrap_or(u64::MAX), spot)?;
         }
         total_out = total_out.saturating_add(out);
     }

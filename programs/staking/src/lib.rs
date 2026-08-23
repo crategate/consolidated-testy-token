@@ -100,6 +100,13 @@ pub mod staking {
             StakeError::InvalidMarketStatus
         );
 
+        // SECURITY: bps values above 10_000 would let penalty/tax legs charge
+        // more than 100% and drain the shared vaults.
+        require!(posr_tax_bps <= 10_000, StakeError::InvalidBps);
+        require!(after_hours_penalty_bps <= 10_000, StakeError::InvalidBps);
+        require!(closed_penalty_bps <= 10_000, StakeError::InvalidBps);
+        require!(halted_penalty_bps <= 10_000, StakeError::InvalidBps);
+
         let pool = &mut ctx.accounts.pool;
         pool.authority = ctx.accounts.authority.key();
         pool.mint = ctx.accounts.mint.key();
@@ -234,6 +241,13 @@ pub mod staking {
     pub fn stake(ctx: Context<Stake>, amount: u64, index: u64, days: u8) -> Result<()> {
         require!(amount > 0, StakeError::ZeroAmount);
         require!(amount >= 100, StakeError::MinStake);
+        // Positions are only created sequentially at the next free index —
+        // an arbitrary index can collide with a future PDA or overflow the
+        // next_index increment (index = u64::MAX panics).
+        require!(
+            index == ctx.accounts.user_index.next_index,
+            StakeError::InvalidIndex
+        );
 
         let pool = &mut ctx.accounts.pool;
         let position = &mut ctx.accounts.position;
@@ -827,4 +841,8 @@ pub enum StakeError {
     ClaimsClosed,
     #[msg("No stakers to distribute to")]
     NoStakers,
+    #[msg("Position index must equal the next free index for this user")]
+    InvalidIndex,
+    #[msg("bps value exceeds 10_000 (100%)")]
+    InvalidBps,
 }

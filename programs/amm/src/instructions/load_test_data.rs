@@ -41,6 +41,10 @@ pub struct TestMetrics {
     // Ratchet-decay test knobs. buyback_basis only overwritten when > 0.
     pub buyback_basis: u64,
     pub untaken_days: u16,
+    // Sheet day-index knob — needed now that calc_completed_offers (M2) only
+    // scores yesterday's sheet and offer_claim requires today's. Only
+    // overwritten when != u64::MAX (pass u64::MAX to leave it alone).
+    pub offer_day_index: u64,
     // Dip-buyer test knobs: high-frequency spot ring (floor units). Only
     // overwritten when any entry is nonzero (pass zeros to leave it alone).
     pub spot_prices: [u64; 32],
@@ -95,6 +99,9 @@ pub fn handler(ctx: Context<LoadTestData>, data: TestMetrics) -> Result<()> {
     amm_state.untaken_days = data.untaken_days;
 
     let offer_list = &mut ctx.accounts.offer_list;
+    if data.offer_day_index != u64::MAX {
+        offer_list.day_index = data.offer_day_index;
+    }
     offer_list.big_offer.total_offered = data.big_offered;
     offer_list.big_offer.remaining = data.big_remaining;
     offer_list.med_offer.total_offered = data.med_offered;
