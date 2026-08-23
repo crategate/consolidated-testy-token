@@ -14,7 +14,7 @@ import {
     TOKEN_2022_PROGRAM_ID,
 } from "@solana/spl-token";
 
-describe("NYSEH Staking", () => {
+describe("AFHO Staking", () => {
     const provider = anchor.AnchorProvider.env();
     anchor.setProvider(provider);
 
@@ -165,7 +165,7 @@ describe("NYSEH Staking", () => {
                 vault: vaultPda,
                 rewardVault: rewardVaultPda,
                 penaltyVault: penaltyVaultPda,
-                nysehVault: posrVaultPda,
+                afhoVault: posrVaultPda,
                 marketStatusPda,
                 tokenProgram: TOKEN_2022_PROGRAM_ID,
                 systemProgram: SystemProgram.programId,
@@ -253,7 +253,7 @@ describe("NYSEH Staking", () => {
                 pool: poolPda,
                 position: positionPda,
                 rewardVault: rewardVaultPda,
-                nysehVault: posrVaultPda,
+                afhoVault: posrVaultPda,
                 ownerToken: userToken,
                 marketStatus: marketStatusPda,
                 tokenProgram: TOKEN_2022_PROGRAM_ID,
@@ -285,7 +285,7 @@ describe("NYSEH Staking", () => {
                     pool: poolPda,
                     position: positionPda,
                     rewardVault: rewardVaultPda,
-                    nysehVault: posrVaultPda,
+                    afhoVault: posrVaultPda,
                     ownerToken: userToken,
                     marketStatus: marketStatusPda,
                     tokenProgram: TOKEN_2022_PROGRAM_ID,
@@ -318,7 +318,7 @@ describe("NYSEH Staking", () => {
                 vault: vaultPda,
                 rewardVault: rewardVaultPda,
                 penaltyVault: penaltyVaultPda,
-                nysehVault: posrVaultPda,
+                afhoVault: posrVaultPda,
                 ownerToken: userToken,
                 marketStatus: marketStatusPda,
                 tokenProgram: TOKEN_2022_PROGRAM_ID,

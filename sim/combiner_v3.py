@@ -50,7 +50,7 @@ import math
 
 from metrics import MAX_OFFER_PCT_BPS, clamp
 
-# lot_sizer() mirror: tier index 0..21 -> whole NYSEH per lot
+# lot_sizer() mirror: tier index 0..21 -> whole AFHO per lot
 LOT_LADDER = [0, 10, 25, 50, 100, 250, 500, 750, 1000, 2500, 5000, 7500,
               10000, 15000, 20000, 50000, 100000, 250000, 500000, 1000000,
               2500000, 5000000]

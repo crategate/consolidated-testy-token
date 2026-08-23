@@ -3,11 +3,11 @@
 // The night desk's taking instructions — one per payment currency:
 //   offer_claim      buyer pays USDC
 //   offer_claim_sol  buyer pays SOL (lamports, priced via the sol_oracle)
-// Both buy discounted, vesting NYSEH lots. Payment splits 80/10/10 at claim
+// Both buy discounted, vesting AFHO lots. Payment splits 80/10/10 at claim
 // time: 80% stays in the buyback vault (dex_buyback spends it while the
 // market is open), 10% to the dip reserve, 10% to the staker-rewards holding
-// vault (converted to NYSEH and distributed once per day by
-// distribute_staker_rewards). Purchased NYSEH never touches the buyer's
+// vault (converted to AFHO and distributed once per day by
+// distribute_staker_rewards). Purchased AFHO never touches the buyer's
 // wallet: it moves directly from the AMM vault into a locked StakePosition
 // via CPI (vesting = offer.vesting_days trading days, enforced lazily by the
 // staking program from entry_trading_day).
@@ -37,20 +37,20 @@ pub struct OfferClaim<'info> {
 
     #[account(
         mut,
-        seeds = [b"amm_state", amm_state.nyseh_mint.as_ref()],
+        seeds = [b"amm_state", amm_state.afho_mint.as_ref()],
         bump = amm_state.bump,
     )]
     pub amm_state: Box<Account<'info, AmmState>>,
 
     #[account(
         mut,
-        seeds = [b"offer_list", amm_state.nyseh_mint.as_ref()],
+        seeds = [b"offer_list", amm_state.afho_mint.as_ref()],
         bump = offer_list.bump,
     )]
     pub offer_list: Box<Account<'info, OfferList>>,
 
-    #[account(address = amm_state.nyseh_mint)]
-    pub nyseh_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(address = amm_state.afho_mint)]
+    pub afho_mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(address = amm_state.usdc_mint)]
     pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
 
@@ -85,7 +85,7 @@ pub struct OfferClaim<'info> {
     #[account(mut, address = amm_state.usdc_rewards)]
     pub usdc_rewards: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    // --- staking CPI (position for the purchased, vesting NYSEH) ---
+    // --- staking CPI (position for the purchased, vesting AFHO) ---
     pub staking_program: Program<'info, staking::program::Staking>,
     #[account(mut, address = amm_state.staking_pool)]
     pub staking_pool: Box<Account<'info, staking::StakePool>>,
@@ -113,16 +113,16 @@ pub struct OfferClaim<'info> {
     )]
     pub stake_position: UncheckedAccount<'info>,
 
-    /// Source: AMM's NYSEH reserve (authority = amm_state PDA)
-    #[account(mut, address = amm_state.nyseh_vault)]
-    pub amm_nyseh_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    /// Source: AMM's AFHO reserve (authority = amm_state PDA)
+    #[account(mut, address = amm_state.afho_vault)]
+    pub amm_afho_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     /// Destination: staking pool vault
     #[account(mut, address = staking_pool.vault)]
     pub staking_vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
     /// Classic SPL (USDC legs)
     pub token_program: Interface<'info, TokenInterface>,
-    /// Token-2022 (NYSEH leg into staking)
+    /// Token-2022 (AFHO leg into staking)
     pub token_2022_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
 }
@@ -132,7 +132,7 @@ pub fn handler(ctx: Context<OfferClaim>, tier: u8, units: u8, index: u64) -> Res
         &ctx.accounts.market_status,
         &ctx.accounts.offer_list,
         &ctx.accounts.amm_state,
-        ctx.accounts.nyseh_mint.decimals,
+        ctx.accounts.afho_mint.decimals,
         &ctx.accounts.spot_oracle,
         tier,
         units,
@@ -172,20 +172,20 @@ pub fn handler(ctx: Context<OfferClaim>, tier: u8, units: u8, index: u64) -> Res
     let amm_state = &mut ctx.accounts.amm_state;
     amm_state.total_usdc_proceeds = amm_state.total_usdc_proceeds.saturating_add(q.cost_usdc);
 
-    // ── CPI into staking: purchased NYSEH goes DIRECTLY from the AMM vault
+    // ── CPI into staking: purchased AFHO goes DIRECTLY from the AMM vault
     // into a locked StakePosition (vesting = offer.vesting_days) ──
-    let mint_key = amm_state.nyseh_mint;
+    let mint_key = amm_state.afho_mint;
     let state_bump = amm_state.bump;
     let seeds: &[&[u8]] = &[b"amm_state", mint_key.as_ref(), &[state_bump]];
     cpi_create_position(
         ctx.accounts.staking_program.to_account_info(),
         ctx.accounts.buyer.to_account_info(),
-        ctx.accounts.nyseh_mint.to_account_info(),
+        ctx.accounts.afho_mint.to_account_info(),
         ctx.accounts.staking_pool.to_account_info(),
         ctx.accounts.amm_state.to_account_info(),
         ctx.accounts.user_index.to_account_info(),
         ctx.accounts.stake_position.to_account_info(),
-        ctx.accounts.amm_nyseh_vault.to_account_info(),
+        ctx.accounts.amm_afho_vault.to_account_info(),
         ctx.accounts.staking_vault.to_account_info(),
         ctx.accounts.market_status.to_account_info(),
         ctx.accounts.token_2022_program.to_account_info(),
@@ -197,7 +197,7 @@ pub fn handler(ctx: Context<OfferClaim>, tier: u8, units: u8, index: u64) -> Res
     )?;
 
     msg!(
-        "Claimed {} NYSEH ({} lots, tier {}) at {} ({}bps off, floor: {}); paid {} usdc -> {} buyback / {} dip / {} rewards",
+        "Claimed {} AFHO ({} lots, tier {}) at {} ({}bps off, floor: {}); paid {} usdc -> {} buyback / {} dip / {} rewards",
         q.total_tokens,
         units,
         tier,
@@ -225,22 +225,22 @@ pub struct OfferClaimSol<'info> {
 
     #[account(
         mut,
-        seeds = [b"amm_state", amm_state.nyseh_mint.as_ref()],
+        seeds = [b"amm_state", amm_state.afho_mint.as_ref()],
         bump = amm_state.bump,
     )]
     pub amm_state: Box<Account<'info, AmmState>>,
 
     #[account(
         mut,
-        seeds = [b"offer_list", amm_state.nyseh_mint.as_ref()],
+        seeds = [b"offer_list", amm_state.afho_mint.as_ref()],
         bump = offer_list.bump,
     )]
     pub offer_list: Box<Account<'info, OfferList>>,
 
-    #[account(address = amm_state.nyseh_mint)]
-    pub nyseh_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(address = amm_state.afho_mint)]
+    pub afho_mint: Box<InterfaceAccount<'info, Mint>>,
 
-    /// NYSEH absolute-price oracle (same as the USDC path)
+    /// AFHO absolute-price oracle (same as the USDC path)
     /// CHECK: address-verified against amm_state.spot_oracle
     #[account(address = amm_state.spot_oracle)]
     pub spot_oracle: UncheckedAccount<'info>,
@@ -298,14 +298,14 @@ pub struct OfferClaimSol<'info> {
     )]
     pub stake_position: UncheckedAccount<'info>,
 
-    /// Source: AMM's NYSEH reserve (authority = amm_state PDA)
-    #[account(mut, address = amm_state.nyseh_vault)]
-    pub amm_nyseh_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    /// Source: AMM's AFHO reserve (authority = amm_state PDA)
+    #[account(mut, address = amm_state.afho_vault)]
+    pub amm_afho_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     /// Destination: staking pool vault
     #[account(mut, address = staking_pool.vault)]
     pub staking_vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    /// Token-2022 (NYSEH leg into staking)
+    /// Token-2022 (AFHO leg into staking)
     pub token_2022_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
 }
@@ -315,7 +315,7 @@ pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u8, index: u64)
         &ctx.accounts.market_status,
         &ctx.accounts.offer_list,
         &ctx.accounts.amm_state,
-        ctx.accounts.nyseh_mint.decimals,
+        ctx.accounts.afho_mint.decimals,
         &ctx.accounts.spot_oracle,
         tier,
         units,
@@ -366,18 +366,18 @@ pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u8, index: u64)
     amm_state.total_sol_proceeds = amm_state.total_sol_proceeds.saturating_add(lamports);
 
     // ── CPI into staking (identical to the USDC path) ──
-    let mint_key = amm_state.nyseh_mint;
+    let mint_key = amm_state.afho_mint;
     let state_bump = amm_state.bump;
     let seeds: &[&[u8]] = &[b"amm_state", mint_key.as_ref(), &[state_bump]];
     cpi_create_position(
         ctx.accounts.staking_program.to_account_info(),
         ctx.accounts.buyer.to_account_info(),
-        ctx.accounts.nyseh_mint.to_account_info(),
+        ctx.accounts.afho_mint.to_account_info(),
         ctx.accounts.staking_pool.to_account_info(),
         ctx.accounts.amm_state.to_account_info(),
         ctx.accounts.user_index.to_account_info(),
         ctx.accounts.stake_position.to_account_info(),
-        ctx.accounts.amm_nyseh_vault.to_account_info(),
+        ctx.accounts.amm_afho_vault.to_account_info(),
         ctx.accounts.staking_vault.to_account_info(),
         ctx.accounts.market_status.to_account_info(),
         ctx.accounts.token_2022_program.to_account_info(),
@@ -389,7 +389,7 @@ pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u8, index: u64)
     )?;
 
     msg!(
-        "Claimed {} NYSEH ({} lots, tier {}) at {} ({}bps off, floor: {}); paid {} lamports -> {} buyback / {} dip / {} rewards",
+        "Claimed {} AFHO ({} lots, tier {}) at {} ({}bps off, floor: {}); paid {} lamports -> {} buyback / {} dip / {} rewards",
         q.total_tokens,
         units,
         tier,
@@ -426,7 +426,7 @@ fn quote_claim(
     market_status: &AccountInfo,
     offer_list: &Account<OfferList>,
     amm_state: &Account<AmmState>,
-    nyseh_decimals: u8,
+    afho_decimals: u8,
     spot_oracle: &AccountInfo,
     tier: u8,
     units: u8,
@@ -479,8 +479,8 @@ fn quote_claim(
     }
 
     // lot_size is a TIER INDEX — translate via lot_sizer to whole tokens,
-    // then to raw units. Price units: (usdc_raw × 1e6) / nyseh_raw.
-    let unit = 10u64.checked_pow(nyseh_decimals as u32).unwrap_or(1);
+    // then to raw units. Price units: (usdc_raw × 1e6) / afho_raw.
+    let unit = 10u64.checked_pow(afho_decimals as u32).unwrap_or(1);
     let total_tokens = lot_sizer(lot_tier) as u64 * units as u64;
     require!(total_tokens > 0, ErrorCode::InsufficientOffer);
     let total_raw = (total_tokens as u128)
@@ -530,7 +530,7 @@ fn settle_sheet(offer_list: &mut Account<OfferList>, tier: u8, units: u8, total_
         .saturating_add(total_tokens as u32);
 }
 
-/// CPI into staking: purchased NYSEH moves from the AMM vault into a locked
+/// CPI into staking: purchased AFHO moves from the AMM vault into a locked
 /// StakePosition. The amm_state PDA signs (the staking program verifies its
 /// seeds against pool.amm_program — that signature IS the authorization).
 #[allow(clippy::too_many_arguments)]

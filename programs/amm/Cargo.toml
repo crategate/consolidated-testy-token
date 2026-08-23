@@ -1,7 +1,7 @@
 [package]
 name = "amm"
 version = "0.1.0"
-description = "OTC bulk NYSEH deals. Vesting & buybacks."
+description = "OTC bulk AFHO deals. Vesting & buybacks."
 edition = "2021"
 
 [lib]

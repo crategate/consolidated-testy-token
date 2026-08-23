@@ -70,7 +70,7 @@ export function usePositionRewards(mint: PublicKey | null, positions: Position[]
                 penaltyRaw: 0,
                 posrTaxRaw: posrTaxNum,
                 netRewardRaw: netNum,
-                netRewardDisplay: `${netNum.toFixed(4)} NYSEH`,
+                netRewardDisplay: `${netNum.toFixed(4)} AFHO`,
             };
         });
     }, [pool, marketData, positions]);

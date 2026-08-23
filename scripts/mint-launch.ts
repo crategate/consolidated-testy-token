@@ -39,7 +39,7 @@ async function main() {
     console.log("🚀 Starting Token Deployment...");
 
     // 2. Load or Generate Mint Keypair
-    const mintKeypairPath = path.join(process.cwd(), "target", "deploy", "nyseh_token-keypair.json");
+    const mintKeypairPath = path.join(process.cwd(), "target", "deploy", "afho_token-keypair.json");
     let mint: Keypair;
 
     if (fs.existsSync(mintKeypairPath)) {

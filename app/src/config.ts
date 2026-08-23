@@ -18,7 +18,7 @@ export type DeploymentConfig = {
     ammOfferList?: string;
     ammSolVault?: string;
     ammUsdcVault?: string;
-    ammNysehVault?: string;
+    ammAfhoVault?: string;
     marketStatusFeedId?: string;
     priceFeedId?: string;
     oracleQuoteAccount?: string;
@@ -31,7 +31,7 @@ export type ResolvedDeployment = DeploymentConfig & {
 };
 
 export function resolveDeployment(config: DeploymentConfig): ResolvedDeployment {
-    const mint = config.mint ?? import.meta.env.VITE_NYSEH_MINT;
+    const mint = config.mint ?? import.meta.env.VITE_AFHO_MINT;
 
     if (!mint) {
         throw new Error('No mint configured. Run anchor run mint, then refresh the app.');

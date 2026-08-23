@@ -44,12 +44,12 @@ export function StakeForm({ mint, marketStatusPda, onStakeSuccess }: StakeFormPr
 
     return (
         <div className="stake-form stake-card">
-            <h3>Stake NYSEH</h3>
+            <h3>Stake AFHO</h3>
             <div className="mint-display">
                 Mint: <br /><code>{mint.toBase58().slice(0, 8)}…{mint.toBase58().slice(-8)}</code>
             </div>
             <div className="balance-line">
-                {balance !== null ? balance.toFixed(4) : '—'} <span>NYSEH</span>
+                {balance !== null ? balance.toFixed(4) : '—'} <span>AFHO</span>
             </div>
             <p className="custodial-note">
                 Tokens move into the program vault and no longer appear in your wallet.

@@ -14,10 +14,10 @@ import {
 } from "@solana/spl-token";
 import { pubkey, writeDeploymentState } from "./deployment-state";
 
-// Run this AFTER minting NYSEH tokens. It:
-//   1. Reads the NYSEH mint from the saved keypair
+// Run this AFTER minting AFHO tokens. It:
+//   1. Reads the AFHO mint from the saved keypair
 //   2. Creates all AMM accounts (state, offer list, vaults)
-//   3. Transfers a configured % of NYSEH supply from authority → AMM vault
+//   3. Transfers a configured % of AFHO supply from authority → AMM vault
 //
 // Usage: npx ts-node scripts/init-amm.ts [PERCENTAGE_TO_TRANSFER]
 //   Default percentage: 10% (0.10)
@@ -31,20 +31,20 @@ async function main() {
     const provider = anchor.AnchorProvider.env();
     anchor.setProvider(provider);
 
-    // ── 1. Load NYSEH mint (must exist after mint-launch.ts) ──
+    // ── 1. Load AFHO mint (must exist after mint-launch.ts) ──
     const mintKeyPath = path.join(
-        process.cwd(), "target", "deploy", "nyseh_token-keypair.json"
+        process.cwd(), "target", "deploy", "afho_token-keypair.json"
     );
     if (!fs.existsSync(mintKeyPath)) {
         throw new Error(
-            "nyseh_token-keypair.json not found. Run 'anchor run mint' first."
+            "afho_token-keypair.json not found. Run 'anchor run mint' first."
         );
     }
     const mintKeyData = JSON.parse(fs.readFileSync(mintKeyPath, "utf-8"));
-    const NYSEH_MINT = Keypair.fromSecretKey(
+    const AFHO_MINT = Keypair.fromSecretKey(
         new Uint8Array(mintKeyData)
     ).publicKey;
-    console.log("📍 NYSEH mint:", NYSEH_MINT.toBase58());
+    console.log("📍 AFHO mint:", AFHO_MINT.toBase58());
 
     // ── 2. Load AMM program ──
     const ammIdlPath = path.join(process.cwd(), "target", "idl", "amm.json");
@@ -99,15 +99,15 @@ async function main() {
 
     // ── 4. Derive all AMM PDAs ──
     const [ammStatePda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("amm_state"), NYSEH_MINT.toBuffer()],
+        [Buffer.from("amm_state"), AFHO_MINT.toBuffer()],
         AMM_PROGRAM_ID
     );
     const [offerListPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("offer_list"), NYSEH_MINT.toBuffer()],
+        [Buffer.from("offer_list"), AFHO_MINT.toBuffer()],
         AMM_PROGRAM_ID
     );
     const [solVaultPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("amm_sol_vault"), NYSEH_MINT.toBuffer()],
+        [Buffer.from("amm_sol_vault"), AFHO_MINT.toBuffer()],
         AMM_PROGRAM_ID
     );
     const usdcVaultAta = getAssociatedTokenAddressSync(
@@ -116,30 +116,27 @@ async function main() {
         true,
         TOKEN_PROGRAM_ID
     );
-    const nysehVaultAta = getAssociatedTokenAddressSync(
-        NYSEH_MINT,
+    const afhoVaultAta = getAssociatedTokenAddressSync(
+        AFHO_MINT,
         ammStatePda,
         true,
         TOKEN_2022_PROGRAM_ID
     );
-    const usdcDipAta = getAssociatedTokenAddressSync(
-        USDC_MINT,
-        ammStatePda,       // The authority/owner of the vault
-        true,              // allowOwnerOffCurve = true (Required because ammStatePda is a PDA)
-        TOKEN_PROGRAM_ID   // Standard Token Program ID
+    // 10% dip reserve + 10% staker-rewards holding vault: PDA token accounts
+    // created by initialize_amm itself (NOT ATAs — the (USDC, ammState) ATA is
+    // the buyback vault, so ATA-based dip/rewards vaults would alias it).
+    const [usdcDipPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("amm_usdc_dip"), AFHO_MINT.toBuffer()],
+        AMM_PROGRAM_ID
     );
-    // Holding vault for the stakers' 10% USDC share (converted to NYSEH and
-    // deposited into staking once per trading day by distributeStakerRewards)
-    const usdcRewardsAta = getAssociatedTokenAddressSync(
-        USDC_MINT,
-        ammStatePda,
-        true,
-        TOKEN_PROGRAM_ID
+    const [usdcRewardsPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("amm_usdc_rewards"), AFHO_MINT.toBuffer()],
+        AMM_PROGRAM_ID
     );
     // Absolute spot price (devnet stub: mock-dex-pool's mock_price PDA;
     // MAINNET: real absolute-price source in highest_buyback_basis units)
     const [spotOraclePda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("mock_price"), NYSEH_MINT.toBuffer()],
+        [Buffer.from("mock_price"), AFHO_MINT.toBuffer()],
         DEX_PROGRAM_ID
     );
     // SOL/USD price — same raw-u64 mock pattern, seeded with the wSOL mint.
@@ -150,19 +147,19 @@ async function main() {
     );
     // Holding PDA for the stakers' 10% share of SOL claim proceeds
     const [solRewardsPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("amm_sol_rewards"), NYSEH_MINT.toBuffer()],
+        [Buffer.from("amm_sol_rewards"), AFHO_MINT.toBuffer()],
         AMM_PROGRAM_ID
     );
     // Staking pool PDA (seeds [b"pool", mint] under the staking program)
     const [stakingPoolPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("pool"), NYSEH_MINT.toBuffer()],
+        [Buffer.from("pool"), AFHO_MINT.toBuffer()],
         STAKING_PROGRAM_ID
     );
 
     const [solDipPda] = PublicKey.findProgramAddressSync(
         [
             Buffer.from("amm_sol_dip"),
-            NYSEH_MINT.toBuffer()
+            AFHO_MINT.toBuffer()
         ],
         AMM_PROGRAM_ID
     );
@@ -170,7 +167,7 @@ async function main() {
     const [acceptedOffersPda] = PublicKey.findProgramAddressSync(
         [
             Buffer.from("accepted_offers"),
-            NYSEH_MINT.toBuffer()
+            AFHO_MINT.toBuffer()
         ],
         AMM_PROGRAM_ID
     );
@@ -178,7 +175,7 @@ async function main() {
     const [metricsPda] = PublicKey.findProgramAddressSync(
         [
             Buffer.from("metrics"),
-            NYSEH_MINT.toBuffer()
+            AFHO_MINT.toBuffer()
         ],
         AMM_PROGRAM_ID
     ); const [marketStatusPda] = PublicKey.findProgramAddressSync(
@@ -201,18 +198,18 @@ async function main() {
     console.log("  Offer List:    ", offerListPda.toBase58());
     console.log("  SOL Vault:     ", solVaultPda.toBase58());
     console.log("  USDC Vault:    ", usdcVaultAta.toBase58());
-    console.log("  NYSEH Vault:   ", nysehVaultAta.toBase58());
+    console.log("  AFHO Vault:   ", afhoVaultAta.toBase58());
     console.log("  Market Status: ", marketStatusPda.toBase58());
 
     console.log("\n📦 Checking vault accounts...");
     const preIxs = [];
 
-    const nysehInfo = await provider.connection.getAccountInfo(nysehVaultAta);
-    if (!nysehInfo) {
-        console.log("  Creating NYSEH vault (Token-2022)...");
+    const afhoInfo = await provider.connection.getAccountInfo(afhoVaultAta);
+    if (!afhoInfo) {
+        console.log("  Creating AFHO vault (Token-2022)...");
         preIxs.push(createAssociatedTokenAccountIdempotentInstruction(
-            provider.wallet.publicKey, nysehVaultAta, ammStatePda,
-            NYSEH_MINT, TOKEN_2022_PROGRAM_ID
+            provider.wallet.publicKey, afhoVaultAta, ammStatePda,
+            AFHO_MINT, TOKEN_2022_PROGRAM_ID
         ));
     }
 
@@ -224,22 +221,8 @@ async function main() {
             USDC_MINT, TOKEN_PROGRAM_ID  // <-- Standard Token
         ));
     }
-    const usdcDipInfo = await provider.connection.getAccountInfo(usdcDipAta);
-    if (!usdcDipInfo) {
-        console.log("  Creating USDC dip vault (standard Token)...");
-        preIxs.push(createAssociatedTokenAccountIdempotentInstruction(
-            provider.wallet.publicKey, usdcDipAta, ammStatePda,
-            USDC_MINT, TOKEN_PROGRAM_ID
-        ));
-    }
-    const usdcRewardsInfo = await provider.connection.getAccountInfo(usdcRewardsAta);
-    if (!usdcRewardsInfo) {
-        console.log("  Creating USDC rewards holding vault (standard Token)...");
-        preIxs.push(createAssociatedTokenAccountInstruction(
-            provider.wallet.publicKey, usdcRewardsAta, ammStatePda,
-            USDC_MINT, TOKEN_PROGRAM_ID
-        ));
-    }
+    // USDC dip/rewards vaults are created by initialize_amm (PDA token accounts) —
+    // no pre-creation here.
     if (preIxs.length > 0) {
         const tx = new Transaction().add(...preIxs);
         const { blockhash } = await provider.connection.getLatestBlockhash("confirmed");
@@ -255,13 +238,13 @@ async function main() {
             .initializeAmm(spotOraclePda, stakingPoolPda, solOraclePda)
             .accounts({
                 authority: provider.wallet.publicKey,
-                nysehMint: NYSEH_MINT,
+                afhoMint: AFHO_MINT,
                 usdcMint: USDC_MINT,
                 solVault: solVaultPda,
                 usdcVault: usdcVaultAta,
-                nysehVault: nysehVaultAta,
-                usdcDip: usdcDipAta,
-                usdcRewards: usdcRewardsAta,
+                afhoVault: afhoVaultAta,
+                usdcDip: usdcDipPda,
+                usdcRewards: usdcRewardsPda,
                 solRewards: solRewardsPda,
                 solDip: solDipPda,
                 ammState: ammStatePda,
@@ -289,7 +272,7 @@ async function main() {
         }
     }
 
-    // ── 5b. Mock DEX pool: state, prices, NYSEH float (DEVNET STUB) ──
+    // ── 5b. Mock DEX pool: state, prices, AFHO float (DEVNET STUB) ──
     // MAINNET: delete this section — the real DEX pool replaces it and
     // spot/sol oracles become real feeds.
     console.log("\n🧪 Setting up mock DEX pool (devnet stub)...");
@@ -298,11 +281,11 @@ async function main() {
     ));
     const mockProgram = new anchor.Program(mockIdl, provider);
     const [poolStatePda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("mock_pool"), NYSEH_MINT.toBuffer()],
+        [Buffer.from("mock_pool"), AFHO_MINT.toBuffer()],
         DEX_PROGRAM_ID
     );
-    const poolNysehAta = getAssociatedTokenAddressSync(
-        NYSEH_MINT, poolStatePda, true, TOKEN_2022_PROGRAM_ID
+    const poolAfhoAta = getAssociatedTokenAddressSync(
+        AFHO_MINT, poolStatePda, true, TOKEN_2022_PROGRAM_ID
     );
     const poolUsdcAta = getAssociatedTokenAddressSync(
         USDC_MINT, poolStatePda, true, TOKEN_PROGRAM_ID
@@ -312,10 +295,10 @@ async function main() {
             .initPool()
             .accounts({
                 payer: provider.wallet.publicKey,
-                nysehMint: NYSEH_MINT,
+                afhoMint: AFHO_MINT,
                 usdcMint: USDC_MINT,
                 poolState: poolStatePda,
-                poolNyseh: poolNysehAta,
+                poolAfho: poolAfhoAta,
                 poolUsdc: poolUsdcAta,
                 associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
                 tokenProgram: TOKEN_PROGRAM_ID,
@@ -332,46 +315,46 @@ async function main() {
         }
     }
 
-    // Mock prices, units (usdc_raw × 1e6) / nyseh_raw:
-    //   NYSEH spot 10 = 0.01 USDC/NYSEH at 9/6 decimals (matches mock exec rate)
+    // Mock prices, units (usdc_raw × 1e6) / afho_raw:
+    //   AFHO spot 10 = 0.01 USDC/AFHO at 9/6 decimals (matches mock exec rate)
     //   SOL         200_000 = $200/SOL (200e6 usdc-raw × 1e6 / 1e9 lamports)
-    const MOCK_NYSEH_PRICE = new anchor.BN(process.env.MOCK_NYSEH_PRICE || "10");
+    const MOCK_AFHO_PRICE = new anchor.BN(process.env.MOCK_AFHO_PRICE || "10");
     const MOCK_SOL_PRICE = new anchor.BN(process.env.MOCK_SOL_PRICE || "200000");
     await mockProgram.methods
-        .setPrice(MOCK_NYSEH_PRICE)
+        .setPrice(MOCK_AFHO_PRICE)
         .accounts({
             payer: provider.wallet.publicKey,
-            nysehMint: NYSEH_MINT,
+            afhoMint: AFHO_MINT,
             mockPrice: spotOraclePda,
             systemProgram: anchor.web3.SystemProgram.programId,
         })
         .rpc();
-    console.log(`  ✅ NYSEH spot price set to ${MOCK_NYSEH_PRICE}`);
+    console.log(`  ✅ AFHO spot price set to ${MOCK_AFHO_PRICE}`);
     await mockProgram.methods
         .setPrice(MOCK_SOL_PRICE)
         .accounts({
             payer: provider.wallet.publicKey,
-            nysehMint: NATIVE_MINT, // wSOL mint seeds the SOL/USD price PDA
+            afhoMint: NATIVE_MINT, // wSOL mint seeds the SOL/USD price PDA
             mockPrice: solOraclePda,
             systemProgram: anchor.web3.SystemProgram.programId,
         })
         .rpc();
     console.log(`  ✅ SOL price set to ${MOCK_SOL_PRICE}`);
 
-    // Fund the pool's NYSEH float so buys can be filled (top up only if empty)
-    const poolFloatInfo = await provider.connection.getAccountInfo(poolNysehAta);
+    // Fund the pool's AFHO float so buys can be filled (top up only if empty)
+    const poolFloatInfo = await provider.connection.getAccountInfo(poolAfhoAta);
     if (poolFloatInfo) {
         const poolBal = await getAccount(
-            provider.connection, poolNysehAta, "confirmed", TOKEN_2022_PROGRAM_ID
+            provider.connection, poolAfhoAta, "confirmed", TOKEN_2022_PROGRAM_ID
         );
         if (poolBal.amount === BigInt(0)) {
-            const floatWhole = new anchor.BN(process.env.MOCK_POOL_FLOAT_NYSEH || "1000000");
+            const floatWhole = new anchor.BN(process.env.MOCK_POOL_FLOAT_AFHO || "1000000");
             const floatRaw = floatWhole.mul(new anchor.BN(1_000_000_000)); // 9 decimals
-            const authorityNysehAta = getAssociatedTokenAddressSync(
-                NYSEH_MINT, provider.wallet.publicKey, false, TOKEN_2022_PROGRAM_ID
+            const authorityAfhoAta = getAssociatedTokenAddressSync(
+                AFHO_MINT, provider.wallet.publicKey, false, TOKEN_2022_PROGRAM_ID
             );
             const fundTx = new Transaction().add(createTransferCheckedInstruction(
-                authorityNysehAta, NYSEH_MINT, poolNysehAta,
+                authorityAfhoAta, AFHO_MINT, poolAfhoAta,
                 provider.wallet.publicKey, BigInt(floatRaw.toString()), 9, [],
                 TOKEN_2022_PROGRAM_ID
             ));
@@ -379,19 +362,19 @@ async function main() {
             fundTx.recentBlockhash = blockhash;
             fundTx.feePayer = provider.wallet.publicKey;
             const sig = await provider.sendAndConfirm(fundTx);
-            console.log(`  ✅ Pool float funded with ${floatWhole} NYSEH:`, sig);
+            console.log(`  ✅ Pool float funded with ${floatWhole} AFHO:`, sig);
         } else {
             console.log("  ⚠️  Pool float already funded, skipping.");
         }
     }
 
-    // ── 6. Transfer NYSEH from authority → AMM vault ──
+    // ── 6. Transfer AFHO from authority → AMM vault ──
     const transferPct = parseFloat(process.argv[2] || "0.10"); // default 10%
     if (transferPct > 0) {
         console.log(`\n💸 Transferring ${(transferPct * 100).toFixed(0)}% of supply to AMM vault...`);
 
-        const authorityNysehAta = getAssociatedTokenAddressSync(
-            NYSEH_MINT,
+        const authorityAfhoAta = getAssociatedTokenAddressSync(
+            AFHO_MINT,
             provider.wallet.publicKey,
             false,
             TOKEN_2022_PROGRAM_ID
@@ -400,21 +383,21 @@ async function main() {
         // Check authority balance
         const authorityAccount = await getAccount(
             provider.connection,
-            authorityNysehAta,
+            authorityAfhoAta,
             "confirmed",
             TOKEN_2022_PROGRAM_ID
         );
         const authorityBalance = Number(authorityAccount.amount);
-        console.log(`   Authority balance: ${(authorityBalance / 1e9).toFixed(4)} NYSEH`);
+        console.log(`   Authority balance: ${(authorityBalance / 1e9).toFixed(4)} AFHO`);
 
         const transferAmount = Math.floor(authorityBalance * transferPct);
-        console.log(`   Transfer amount:   ${(transferAmount / 1e9).toFixed(4)} NYSEH`);
+        console.log(`   Transfer amount:   ${(transferAmount / 1e9).toFixed(4)} AFHO`);
 
         if (transferAmount > 0) {
             const transferIx = createTransferCheckedInstruction(
-                authorityNysehAta,          // from
-                NYSEH_MINT,                  // mint
-                nysehVaultAta,               // to
+                authorityAfhoAta,          // from
+                AFHO_MINT,                  // mint
+                afhoVaultAta,               // to
                 provider.wallet.publicKey,   // authority (signer)
                 BigInt(transferAmount),      // amount
                 9,        // decimals
@@ -442,7 +425,7 @@ async function main() {
         ammOfferList: pubkey(offerListPda),
         ammSolVault: pubkey(solVaultPda),
         ammUsdcVault: pubkey(usdcVaultAta),
-        ammNysehVault: pubkey(nysehVaultAta),
+        ammAfhoVault: pubkey(afhoVaultAta),
     });
 
     console.log("\n🎉 AMM setup complete!");

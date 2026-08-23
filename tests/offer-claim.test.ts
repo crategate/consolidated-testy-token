@@ -17,8 +17,8 @@ import {
 import { assert } from "chai";
 
 // End-to-end offer_claim: buyer pays USDC for a discounted vesting lot,
-// payment splits 80/10/10, NYSEH lands directly in a locked StakePosition;
-// then the keeper swaps the stakers' 10% to NYSEH and deposits it into the
+// payment splits 80/10/10, AFHO lands directly in a locked StakePosition;
+// then the keeper swaps the stakers' 10% to AFHO and deposits it into the
 // staking reward vault.
 describe("offer_claim + distribute_staker_rewards", () => {
     const provider = anchor.AnchorProvider.env();
@@ -30,7 +30,7 @@ describe("offer_claim + distribute_staker_rewards", () => {
     const mock = anchor.workspace.MockDexPool as Program<MockDexPool>;
     const staking = anchor.workspace.Staking as Program<Staking>;
 
-    let nysehMint: PublicKey;
+    let afhoMint: PublicKey;
     let usdcMint: PublicKey;
     let marketStatusPda: PublicKey;
     let ammStatePda: PublicKey;
@@ -38,7 +38,7 @@ describe("offer_claim + distribute_staker_rewards", () => {
     let acceptedOffersPda: PublicKey;
     let metricsPda: PublicKey;
     let mockPricePda: PublicKey;
-    let nysehVault: PublicKey;
+    let afhoVault: PublicKey;
     let usdcVault: PublicKey;
     let usdcDip: PublicKey;
     let usdcRewards: PublicKey;
@@ -50,14 +50,14 @@ describe("offer_claim + distribute_staker_rewards", () => {
     let stakingVaultPda: PublicKey;
     let rewardVaultPda: PublicKey;
     let poolState: PublicKey;
-    let poolNyseh: PublicKey;
+    let poolAfho: PublicKey;
     let poolUsdc: PublicKey;
 
     const buyer = Keypair.generate();
     let buyerUsdc: PublicKey;
 
     const now = () => Math.floor(Date.now() / 1000);
-    const NYSEH_UNIT = 10 ** 9; // 9 decimals
+    const AFHO_UNIT = 10 ** 9; // 9 decimals
 
     async function setMarket(state: number, day: number, ts: number) {
         await crank.methods
@@ -69,7 +69,7 @@ describe("offer_claim + distribute_staker_rewards", () => {
     async function setPrice(price: number) {
         await mock.methods
             .setPrice(new anchor.BN(price))
-            .accounts({ payer: payer.publicKey, nysehMint, mockPrice: mockPricePda })
+            .accounts({ payer: payer.publicKey, afhoMint, mockPrice: mockPricePda })
             .rpc();
     }
 
@@ -78,7 +78,7 @@ describe("offer_claim + distribute_staker_rewards", () => {
     async function setSolPrice(price: number) {
         await mock.methods
             .setPrice(new anchor.BN(price))
-            .accounts({ payer: payer.publicKey, nysehMint: usdcMint, mockPrice: solOraclePda })
+            .accounts({ payer: payer.publicKey, afhoMint: usdcMint, mockPrice: solOraclePda })
             .rpc();
     }
 
@@ -125,7 +125,7 @@ describe("offer_claim + distribute_staker_rewards", () => {
                 buyer: buyer.publicKey,
                 ammState: ammStatePda,
                 offerList: offerListPda,
-                nysehMint,
+                afhoMint,
                 usdcMint,
                 spotOracle,
                 marketStatus: marketStatusPda,
@@ -137,7 +137,7 @@ describe("offer_claim + distribute_staker_rewards", () => {
                 stakingPool: poolPda,
                 userIndex: userIndexPda,
                 stakePosition: positionPda,
-                ammNysehVault: nysehVault,
+                ammAfhoVault: afhoVault,
                 stakingVault: stakingVaultPda,
                 tokenProgram: TOKEN_PROGRAM_ID,
                 token2022Program: TOKEN_2022_PROGRAM_ID,
@@ -165,7 +165,7 @@ describe("offer_claim + distribute_staker_rewards", () => {
                 buyer: buyer.publicKey,
                 ammState: ammStatePda,
                 offerList: offerListPda,
-                nysehMint,
+                afhoMint,
                 spotOracle: mockPricePda,
                 solOracle: solOraclePda,
                 marketStatus: marketStatusPda,
@@ -176,7 +176,7 @@ describe("offer_claim + distribute_staker_rewards", () => {
                 stakingPool: poolPda,
                 userIndex: userIndexPda,
                 stakePosition: positionPda,
-                ammNysehVault: nysehVault,
+                ammAfhoVault: afhoVault,
                 stakingVault: stakingVaultPda,
                 token2022Program: TOKEN_2022_PROGRAM_ID,
             })
@@ -186,7 +186,7 @@ describe("offer_claim + distribute_staker_rewards", () => {
 
     before(async () => {
         await provider.connection.requestAirdrop(buyer.publicKey, 2_000_000_000);
-        nysehMint = await createMint(provider.connection, payer, payer.publicKey, null, 9, undefined, undefined, TOKEN_2022_PROGRAM_ID);
+        afhoMint = await createMint(provider.connection, payer, payer.publicKey, null, 9, undefined, undefined, TOKEN_2022_PROGRAM_ID);
         usdcMint = await createMint(provider.connection, payer, payer.publicKey, null, 6);
 
         [marketStatusPda] = PublicKey.findProgramAddressSync([Buffer.from("market_status")], crank.programId);
@@ -195,7 +195,7 @@ describe("offer_claim + distribute_staker_rewards", () => {
         }
 
         // staking pool
-        [poolPda] = PublicKey.findProgramAddressSync([Buffer.from("pool"), nysehMint.toBuffer()], staking.programId);
+        [poolPda] = PublicKey.findProgramAddressSync([Buffer.from("pool"), afhoMint.toBuffer()], staking.programId);
         [stakingVaultPda] = PublicKey.findProgramAddressSync([Buffer.from("vault"), poolPda.toBuffer()], staking.programId);
         [rewardVaultPda] = PublicKey.findProgramAddressSync([Buffer.from("rewards"), poolPda.toBuffer()], staking.programId);
         const [penaltyVaultPda] = PublicKey.findProgramAddressSync([Buffer.from("penalties"), poolPda.toBuffer()], staking.programId);
@@ -204,41 +204,43 @@ describe("offer_claim + distribute_staker_rewards", () => {
             .initializePool(crank.programId, 30000, 500, 400, 800, 1800, amm.programId)
             .accounts({
                 authority: payer.publicKey,
-                mint: nysehMint,
+                mint: afhoMint,
                 pool: poolPda,
                 vault: stakingVaultPda,
                 rewardVault: rewardVaultPda,
                 penaltyVault: penaltyVaultPda,
-                nysehVault: posrVaultPda,
+                afhoVault: posrVaultPda,
                 marketStatusPda,
                 tokenProgram: TOKEN_2022_PROGRAM_ID,
             })
             .rpc();
 
         // amm
-        [ammStatePda] = PublicKey.findProgramAddressSync([Buffer.from("amm_state"), nysehMint.toBuffer()], amm.programId);
-        [offerListPda] = PublicKey.findProgramAddressSync([Buffer.from("offer_list"), nysehMint.toBuffer()], amm.programId);
-        [acceptedOffersPda] = PublicKey.findProgramAddressSync([Buffer.from("accepted_offers"), nysehMint.toBuffer()], amm.programId);
-        [metricsPda] = PublicKey.findProgramAddressSync([Buffer.from("metrics"), nysehMint.toBuffer()], amm.programId);
-        [mockPricePda] = PublicKey.findProgramAddressSync([Buffer.from("mock_price"), nysehMint.toBuffer()], mock.programId);
-        [solVault] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_vault"), nysehMint.toBuffer()], amm.programId);
-        [solDip] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_dip"), nysehMint.toBuffer()], amm.programId);
-        [solRewardsPda] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_rewards"), nysehMint.toBuffer()], amm.programId);
+        [ammStatePda] = PublicKey.findProgramAddressSync([Buffer.from("amm_state"), afhoMint.toBuffer()], amm.programId);
+        [offerListPda] = PublicKey.findProgramAddressSync([Buffer.from("offer_list"), afhoMint.toBuffer()], amm.programId);
+        [acceptedOffersPda] = PublicKey.findProgramAddressSync([Buffer.from("accepted_offers"), afhoMint.toBuffer()], amm.programId);
+        [metricsPda] = PublicKey.findProgramAddressSync([Buffer.from("metrics"), afhoMint.toBuffer()], amm.programId);
+        [mockPricePda] = PublicKey.findProgramAddressSync([Buffer.from("mock_price"), afhoMint.toBuffer()], mock.programId);
+        [solVault] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_vault"), afhoMint.toBuffer()], amm.programId);
+        [solDip] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_dip"), afhoMint.toBuffer()], amm.programId);
+        [solRewardsPda] = PublicKey.findProgramAddressSync([Buffer.from("amm_sol_rewards"), afhoMint.toBuffer()], amm.programId);
         [solOraclePda] = PublicKey.findProgramAddressSync([Buffer.from("mock_price"), usdcMint.toBuffer()], mock.programId);
 
-        nysehVault = await createAtaOffCurve(nysehMint, ammStatePda, TOKEN_2022_PROGRAM_ID);
+        afhoVault = await createAtaOffCurve(afhoMint, ammStatePda, TOKEN_2022_PROGRAM_ID);
         usdcVault = await createAtaOffCurve(usdcMint, ammStatePda, TOKEN_PROGRAM_ID);
-        usdcDip = await createAtaOffCurve(usdcMint, ammStatePda, TOKEN_PROGRAM_ID);
-        usdcRewards = await createAtaOffCurve(usdcMint, ammStatePda, TOKEN_PROGRAM_ID);
+        // dip/rewards USDC vaults are PDA token accounts created by initialize_amm
+        // (NOT ATAs — the (usdcMint, ammState) ATA is usdcVault itself)
+        [usdcDip] = PublicKey.findProgramAddressSync([Buffer.from("amm_usdc_dip"), afhoMint.toBuffer()], amm.programId);
+        [usdcRewards] = PublicKey.findProgramAddressSync([Buffer.from("amm_usdc_rewards"), afhoMint.toBuffer()], amm.programId);
 
         await amm.methods
             .initializeAmm(mockPricePda, poolPda, solOraclePda)
             .accounts({
                 authority: payer.publicKey,
-                nysehMint,
+                afhoMint,
                 usdcMint,
                 ammState: ammStatePda,
-                nysehVault,
+                afhoVault,
                 usdcVault,
                 usdcDip,
                 usdcRewards,
@@ -258,26 +260,26 @@ describe("offer_claim + distribute_staker_rewards", () => {
             .rpc();
 
         // mock pool + liquidity for the rewards swap
-        [poolState] = PublicKey.findProgramAddressSync([Buffer.from("mock_pool"), nysehMint.toBuffer()], mock.programId);
-        poolNyseh = getAssociatedTokenAddressSync(nysehMint, poolState, true, TOKEN_2022_PROGRAM_ID);
+        [poolState] = PublicKey.findProgramAddressSync([Buffer.from("mock_pool"), afhoMint.toBuffer()], mock.programId);
+        poolAfho = getAssociatedTokenAddressSync(afhoMint, poolState, true, TOKEN_2022_PROGRAM_ID);
         poolUsdc = getAssociatedTokenAddressSync(usdcMint, poolState, true, TOKEN_PROGRAM_ID);
         await mock.methods
             .initPool()
             .accounts({
                 payer: payer.publicKey,
-                nysehMint,
+                afhoMint,
                 usdcMint,
                 poolState,
-                poolNyseh,
+                poolAfho,
                 poolUsdc,
                 tokenProgram: TOKEN_PROGRAM_ID,
                 token2022Program: TOKEN_2022_PROGRAM_ID,
             })
             .rpc();
-        await mintTo(provider.connection, payer, nysehMint, poolNyseh, payer.publicKey, 1_000_000_000_000_000, undefined, undefined, TOKEN_2022_PROGRAM_ID);
+        await mintTo(provider.connection, payer, afhoMint, poolAfho, payer.publicKey, 1_000_000_000_000_000, undefined, undefined, TOKEN_2022_PROGRAM_ID);
 
         // stock the offer desk vault + fund the buyer
-        await mintTo(provider.connection, payer, nysehMint, nysehVault, payer.publicKey, 1_000_000 * NYSEH_UNIT, undefined, undefined, TOKEN_2022_PROGRAM_ID);
+        await mintTo(provider.connection, payer, afhoMint, afhoVault, payer.publicKey, 1_000_000 * AFHO_UNIT, undefined, undefined, TOKEN_2022_PROGRAM_ID);
         buyerUsdc = await createAssociatedTokenAccount(provider.connection, payer, usdcMint, buyer.publicKey);
         await mintTo(provider.connection, payer, usdcMint, buyerUsdc, payer.publicKey, 1_000_000_000); // 1000 USDC
 
@@ -285,11 +287,13 @@ describe("offer_claim + distribute_staker_rewards", () => {
     });
 
     it("loads a sheet and claims: 80/10/10 split + vesting position created", async () => {
-        // sml tier: lot tier 1 = 10 NYSEH, 10% discount (stored tenths), 5-day vest, 10 lots
+        // sml tier: lot tier 1 = 10 AFHO, 10% discount (stored tenths), 5-day vest, 10 lots
         await amm.methods
             .loadTestData({
                 priceChanges: new Array(20).fill(0),
                 sampleHead: 0,
+                spotPrices: new Array(32).fill(new anchor.BN(0)),
+                spotHead: 0,
                 trailingStakeHealth: new Array(5).fill(50),
                 totalStaked: new anchor.BN(0),
                 totalSupply: new anchor.BN(0),
@@ -310,7 +314,7 @@ describe("offer_claim + distribute_staker_rewards", () => {
 
         await setMarket(1, 0, now()); // after-hours, day 0 (sheet day_index = 0 from init)
 
-        // 2 lots = 20 NYSEH; price 10, discount 10% -> effective 9
+        // 2 lots = 20 AFHO; price 10, discount 10% -> effective 9
         // cost = 20e9 raw * 9 / 1e6 = 180_000 raw USDC
         const expectedCost = 180_000;
         const vaultBefore = await provider.connection.getTokenAccountBalance(usdcVault);
@@ -330,18 +334,18 @@ describe("offer_claim + distribute_staker_rewards", () => {
         assert.equal(Number(rewAfter.value.amount) - Number(rewBefore.value.amount), expectedCost * 0.1, "10% to rewards vault");
         assert.equal(Number(buyerBefore.value.amount) - Number(buyerAfter.value.amount), expectedCost, "buyer charged exact total");
 
-        // position created: 20 NYSEH vesting 5 days, buyer never holds the tokens
+        // position created: 20 AFHO vesting 5 days, buyer never holds the tokens
         const [positionPda] = PublicKey.findProgramAddressSync(
             [Buffer.from("position"), poolPda.toBuffer(), buyer.publicKey.toBuffer(), new anchor.BN(0).toArrayLike(Buffer, "le", 8)],
             staking.programId
         );
         const pos = await staking.account.stakePosition.fetch(positionPda);
-        assert.equal(pos.amount.toNumber(), 20 * NYSEH_UNIT);
+        assert.equal(pos.amount.toNumber(), 20 * AFHO_UNIT);
         assert.equal(pos.daysToUnlock, 5);
         assert.equal(pos.owner.toBase58(), buyer.publicKey.toBase58());
 
         const pool = await staking.account.stakePool.fetch(poolPda);
-        assert.equal(pool.totalStaked.toNumber(), 20 * NYSEH_UNIT);
+        assert.equal(pool.totalStaked.toNumber(), 20 * AFHO_UNIT);
 
         const sheet = await amm.account.offerList.fetch(offerListPda);
         assert.equal(sheet.smlOffer.remaining, 8);
@@ -352,10 +356,10 @@ describe("offer_claim + distribute_staker_rewards", () => {
         // SOL at $200 → sol_price = (200e6 usdc-raw × 1e6) / 1e9 lamports = 200_000
         await setSolPrice(200_000);
 
-        // 1 lot = 10 NYSEH at effective price 9 → cost 90_000 raw USDC
+        // 1 lot = 10 AFHO at effective price 9 → cost 90_000 raw USDC
         //   → lamports = 90_000 × 1e6 / 200_000 = 450_000
         const expectedLamports = 450_000;
-        const rent = await provider.connection.getMinimumBalanceForRentExemption(8);
+        const rent = await provider.connection.getMinimumBalanceForRentExemption(0);
         const vaultBefore = await provider.connection.getBalance(solVault);
         const dipBefore = await provider.connection.getBalance(solDip);
         const rewBefore = await provider.connection.getBalance(solRewardsPda);
@@ -370,13 +374,13 @@ describe("offer_claim + distribute_staker_rewards", () => {
         assert.equal(dipAfter - dipBefore, expectedLamports * 0.1, "10% to SOL dip vault");
         assert.equal(rewAfter - rewBefore, expectedLamports * 0.1, "10% to SOL rewards holding");
 
-        // position created at index 1: 10 NYSEH, 5-day vest
+        // position created at index 1: 10 AFHO, 5-day vest
         const [positionPda] = PublicKey.findProgramAddressSync(
             [Buffer.from("position"), poolPda.toBuffer(), buyer.publicKey.toBuffer(), new anchor.BN(1).toArrayLike(Buffer, "le", 8)],
             staking.programId
         );
         const pos = await staking.account.stakePosition.fetch(positionPda);
-        assert.equal(pos.amount.toNumber(), 10 * NYSEH_UNIT);
+        assert.equal(pos.amount.toNumber(), 10 * AFHO_UNIT);
         assert.equal(pos.daysToUnlock, 5);
 
         const state = await amm.account.ammState.fetch(ammStatePda);
@@ -399,7 +403,7 @@ describe("offer_claim + distribute_staker_rewards", () => {
         await expectFail(claimTx(0, 1, 1, fake.publicKey), "address");
     });
 
-    it("distribute_staker_rewards converts the 10% to NYSEH and bumps the index", async () => {
+    it("distribute_staker_rewards converts the 10% to AFHO and bumps the index", async () => {
         await setMarket(0, 2, now()); // market open, new day
         const rewBefore = await provider.connection.getTokenAccountBalance(usdcRewards);
         assert.isAbove(Number(rewBefore.value.amount), 0);
@@ -413,10 +417,10 @@ describe("offer_claim + distribute_staker_rewards", () => {
                 usdcRewards,
                 solRewards: solRewardsPda,
                 solOracle: solOraclePda,
-                nysehVault,
-                nysehMint,
+                afhoVault,
+                afhoMint,
                 poolState,
-                poolNyseh,
+                poolAfho,
                 poolUsdc,
                 poolSol: poolState,
                 dexProgram: mock.programId,
@@ -432,14 +436,14 @@ describe("offer_claim + distribute_staker_rewards", () => {
         assert.equal(Number(rewAfter.value.amount), 0, "USDC holding vault drained");
 
         // SOL leg fires too: 45_000 lamports (from the SOL claim test) at
-        // mock rate 10_000 NYSEH/SOL → 4.5e8 raw; USDC leg 18_000 × 100_000
-        // → 1.8e9 raw. Combined deposit: 2.25e9 NYSEH raw.
-        const solRent = await provider.connection.getMinimumBalanceForRentExemption(8);
+        // mock rate 10_000 AFHO/SOL → 4.5e8 raw; USDC leg 18_000 × 100_000
+        // → 1.8e9 raw. Combined deposit: 2.25e9 AFHO raw.
+        const solRent = await provider.connection.getMinimumBalanceForRentExemption(0);
         const solRewBal = await provider.connection.getBalance(solRewardsPda);
         assert.equal(solRewBal, solRent, "SOL holding vault drained to rent floor");
 
         const rewardVault = await provider.connection.getTokenAccountBalance(rewardVaultPda);
-        assert.equal(Number(rewardVault.value.amount), 2_250_000_000, "NYSEH deposited to reward vault (both legs)");
+        assert.equal(Number(rewardVault.value.amount), 2_250_000_000, "AFHO deposited to reward vault (both legs)");
 
         const pool = await staking.account.stakePool.fetch(poolPda);
         assert.isAbove(pool.accruedRewardPerShare.toNumber(), 0, "MasterChef index bumped");
@@ -455,10 +459,10 @@ describe("offer_claim + distribute_staker_rewards", () => {
                     usdcRewards,
                     solRewards: solRewardsPda,
                     solOracle: solOraclePda,
-                    nysehVault,
-                    nysehMint,
+                    afhoVault,
+                    afhoMint,
                     poolState,
-                    poolNyseh,
+                    poolAfho,
                     poolUsdc,
                     poolSol: poolState,
                     dexProgram: mock.programId,

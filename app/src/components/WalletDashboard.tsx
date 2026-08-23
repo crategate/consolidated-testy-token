@@ -17,7 +17,7 @@ export function WalletDashboard({ deployment }: WalletDashboardProps) {
         return (
             <div className="wallet-dashboard connect-prompt">
                 <h2>Connect Wallet</h2>
-                <p>Connect your wallet to stake NYSEH and view your positions.</p>
+                <p>Connect your wallet to stake AFHO and view your positions.</p>
                 <div className="wallet-button-wrapper">
                     <WalletMultiButton />
                 </div>

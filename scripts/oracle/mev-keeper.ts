@@ -58,10 +58,10 @@ async function main() {
         fs.readFileSync(path.join(process.cwd(), "target", "idl", "amm.json"), "utf-8")
     );
     const ammProgram = new anchor.Program(ammIdl as anchor.Idl, provider);
-    const nysehMint = new PublicKey(deployment.mint);
+    const afhoMint = new PublicKey(deployment.mint);
     const ammPda = (seed: string) =>
         anchor.web3.PublicKey.findProgramAddressSync(
-            [Buffer.from(seed), nysehMint.toBuffer()],
+            [Buffer.from(seed), afhoMint.toBuffer()],
             ammProgram.programId
         )[0];
     const ammStatePda = ammPda("amm_state");
@@ -193,7 +193,7 @@ async function main() {
                                 marketStatus: marketStatusPda,
                                 priceOracle: quoteAccount,
                                 stakingPool: ammStateForStats.stakingPool,
-                                nysehMint,
+                                afhoMint,
                             })
                             .instruction();
                         const statsTx = await sb.asV0Tx({
@@ -220,8 +220,8 @@ async function main() {
                                 marketStatus: marketStatusPda,
                                 metrics: metricsPda,
                                 acceptedOffers: acceptedOffersPda,
-                                nysehMint: nysehMint,
-                                nysehVault: new PublicKey(deployment.ammNysehVault),
+                                afhoMint: afhoMint,
+                                afhoVault: new PublicKey(deployment.ammAfhoVault),
                                 priceOracle: quoteAccount,
                                 systemProgram: anchor.web3.SystemProgram.programId,
                             })
@@ -257,7 +257,7 @@ async function main() {
                         // absolute-price account in highest_buyback_basis units).
                         const ammStateForCalc = await (ammProgram.account as any).ammState.fetch(ammStatePda);
                         const [mockPricePda] = PublicKey.findProgramAddressSync(
-                            [Buffer.from("mock_price"), nysehMint.toBuffer()],
+                            [Buffer.from("mock_price"), afhoMint.toBuffer()],
                             new PublicKey(ammStateForCalc.dexProgram)
                         );
                         const calcIx = await ammProgram.methods
@@ -290,7 +290,7 @@ async function main() {
                     }
 
                     // Staker distribution: swap yesterday's 10% USDC share to
-                    // NYSEH and deposit into the staking reward vault. Once per
+                    // AFHO and deposit into the staking reward vault. Once per
                     // day (on-chain day_index guard); a sim failure (nothing
                     // collected / no stakers) is expected and skipped.
                     try {
@@ -298,10 +298,10 @@ async function main() {
                         const dexProgramId = new PublicKey(ammStateForDist.dexProgram);
                         const usdcMint = new PublicKey(ammStateForDist.usdcMint);
                         const [poolState] = PublicKey.findProgramAddressSync(
-                            [Buffer.from("mock_pool"), nysehMint.toBuffer()],
+                            [Buffer.from("mock_pool"), afhoMint.toBuffer()],
                             dexProgramId
                         );
-                        const poolNyseh = getAssociatedTokenAddressSync(nysehMint, poolState, true, TOKEN_2022_PROGRAM_ID);
+                        const poolAfho = getAssociatedTokenAddressSync(afhoMint, poolState, true, TOKEN_2022_PROGRAM_ID);
                         const poolUsdc = getAssociatedTokenAddressSync(usdcMint, poolState, true, TOKEN_PROGRAM_ID);
                         const stakingPoolPda = new PublicKey(ammStateForDist.stakingPool);
                         const stakingIdl = JSON.parse(fs.readFileSync(path.join(process.cwd(), "target", "idl", "staking.json"), "utf-8"));
@@ -319,10 +319,10 @@ async function main() {
                                 usdcRewards: ammStateForDist.usdcRewards,
                                 solRewards: ammStateForDist.solRewards,
                                 solOracle: ammStateForDist.solOracle,
-                                nysehVault: ammStateForDist.nysehVault,
-                                nysehMint,
+                                afhoVault: ammStateForDist.afhoVault,
+                                afhoMint,
                                 poolState,
-                                poolNyseh,
+                                poolAfho,
                                 poolUsdc,
                                 poolSol: poolState,
                                 dexProgram: dexProgramId,
@@ -367,10 +367,10 @@ async function main() {
                     const usdcMint = new PublicKey(ammState.usdcMint);
                     // mock-dex-pool: pool token accounts are ATAs of the pool PDA
                     const [poolState] = PublicKey.findProgramAddressSync(
-                        [Buffer.from("mock_pool"), nysehMint.toBuffer()],
+                        [Buffer.from("mock_pool"), afhoMint.toBuffer()],
                         dexProgramId
                     );
-                    const poolNyseh = getAssociatedTokenAddressSync(nysehMint, poolState, true, TOKEN_2022_PROGRAM_ID);
+                    const poolAfho = getAssociatedTokenAddressSync(afhoMint, poolState, true, TOKEN_2022_PROGRAM_ID);
                     const poolUsdc = getAssociatedTokenAddressSync(usdcMint, poolState, true, TOKEN_PROGRAM_ID);
                     const bbIx = await ammProgram.methods
                         .dexBuyback()
@@ -380,12 +380,12 @@ async function main() {
                             marketStatus: marketStatusPda,
                             acceptedOffers: acceptedOffersPda,
                             usdcVault: ammState.usdcVault,
-                            nysehVault: ammState.nysehVault,
+                            afhoVault: ammState.afhoVault,
                             solVault: ammState.solVault,
                             solOracle: ammState.solOracle,
-                            nysehMint,
+                            afhoMint,
                             poolState,
-                            poolNyseh,
+                            poolAfho,
                             poolUsdc,
                             poolSol: poolState,
                             dexProgram: dexProgramId,
@@ -412,6 +412,64 @@ async function main() {
             } catch (e) {
                 // Never let a buyback attempt kill the crank loop
                 console.error("❌ dex_buyback attempt failed:", (e as Error).message);
+            }
+
+            // buy_the_dip: attempt EVERY loop, any market state — the dip
+            // buyer is always on. Calling it is also what keeps the spot-price
+            // ring sampled. On-chain pacing + trigger turn most fires into
+            // cheap no-ops; sim failures (cold start, no dip, day cap) are
+            // expected.
+            try {
+                const ammState = await (ammProgram.account as any).ammState.fetch(ammStatePda);
+                const dexProgramId = new PublicKey(ammState.dexProgram);
+                const usdcMint = new PublicKey(ammState.usdcMint);
+                // mock-dex-pool: pool token accounts are ATAs of the pool PDA
+                const [poolState] = PublicKey.findProgramAddressSync(
+                    [Buffer.from("mock_pool"), afhoMint.toBuffer()],
+                    dexProgramId
+                );
+                const poolAfho = getAssociatedTokenAddressSync(afhoMint, poolState, true, TOKEN_2022_PROGRAM_ID);
+                const poolUsdc = getAssociatedTokenAddressSync(usdcMint, poolState, true, TOKEN_PROGRAM_ID);
+                const dipIx = await ammProgram.methods
+                    .buyTheDip()
+                    .accountsStrict({
+                        cranker: keypair.publicKey,
+                        ammState: ammStatePda,
+                        marketStatus: marketStatusPda,
+                        metrics: metricsPda,
+                        spotOracle: ammState.spotOracle,
+                        solOracle: ammState.solOracle,
+                        usdcDip: ammState.usdcDip,
+                        solDip: ammState.solDip,
+                        afhoVault: ammState.afhoVault,
+                        afhoMint,
+                        poolState,
+                        poolAfho,
+                        poolUsdc,
+                        poolSol: poolState,
+                        dexProgram: dexProgramId,
+                        tokenProgram: TOKEN_PROGRAM_ID,
+                        token2022Program: TOKEN_2022_PROGRAM_ID,
+                        systemProgram: anchor.web3.SystemProgram.programId,
+                    })
+                    .instruction();
+                const dipTx = await sb.asV0Tx({
+                    connection,
+                    ixs: [dipIx],
+                    signers: [keypair],
+                    computeUnitPrice: 20_000,
+                });
+                const dipSim = await connection.simulateTransaction(dipTx);
+                if (dipSim.value.err) {
+                    console.log("buy_the_dip skipped (cold start / no dip / pacing / cap).");
+                } else {
+                    const dipSig = await connection.sendTransaction(dipTx);
+                    await connection.confirmTransaction(dipSig, "confirmed");
+                    console.log(`✅ buy_the_dip slice fired! ${dipSig}`);
+                }
+            } catch (e) {
+                // Never let a dip attempt kill the crank loop
+                console.error("❌ buy_the_dip attempt failed:", (e as Error).message);
             }
         } catch (e) {
             console.error("❌ Crank attempt failed:", e);

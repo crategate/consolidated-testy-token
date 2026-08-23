@@ -48,7 +48,7 @@ pub mod amm {
 
     // Night-desk taking instruction. Buyer pays USDC (SOL support at
     // mainnet); payment splits 80% buyback vault / 10% dip reserve / 10%
-    // staker-rewards holding vault at claim time. Purchased NYSEH goes
+    // staker-rewards holding vault at claim time. Purchased AFHO goes
     // directly into a vesting StakePosition via CPI — it never sits in the
     // buyer's wallet. Claims only while the market is after-hours/closed,
     // against the current day's sheet.
@@ -69,7 +69,7 @@ pub mod amm {
     }
 
     // Start-of-day staker distribution: swap yesterday's 10% USDC share into
-    // NYSEH and deposit it into the staking reward vault (MasterChef index
+    // AFHO and deposit it into the staking reward vault (MasterChef index
     // bump → instantly claimable pro-rata). Once per trading day.
     pub fn distribute_staker_rewards(ctx: Context<DistributeStakerRewards>) -> Result<()> {
         distribute_staker_rewards::handler(ctx)
@@ -78,10 +78,14 @@ pub mod amm {
     pub fn dex_buyback(ctx: Context<DexBuyback>) -> Result<()> {
         // executes at start of every trading day
         // uses 80% of funds made from all last night's claimed offers
-        //
-        // set limit orders with 10% to catch dips
-        // thes dip catching mechanism should be "always on", not just during trade hours
         dex_buyback::handler(ctx)
+    }
+
+    // The "always on" dip buyer: spends the 10% dip reserve whenever the live
+    // spot price sits >=3% below the recent spot-ring norm; size is quadratic
+    // in depth and scaled by the 20-day trend slope. Any market state.
+    pub fn buy_the_dip(ctx: Context<BuyTheDip>) -> Result<()> {
+        buy_the_dip::handler(ctx)
     }
 }
 #[derive(Accounts)]

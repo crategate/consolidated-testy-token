@@ -8,12 +8,12 @@ use super::helpers_make_offers::*;
 pub struct MakeOffers<'info> {
     #[account(mut)]
     pub cranker: Signer<'info>,
-    #[account(mut, seeds = [b"amm_state", amm_state.nyseh_mint.as_ref()], bump = amm_state.bump,)]
+    #[account(mut, seeds = [b"amm_state", amm_state.afho_mint.as_ref()], bump = amm_state.bump,)]
     pub amm_state: Account<'info, AmmState>,
 
     #[account(
         mut,
-        seeds = [b"offer_list", amm_state.nyseh_mint.as_ref()],
+        seeds = [b"offer_list", amm_state.afho_mint.as_ref()],
         bump = offer_list.bump,
     )]
     pub offer_list: Account<'info, OfferList>,
@@ -27,19 +27,19 @@ pub struct MakeOffers<'info> {
 
     /// READ-ONLY: metrics are written by update_tradeday_stats (end of day)
     /// and calc_completed_offers (start of day), never here.
-    #[account(seeds = [b"metrics", amm_state.nyseh_mint.as_ref()], bump)]
+    #[account(seeds = [b"metrics", amm_state.afho_mint.as_ref()], bump)]
     pub metrics: Account<'info, MarketMetrics>,
 
-    #[account(seeds = [b"accepted_offers", amm_state.nyseh_mint.as_ref()], bump)]
+    #[account(seeds = [b"accepted_offers", amm_state.afho_mint.as_ref()], bump)]
     pub accepted_offers: Account<'info, AcceptedOffers>,
 
     /// Mint, for decimals — lot sizes are whole tokens, vault is raw units.
-    #[account(address = amm_state.nyseh_mint)]
-    pub nyseh_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(address = amm_state.afho_mint)]
+    pub afho_mint: Box<InterfaceAccount<'info, Mint>>,
 
     /// CHECK: nyse_vault for balance capping
-    #[account(mut, address = amm_state.nyseh_vault)]
-    pub nyseh_vault: AccountInfo<'info>,
+    #[account(mut, address = amm_state.afho_vault)]
+    pub afho_vault: AccountInfo<'info>,
     /// CHECK: live price oracle — canonical Switchboard quote [market_status, price]
     #[account(address = amm_state.price_oracle)]
     pub price_oracle: Box<Account<'info, switchboard_on_demand::SwitchboardQuote>>,
@@ -79,9 +79,9 @@ pub fn handler(ctx: Context<MakeOffers>) -> Result<()> {
 
     // -- Offer combinator: sequential pipeline, one dimension after another --
     // each step builds on the ones already decided.
-    let vault_balance = vault_token_balance(&ctx.accounts.nyseh_vault);
+    let vault_balance = vault_token_balance(&ctx.accounts.afho_vault);
     let unit = 10u64
-        .checked_pow(ctx.accounts.nyseh_mint.decimals as u32)
+        .checked_pow(ctx.accounts.afho_mint.decimals as u32)
         .unwrap_or(1);
 
     // Step 1 — totals: tokens offered today ← momentum bump-taper.

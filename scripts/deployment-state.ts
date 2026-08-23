@@ -13,7 +13,7 @@ type DeploymentState = {
     ammOfferList?: string;
     ammSolVault?: string;
     ammUsdcVault?: string;
-    ammNysehVault?: string;
+    ammAfhoVault?: string;
     coinMintProgram?: string;
     pool?: string;
     vault?: string;
