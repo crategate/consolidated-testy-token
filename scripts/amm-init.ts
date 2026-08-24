@@ -22,7 +22,8 @@ import { pubkey, writeDeploymentState } from "./deployment-state";
 // Usage: npx ts-node scripts/init-amm.ts [PERCENTAGE_TO_TRANSFER]
 //   Default percentage: 10% (0.10)
 
-// MAINNET NOTE: change dis to mainnet 
+// Devnet USDC faucet mint. MAINNET: use EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v.
+// const USDC_MINT = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"); // MAINNET
 const USDC_MINT = new PublicKey(
     process.env.DEVNET_USDC_MINT || "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
 );

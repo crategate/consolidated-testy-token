@@ -50,7 +50,7 @@ export function useClaimAll(mint: PublicKey | null, positions: Position[], marke
                         pool: poolPda,
                         position: position.pda,
                         rewardVault: rewardVaultPda,
-                        posrVault: posrVaultPda,
+                        afhoVault: posrVaultPda,
                         ownerToken,
                         marketStatus,
                         tokenProgram: TOKEN_2022_PROGRAM_ID,

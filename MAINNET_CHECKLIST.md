@@ -1,56 +1,96 @@
 # AFHO Mainnet Checklist
 
-Everything required to go from the current devnet build to a mainnet launch, in rough dependency order. Source: full codebase audit (2026-08-22) + AGENTS.md gotchas. File:line refs point at the code as of that audit.
+Everything required to go from the current devnet build to a mainnet launch, in rough dependency order. Source: full codebase audit (2026-08-22) + AGENTS.md gotchas + subsequent fixes.
 
-## 1. Blocking security fixes (from audit)
+## 1. Blocking security fixes (from audit) — ✅ DONE
 
-- [ ] **H1 — keeper can steal swap in-leg funds.** `pool_usdc` is mint-constrained only and `pool_sol` is unconstrained in `dex_buyback.rs:59-66`, `buy_the_dip.rs:104-110`, `distribute_staker_rewards.rs:64-71`; `execute_swap` (`dex_buyback.rs:272`) pays the in-leg before the CPI and never validates the recipients. A compromised keeper pockets the day's buyback/dip/rewards spend. Fix when writing the real-DEX adapter: pin pool receiving accounts in state (`address =` constraints) or have the CPI validate both legs.
-- [ ] **M1 — `read_oracle_data` bypasses crank safety** (`crank-oracle/src/lib.rs:113-154`). No staleness bound, no monotonic quote-slot check, no signer, no `seeds = [b"market_status"]` — anyone can write a stale quote's state/day into the canonical market-status PDA. Add the same guards as `permissionless_crank`.
-- [ ] **M2 — `calc_completed_offers` scores stale sheets** (`calc_completed_offers.rs:64-113`). No `offer_list.day_index` freshness check: a missed `make_offers` night double-counts fill %, and a partially-filled stale sheet keeps `untaken_days` reset forever — permanently blocking ratchet-floor decay, the desk's only bear-market escape. Require the scored sheet to be yesterday's or skip.
-- [ ] **M3 — predictable slices + unbounded ratchet.** Buyback/dip slices fire on a public 150-slot cadence with derivable sizes (sandwichable), and every fill ratchets `highest_buyback_basis` from raw exec price with no oracle bound — a price spike into a fill can pin the floor above market and DoS the desk. Cap per-fill slippage vs. spot oracle; only ratchet fills within a tolerance band.
-- [ ] **L1 — day-0 deadlock.** All `*_day_index` guards init to 0 and the first trading day is day 0, so `make_offers` / `update_tradeday_stats` / `calc_completed_offers` fail their idempotency checks on launch day. Init guards to `u64::MAX`.
-- [ ] **L2 — `stake()` takes arbitrary `index`/`days`** (`staking/src/lib.rs:234-287`): `index = u64::MAX` panics; `days = 0` makes locks decorative for direct stakers. Require `index == user_index.next_index`.
-- [ ] **L3 — unbounded penalty/tax bps at `initialize_pool`** (`staking/src/lib.rs:84-130`): penalty > 10_000 bps drains the shared vault via the rewards leg. `require!(each_bps <= 10_000)`.
-- [ ] **L4 — unbounded `market_state` / empty feed panic** (`crank-oracle/src/lib.rs:65-82`): `require!(market_state <= 3)`, `require!(!feeds.is_empty())`.
-- [ ] **L5 — bounty vault drain-to-zero / no rotation** (`crank-oracle/src/lib.rs:96-103, 194-211`): keep a rent floor (`>= bounty + minimum_balance(1)`), add authority-gated setters for `bounty_amount`/authority.
-- [ ] **Frontend claim/unstake broken against current IDL** — `app/src/hooks/stake/useClaimAll.ts:47-58` and `useUnstake.ts:73-85` pass `posrVault` and omit the required `afhoVault`; rename `posrVault` → `afhoVault` (same `[b"posr", pool]` PDA). As written, UI claim/exit transactions fail to build.
+- [x] **H1 — keeper can steal swap in-leg funds.** Pinned `pool_afho`/`pool_usdc`/`pool_sol` to the pool's topology in `dex_buyback`, `buy_the_dip`, `distribute_staker_rewards`. Re-pin to Raydium CPMM vault PDAs in §4 (mock pins are mock-specific).
+- [x] **M1 — `read_oracle_data` bypasses crank safety.** Added `cranker: Signer`, `bounty_config`/`market_status` seeds, staleness bound, monotonic quote-slot check, `state <= 3`, non-empty feeds.
+- [x] **M2 — `calc_completed_offers` scores stale sheets.** Hard-errors unless `offer_list.day_index == yesterday`. (Note: "error" not "skip" — a missed `make_offers` freezes scoring until a new sheet posts.)
+- [x] **M3 — predictable slices + unbounded ratchet.** `ratchet_within_band` (5% vs spot oracle) on every fill in all three swap paths; `spot_oracle`/`usdc_mint` accounts added.
+- [x] **L1 — day-0 deadlock.** Day-index guards init to `u64::MAX`.
+- [x] **L2 — `stake()` arbitrary `index`.** `require!(index == user_index.next_index)`.
+- [x] **L3 — unbounded penalty/tax bps.** `require!(bps <= 10_000)` at `initialize_pool` (boxed the `InitializePool` token accounts to keep the SBF frame under 4KB).
+- [x] **L4 — unbounded `market_state` / empty feed.** `require!(market_state <= 3)` + `require!(!feeds.is_empty())`.
+- [x] **L5 — bounty vault drain / no rotation.** Rent floor + `set_bounty_amount` / `set_authority`.
+- [x] **Frontend claim/unstake IDL.** Renamed `posrVault` → `afhoVault` in `useClaimAll.ts` / `useUnstake.ts`. (Needs a devnet UI smoke test.)
 
-## 2. Remove devnet-only code
+### Post-audit hardening (done)
 
-- [ ] `programs/mock-dex-pool` entirely — its `send_afho` is a permissionless free-AFHO faucet; **fatal if shipped**.
+- [x] **SBF stack-budget fixes.** Boxed the large accounts in `make_offers`, `calc_completed_offers`, `update_tradeday_stats`, `load_test_data`, `set_keeper`, and `staking::InitializePool`. Vendored `switchboard-on-demand` to gate `OracleAccountData`'s anchor deserialize on `client` (struct is ~4.8KB > 4KB frame limit). Build is clean of "Stack offset exceeded".
+- [x] **Bounty state-change gating.** `permissionless_crank` now pays only on a real market-state transition; heartbeat cranks are free. Burn rate ≈ 0.01–0.02 SOL/day, not slot-cadence-bound.
+
+## 2. Remove devnet-only code — ⏳ keep until §4 lands
+
+- [ ] `programs/mock-dex-pool` (permissionless AFHO faucet — **fatal if shipped**).
 - [ ] `load_test_data` (amm), `test_set_state` (crank-oracle), `update_amm_program` (staking).
 - [ ] Permissionless `set_price` mock oracle PDAs.
+- Note: these stay for devnet testing until the real DEX adapter + oracles (§3/§4) are in and green.
 
-## 3. Real price oracles (replace raw-u64 stubs)
+## 3. Real price oracles — ⏳ plan: Raydium TWAP + Switchboard(status) + optional JUP(24h)
 
-- [ ] `price_oracle` / `spot_oracle`: real absolute-price source in floor units (usdc_raw×1e6/afho_raw) — `read_live_price` (`offer_claim.rs:579`) currently trusts one stale-able u64 with no staleness/validity check. Claims, floor decay, dip trigger all depend on it. Add staleness bounds.
-- [ ] `sol_oracle`: real SOL/USD feed for SOL-leg pricing/ratchets (`dex_buyback.rs:241`, `buy_the_dip.rs:299`).
-- [ ] Switchboard combined `[status, price]` quote resolves on mainnet once Jupiter indexes the mint (devnet gotcha disappears); keeper fallback path still worth keeping.
+- [ ] `spot_oracle` → Raydium CPMM pool **TWAP** (`observation_state`), not raw reserves. Used by claims, floor decay, dip trigger.
+- [ ] `sol_oracle` → Raydium SOL/USDC pool TWAP.
+- [ ] `priceChange24h` (momentum) → keep Jupiter Price API via Switchboard for now (market-wide 24h change); optional later: self-sampled daily diff of the pool TWAP. **Revisit `calculate_momentum_score` weighting once the source changes** (see §9).
+- [ ] Staleness/validity checks on whatever replaces the raw-u64 stubs.
 
-## 4. Real DEX integration (see "DEX strategy" below)
+## 4. Real DEX integration — ⏳ Raydium CPMM
 
-- [ ] Rewrite `execute_swap` (`dex_buyback.rs:272-326`) against the real pool — the ONLY swap-agnostic seam; used by `dex_buyback`, `buy_the_dip`, `distribute_staker_rewards`.
-- [ ] Adapter must report a USDC-denominated exec price for the ratchet (both legs same units).
-- [ ] `amm_state.dex_program` pointed at the real pool program at init.
-- [ ] Close H1's account-validation gap in the same pass.
+- [ ] Rewrite `execute_swap` via `raydium_cp_swap` CPI (`swap_base_input`). Spec in `docs/DEX-INTEGRATION.md`. Dep: `raydium-cp-swap` (crates.io).
+- [ ] `amm_state.dex_program` → CPMM program; pin pool state/vaults/`amm_config`/`observation_state` in state (H1 re-pin).
+- [ ] SOL leg → **WSOL** handling (wrap `sol_vault` lamports) or route through AFHO/USDC only (decision).
+- [ ] Adapter reports USDC-denominated exec price for the ratchet.
+- [ ] `minimum_amount_out` from the spot oracle (front-line M3 band) inside the CPI.
 
-## 5. Liquidity pool (Raydium CPMM — supports Token-2022, AFHO-compatible)
+## 5. Liquidity pool (Raydium CPMM — Token-2022 compatible)
 
-- [ ] **Launch split 25% LP / 75% protocol vault**: do it manually at launch via the Raydium UI — it's a one-off; codifying buys nothing. (Automating = a custom init-time CPI creating the CPMM pool + deposit; real risk, zero recurring value.)
-- [ ] **1% of bond sales → LP until target size**: requires (a) a 4th split leg in `offer_claim` routing 1% of proceeds to an LP-funding vault, (b) a target-size check, (c) a periodic permissionless `lp_fund` instruction that CPI-deposits into the CPMM pool (both sides — AFHO from `afho_vault` + USDC/SOL from the skim) until the pool's liquidity ≥ target. Moderate lift (~1 new instruction + split change + keeper hook), blocked on §4's real pool existing. Keeper calls it per loop like `buyTheDip`.
-- [ ] Decide LP custody: burned/locked LP tokens vs. protocol-owned PDA (affects withdrawal risk and the "target size" measurement).
+- [x] **Programmatic pool init.** `scripts/mint-launch.ts` now scaffolds `raydium.cpmm.createPool` (devnet; mainnet USDC swap line commented). Replaces the old "manual UI" plan.
+- [ ] **Launch split 25% LP / 75% protocol.** Seed via the create-pool call at launch; both sides (AFHO + USDC) from a dedicated LP-funder account, not `afho_vault`.
+- [ ] **1% of bond sales → LP until target.** 4th split leg in `offer_claim` routing 1% of proceeds to an LP-funding vault + a permissionless `lp_fund` instruction that CPI-`addLiquidity` until pool liquidity ≥ target. **Target: $100,000** (sanity: at 0.25% fee this is enough to make swap depth / TWAP meaningful; revisit after launch volume).
+- [ ] **LP custody.** Burn vs lock LP tokens (Raydium `cpmm.lockLiquidity` supports locking). Protocol-owned PDA affects "target size" measurement + withdrawal risk.
 
-## 6. Ops / launch sequence
+## 6. Bounty / keeper / treasury
 
-- [ ] Rotate keeper off the authority key via `set_keeper` (H1 makes this urgent even before the fix).
-- [ ] Fund + size the bounty vault; monitor drain rate (bounty pays once per fresh quote slot on the status crank only — buyback/dip loops cost the keeper tx fees only).
-- [ ] Fix known staking issues: `amm_stake.rs` `is_signer` check blocking offer_claim CPI; `Stake` position space INIT_SPACE.
-- [ ] `current_stake_ratio` uses `total_supply` instead of circulating (`helpers_make_offers.rs:31-33`) — resolve or accept.
-- [ ] Fresh `anchor build` + full test suite green (26/26 local suites as of 2026-08-22).
-- [ ] `amm-init` with real mint/pool/oracle addresses; verify `deployment.json` consumed by the app.
-- [ ] External audit pass on the final diff (this checklist's §1 fixes included).
-- [ ] Doc cleanup: staking header describes removed claim penalties (`staking/src/lib.rs:37-41`); stale comment in `dex_buyback.rs:332-334`.
+- [x] Rotate keeper off authority via `set_keeper` (H1 urgency reduced post-pin, still do it).
+- [x] Bounty vault rent floor + setters (L5).
+- [x] Bounty pays only on state transitions (rate ~2/day).
+- [ ] **Bounty auto-top-up from POSR vault.** When `bounty_vault` SOL < 0.2 SOL, swap AFHO from POSR → SOL via the DEX, then fund `bounty_vault` to 0.4 SOL. (Blocked on §4 swap; POSR vault is staking-owned, so this is an AMM↔staking CPI or a keeper-run swap.)
+- [ ] Size bounty amount (`set_bounty_amount`) — 0.005 SOL/transition is fine; tune post-launch.
+
+## 7. Ops / launch sequence
+
+- [x] Staking issues: `amm_stake.rs` is_signer (verify after §4 CPI), `Stake` INIT_SPACE — check.
+- [ ] `current_stake_ratio` uses `total_supply` vs circulating (`helpers_make_offers.rs:31-33`) — resolve or accept.
+- [x] Fresh `anchor build` + full test suite green (**34/34** local suites).
+- [ ] `amm-init` with real mint/pool/oracle addresses; verify `deployment.json` consumed by app.
+- [ ] External audit pass on the final diff (§1 fixes + §4 adapter + §5 LP).
+- [ ] Doc cleanup: staking header describes removed claim penalties; stale comment in `dex_buyback.rs:332-334`.
+
+## 8. Token / program trust posture
+
+- [x] Revoke **mint authority** (in `mint-launch.ts`); freeze authority already `null`.
+- [ ] Revoke **metadata update authority** (immutable name/symbol/URI) — needs the `@solana/spl-token-metadata` update-authority call; add to launch script.
+- [ ] **Program upgrade authorities** for amm/staking/crank-oracle → multisig or renounce (separate from the mint; BPFLoader `set_authority`).
+- [ ] Burn/lock LP tokens (see §5).
+- [ ] No hidden mint path: confirm `mintTo` only via revoked mint authority.
+
+## 9. Momentum metric soundness (question raised)
+
+- [ ] **Review `calculate_momentum_score` weighting.** Current input is `priceChange24h` (centi-percent, 20-day ring). Design intent (more offers in bullish regimes) is sound; the risk is the *source*: if Jupiter's 24h change is unavailable/stale for a fresh mint, `record_price_change` silently skips → flat momentum → conservative offer sizing (safe, but may under-offer). Decide: keep JUP 24h, or switch to self-sampled daily pool-price diffs, and re-tune the bump-taper coefficients against `sim/`.
+
+## 10. Switchboard → mainnet
+
+- [ ] Redeploy feeds to the **mainnet default queue** (`A43DyUGA7s8eXPxqEjJY6EBu1KKbNgfxF8h17VAHn13w`) — `feed-deploy.ts` currently uses `getDefaultQueue(rpcEndpoint)`; confirm it resolves mainnet.
+- [ ] Set mainnet feed job API keys (MASSIVE/EARNINGS/JUP) as `variableOverrides`.
+- [ ] Confirm Jupiter indexes the mainnet mint (unlocks the combined `[status, price]` quote); else status-only fallback stays.
+- [ ] Mainnet oracle-program/quote-program IDs (see switchboard skill) vs devnet.
+
+## 11. Frontend
+
+- [x] Position card tint by market state (after-hours `#f7dec0`, closed/halted `#ddd6ff`).
+- [x] Exit button shows per-state principal-penalty % (incl. 0% open).
+- [ ] UI smoke test on devnet for claim/unstake + the new penalty label.
 
 ## DEX strategy note
 
-Jupiter is a **router/aggregator**, not a pool — it can't host the protocol-owned liquidity or serve as the CPI swap target for `execute_swap`. The right mainnet shape: Raydium CPMM pool (protocol-seeded, §5) as the canonical pool + price source; optionally route through Jupiter *inside* the adapter if better execution exists elsewhere, but that adds JITO-sized complexity for little gain at launch volume. The Jupiter skill's relevant pieces for launch: making sure the mint is indexed (unlocks the combined Switchboard quote) and the Price API for a sanity-check oracle — not the swap path.
+Jupiter is a **router/aggregator**, not a pool — it can't host the protocol-owned liquidity or serve as the CPI swap target for `execute_swap`. Canonical shape: **Raydium CPMM pool** (protocol-seeded, §5) as the pool + price source; Jupiter only for mint indexing (unlocks the combined Switchboard quote) and as an optional sanity oracle — not the swap path.

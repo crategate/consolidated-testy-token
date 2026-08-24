@@ -3,6 +3,7 @@ import { usePositionRewards } from '../hooks/stake/usePositionRewards';
 import { useClaimAll } from '../hooks/stake/useClaimAll';
 import { useMarketStatus } from '../hooks/useMarketStatus';
 import { useUnstake } from '../hooks/stake/useUnstake';
+import { usePool } from '../hooks/stake/usePool';
 import { PublicKey } from '@solana/web3.js';
 
 interface PositionsProps {
@@ -13,10 +14,27 @@ interface PositionsProps {
 export function Positions({ mint, marketStatusPda }: PositionsProps) {
     const { positions, loading: positionsLoading, refresh: refreshPositions } = usePositions(mint);
     const { data: marketData } = useMarketStatus(marketStatusPda);
+    const { pool } = usePool(mint);
     const { enriched, grandTotal } = usePositionRewards(mint, positions, marketStatusPda);
     const { claimAll, loading: claimLoading } = useClaimAll(mint, positions, marketStatusPda);
     const { unstake, loadingIndex: unstakeLoadingIndex } = useUnstake(mint, marketStatusPda, marketData?.state);
     const claimsOpen = marketData?.state === 0;
+
+    // Exit penalties apply to principal and are tiered by market state
+    // (0 = open, 1 = after-hours, 2 = closed, 3 = halted).
+    const exitPenaltyBps = (() => {
+        switch (marketData?.state) {
+            case 1:
+                return pool?.afterHoursPenaltyBps ?? 0;
+            case 2:
+                return pool?.closedPenaltyBps ?? 0;
+            case 3:
+                return pool?.haltedPenaltyBps ?? 0;
+            default:
+                return 0;
+        }
+    })();
+    const exitPenaltyPct = (exitPenaltyBps / 100).toFixed(exitPenaltyBps % 100 === 0 ? 0 : 2);
 
     const handleClaimAll = async () => {
         try {
@@ -71,7 +89,7 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
 
             <div className="pos-contain">
                 {displayPositions.map((pos) => (
-                    <div key={pos.index} className="position-card">
+                    <div key={pos.index} className={`position-card market-state-${marketData?.state ?? 0}`}>
                         <div className="position-row">
                             <span><strong>{(pos.amount / 1e9).toFixed(2)} </strong> AFHO</span>
                             {'multiplierDisplay' in pos && pos.multiplierDisplay !== '—' && (
@@ -108,7 +126,9 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
                             onClick={() => handleUnstake(pos)}
                             disabled={unstakeLoadingIndex === pos.index}
                         >
-                            {unstakeLoadingIndex === pos.index ? 'Exiting…' : 'Exit Position'}
+                            {unstakeLoadingIndex === pos.index
+                                ? 'Exiting…'
+                                : `Exit Position (${exitPenaltyPct}% penalty)`}
                         </button>
                     </div>
                 ))}

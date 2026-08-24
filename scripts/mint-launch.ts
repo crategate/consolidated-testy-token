@@ -18,11 +18,18 @@ import {
     TYPE_SIZE,
     LENGTH_SIZE,
     createInitializeMetadataPointerInstruction,
+    createSetAuthorityInstruction,
+    AuthorityType,
 } from "@solana/spl-token";
 import { createInitializeInstruction, pack, type TokenMetadata } from "@solana/spl-token-metadata";
 import * as fs from "fs";
 import * as path from "path";
 import { pubkey, writeDeploymentState } from "./deployment-state";
+
+// Devnet USDC (the faucet mint used across the scripts). MAINNET: swap in the
+// real USDC mint and uncomment it.
+const USDC_MINT = new PublicKey("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"); // devnet
+// const USDC_MINT = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"); // MAINNET
 
 const crankKeypairPath = path.join(process.cwd(), "target", "deploy", "crank_oracle-keypair.json");
 const crankKeyData = JSON.parse(fs.readFileSync(crankKeypairPath, "utf-8"));
@@ -151,6 +158,65 @@ async function main() {
 
     } catch (e) {
         console.error("❌ Transfer Failed:", e);
+    }
+
+    // ── Revoke mint authority: supply is permanently capped. ────────────────
+    // Freeze authority was already `null` at init, so nothing can be frozen.
+    try {
+        const revokeTx = new Transaction().add(
+            createSetAuthorityInstruction(
+                mint.publicKey,
+                wallet.publicKey,          // current mint authority
+                AuthorityType.MintTokens,
+                null,                       // revoke — no new mint authority
+                [],
+                TOKEN_2022_PROGRAM_ID
+            )
+        );
+        const revokeSig = await sendAndConfirmTransaction(connection, revokeTx, [wallet.payer], { skipPreflight: true });
+        console.log(`✅ Mint authority revoked: ${revokeSig}`);
+    } catch (e) {
+        console.error("❌ Mint authority revoke failed:", e);
+    }
+
+    // ── Raydium CPMM liquidity pool (devnet) ────────────────────────────────
+    // Seeds an AFHO/USDC pool so the DEX adapter + on-chain pricing can be
+    // exercised on devnet. Requires `yarn add @raydium-io/raydium-sdk-v2` and a
+    // funded devnet USDC ATA. On MAINNET: set USDC_MINT to EPjFWdd5... above and
+    // run once at launch.
+    try {
+        const { Raydium } = await import("@raydium-io/raydium-sdk-v2");
+        const raydium = await Raydium.load({ connection, owner: wallet.payer, cluster: "devnet" });
+        const feeConfigs = await raydium.api.getCpmmConfigs();
+        const feeConfig = feeConfigs.find((c: any) => c.tradeFeeRate === 2500);
+        if (!feeConfig) throw new Error("No 0.25% CPMM fee config on devnet");
+
+        const [afhoInfo, usdcInfo] = await raydium.token.getTokenInfo([
+            mint.publicKey.toBase58(),
+            USDC_MINT.toBase58(),
+        ]);
+
+        // Small devnet seed amounts — tune as needed.
+        const seedAfho = new anchor.BN(1000 * 10 ** decimals);
+        const seedUsdc = new anchor.BN(10 * 1_000_000); // 10 USDC raw (6 dec)
+
+        const { execute, extInfo } = await raydium.cpmm.createPool({
+            mintA: afhoInfo,
+            mintB: usdcInfo,
+            mintAAmount: seedAfho,
+            mintBAmount: seedUsdc,
+            startTime: new anchor.BN(0),
+            feeConfig,
+            txVersion: "V0",
+        });
+        const { txId } = await execute({ sendAndConfirm: true });
+        console.log(`✅ Raydium CPMM pool created: ${extInfo.address.toBase58()} (tx ${txId})`);
+        writeDeploymentState({ raydiumPool: extInfo.address.toBase58() });
+    } catch (e) {
+        console.warn(
+            "⚠️ Raydium pool creation skipped (install @raydium-io/raydium-sdk-v2 and fund devnet USDC):",
+            e instanceof Error ? e.message : e
+        );
     }
 
     console.log("🎉 Deployment Complete!");

@@ -8,6 +8,9 @@ export interface StakePoolData {
     totalStaked: { toString(): string };
     maxMultiplierBps: number;
     posrTaxBps: number;
+    afterHoursPenaltyBps: number;
+    closedPenaltyBps: number;
+    haltedPenaltyBps: number;
     accruedRewardPerShare: { toString(): string };
     [key: string]: unknown;
 }

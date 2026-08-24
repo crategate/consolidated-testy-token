@@ -568,6 +568,16 @@ body {
     text-align: left;
 }
 
+/* Market-state tint on the position card: after-hours = warm sand,
+   closed/halted = cool lavender. Open stays on the default card bg. */
+.position-card.market-state-1 {
+    background: #f7dec0;
+}
+.position-card.market-state-2,
+.position-card.market-state-3 {
+    background: #ddd6ff;
+}
+
 .position-card .position-row {
     display: flex;
     justify-content: space-between;
