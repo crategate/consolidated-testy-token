@@ -12,7 +12,7 @@ pub struct SetKeeper<'info> {
         bump = amm_state.bump,
         has_one = authority,
     )]
-    pub amm_state: Account<'info, AmmState>,
+    pub amm_state: Box<Account<'info, AmmState>>,
 }
 
 pub fn handler(ctx: Context<SetKeeper>, new_keeper: Pubkey) -> Result<()> {

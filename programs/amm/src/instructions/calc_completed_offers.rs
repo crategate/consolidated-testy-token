@@ -8,14 +8,14 @@ pub struct CalcCompletedOffers<'info> {
     #[account(mut)]
     pub cranker: Signer<'info>,
     #[account(mut, seeds = [b"amm_state", amm_state.afho_mint.as_ref()], bump = amm_state.bump,)]
-    pub amm_state: Account<'info, AmmState>,
+    pub amm_state: Box<Account<'info, AmmState>>,
 
     #[account(
         mut,
         seeds = [b"offer_list", amm_state.afho_mint.as_ref()],
         bump = offer_list.bump,
     )]
-    pub offer_list: Account<'info, OfferList>,
+    pub offer_list: Box<Account<'info, OfferList>>,
     /// CHECK: market status PDA, same verification as MakeOffers
     #[account(
         seeds = [b"market_status"],
@@ -24,7 +24,7 @@ pub struct CalcCompletedOffers<'info> {
     )]
     pub market_status: UncheckedAccount<'info>,
     #[account(mut, seeds = [b"accepted_offers", amm_state.afho_mint.as_ref()], bump)]
-    pub accepted_offers: Account<'info, AcceptedOffers>,
+    pub accepted_offers: Box<Account<'info, AcceptedOffers>>,
 
     /// CHECK: live absolute-price oracle — raw u64 stub (first 8 bytes), same
     /// pattern as offer_claim::read_live_price. Address pinned at init

@@ -9,14 +9,14 @@ pub struct MakeOffers<'info> {
     #[account(mut)]
     pub cranker: Signer<'info>,
     #[account(mut, seeds = [b"amm_state", amm_state.afho_mint.as_ref()], bump = amm_state.bump,)]
-    pub amm_state: Account<'info, AmmState>,
+    pub amm_state: Box<Account<'info, AmmState>>,
 
     #[account(
         mut,
         seeds = [b"offer_list", amm_state.afho_mint.as_ref()],
         bump = offer_list.bump,
     )]
-    pub offer_list: Account<'info, OfferList>,
+    pub offer_list: Box<Account<'info, OfferList>>,
     /// CHECK: market statusPDA
     #[account(
         seeds = [b"market_status"],
@@ -28,10 +28,10 @@ pub struct MakeOffers<'info> {
     /// READ-ONLY: metrics are written by update_tradeday_stats (end of day)
     /// and calc_completed_offers (start of day), never here.
     #[account(seeds = [b"metrics", amm_state.afho_mint.as_ref()], bump)]
-    pub metrics: Account<'info, MarketMetrics>,
+    pub metrics: Box<Account<'info, MarketMetrics>>,
 
     #[account(seeds = [b"accepted_offers", amm_state.afho_mint.as_ref()], bump)]
-    pub accepted_offers: Account<'info, AcceptedOffers>,
+    pub accepted_offers: Box<Account<'info, AcceptedOffers>>,
 
     /// Mint, for decimals — lot sizes are whole tokens, vault is raw units.
     #[account(address = amm_state.afho_mint)]

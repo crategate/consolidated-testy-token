@@ -14,14 +14,14 @@ pub struct UpdateTradedayStats<'info> {
     #[account(mut)]
     pub cranker: Signer<'info>,
     #[account(seeds = [b"amm_state", amm_state.afho_mint.as_ref()], bump = amm_state.bump,)]
-    pub amm_state: Account<'info, AmmState>,
+    pub amm_state: Box<Account<'info, AmmState>>,
 
     #[account(
         mut,
         seeds = [b"metrics", amm_state.afho_mint.as_ref()],
         bump
     )]
-    pub market_metrics: Account<'info, MarketMetrics>,
+    pub market_metrics: Box<Account<'info, MarketMetrics>>,
     /// CHECK: market status PDA
     #[account(
         seeds = [b"market_status"],

@@ -31,9 +31,12 @@ needs to collect it.
 4. **Funded vault**: the vault keeps a rent floor and errors `BountyExhausted`
    when empty — it can never be drained to zero.
 
-Note: the bounty pays on **every** fresh quote slot, **even when the market
-state value doesn't change** (there is no old-state != new-state requirement).
-The crank is the status oracle's heartbeat, not just its transition detector.
+Note: the bounty pays **only when the market state actually changes**
+(open ↔ after-hours ↔ closed ↔ halted). A no-op crank that re-posts the same
+state is still accepted (it keeps `market_status` fresh and advances the
+anti-replay slot guard) but pays nothing. This is what keeps the burn rate
+proportional to real NYSE events (~2 transitions/day plus halts) rather than
+to Solana slot cadence.
 
 ## Crank transaction
 
@@ -73,11 +76,12 @@ keeper competes in the same race).
 
 ## Economics
 
-- Default bounty: `5_000_000` lamports = **0.005 SOL per crank** (set at
+- Default bounty: `5_000_000` lamports = **0.005 SOL per transition** (set at
   `initialize_bounty`; adjustable on-chain via `set_bounty_amount`, authority
   only).
-- Maximum burn rate is a function of quote cadence: one payment per distinct
-  quote slot. Cranked every minute → ~7.2 SOL/day; every 5 min → ~1.44 SOL/day.
+- Burn rate is proportional to state changes, not quote cadence: a normal
+  trading day is ~2 transitions (open → after-hours, then → open) plus halts,
+  so ~0.01–0.02 SOL/day at the default bounty. Heartbeat cranks cost nothing.
   The vault is topped up by the authority via `fund_bounty`.
 - Your costs: transaction fee + priority fee + the Switchboard quote-update
   fee. Bid accordingly — the winner is whoever lands the newest quote slot

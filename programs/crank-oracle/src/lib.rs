@@ -89,6 +89,22 @@ pub mod crank_oracle {
         market_status.last_updated_timestamp = Clock::get()?.unix_timestamp;
         ctx.accounts.bounty_config.last_crank_slot = quote_slot;
 
+        // Bounty is paid ONLY on a real state transition. Without this gate,
+        // anyone who pushes a fresh Switchboard quote and cranks would collect
+        // the bounty every quote slot (24/7), so the burn rate would track
+        // Solana slot cadence instead of protocol events. market_status is a
+        // state machine driven by NYSE hours: transitions happen ~2x/day
+        // (open/close) plus halts. The bounty should reward the bot that posts
+        // the CHANGE, not a heartbeat — so a no-op crank updates state for
+        // free but is not paid.
+        if market_state == old_state {
+            msg!(
+                "Heartbeat crank (no state change) — no bounty. State: {}",
+                market_state
+            );
+            return Ok(());
+        }
+
         let bounty = ctx.accounts.bounty_config.bounty_amount;
         require!(
             ctx.accounts.bounty_vault.lamports()

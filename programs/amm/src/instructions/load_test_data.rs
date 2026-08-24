@@ -13,17 +13,17 @@ pub struct LoadTestData<'info> {
         bump = amm_state.bump,
         has_one = authority,
     )]
-    pub amm_state: Account<'info, AmmState>,
+    pub amm_state: Box<Account<'info, AmmState>>,
     #[account(mut, seeds = [b"metrics", amm_state.afho_mint.as_ref()], bump)]
-    pub metrics: Account<'info, MarketMetrics>,
+    pub metrics: Box<Account<'info, MarketMetrics>>,
     #[account(mut, seeds = [b"accepted_offers", amm_state.afho_mint.as_ref()], bump)]
-    pub accepted_offers: Account<'info, AcceptedOffers>,
+    pub accepted_offers: Box<Account<'info, AcceptedOffers>>,
     #[account(
         mut,
         seeds = [b"offer_list", amm_state.afho_mint.as_ref()],
         bump = offer_list.bump,
     )]
-    pub offer_list: Account<'info, OfferList>,
+    pub offer_list: Box<Account<'info, OfferList>>,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
