@@ -302,6 +302,7 @@ describe("offer_claim + distribute_staker_rewards", () => {
                 smlAccepted: [0, 0, 0, 0, 0],
                 buybackBasis: new anchor.BN(0),
                 untakenDays: 0,
+                offerDayIndex: new anchor.BN(0), // claims require the sheet to be today's
                 bigOffered: 0, bigRemaining: 0,
                 medOffered: 0, medRemaining: 0,
                 smlOffered: 10, smlRemaining: 10,
@@ -353,12 +354,14 @@ describe("offer_claim + distribute_staker_rewards", () => {
     });
 
     it("claims with SOL payment: lamports split 80/10/10 into the SOL vaults", async () => {
-        // SOL at $200 → sol_price = (200e6 usdc-raw × 1e6) / 1e9 lamports = 200_000
-        await setSolPrice(200_000);
+        // SOL at $100 → sol_price = (100e6 usdc-raw × 1e6) / 1e9 lamports = 100_000
+        // ($100 rather than $200 so the SOL leg's exec price lands at 10 — same
+        // as the USDC leg — and sits inside the M3 slippage band vs spot 10).
+        await setSolPrice(100_000);
 
         // 1 lot = 10 AFHO at effective price 9 → cost 90_000 raw USDC
-        //   → lamports = 90_000 × 1e6 / 200_000 = 450_000
-        const expectedLamports = 450_000;
+        //   → lamports = 90_000 × 1e6 / 100_000 = 900_000
+        const expectedLamports = 900_000;
         const rent = await provider.connection.getMinimumBalanceForRentExemption(0);
         const vaultBefore = await provider.connection.getBalance(solVault);
         const dipBefore = await provider.connection.getBalance(solDip);
@@ -417,8 +420,10 @@ describe("offer_claim + distribute_staker_rewards", () => {
                 usdcRewards,
                 solRewards: solRewardsPda,
                 solOracle: solOraclePda,
+                spotOracle: mockPricePda,
                 afhoVault,
                 afhoMint,
+                usdcMint,
                 poolState,
                 poolAfho,
                 poolUsdc,
@@ -435,15 +440,15 @@ describe("offer_claim + distribute_staker_rewards", () => {
         const rewAfter = await provider.connection.getTokenAccountBalance(usdcRewards);
         assert.equal(Number(rewAfter.value.amount), 0, "USDC holding vault drained");
 
-        // SOL leg fires too: 45_000 lamports (from the SOL claim test) at
-        // mock rate 10_000 AFHO/SOL → 4.5e8 raw; USDC leg 18_000 × 100_000
-        // → 1.8e9 raw. Combined deposit: 2.25e9 AFHO raw.
+        // SOL leg fires too: 90_000 lamports (from the SOL claim test) at
+        // mock rate 10_000 AFHO/SOL → 9e8 raw; USDC leg 18_000 × 100_000
+        // → 1.8e9 raw. Combined deposit: 2.7e9 AFHO raw.
         const solRent = await provider.connection.getMinimumBalanceForRentExemption(0);
         const solRewBal = await provider.connection.getBalance(solRewardsPda);
         assert.equal(solRewBal, solRent, "SOL holding vault drained to rent floor");
 
         const rewardVault = await provider.connection.getTokenAccountBalance(rewardVaultPda);
-        assert.equal(Number(rewardVault.value.amount), 2_250_000_000, "AFHO deposited to reward vault (both legs)");
+        assert.equal(Number(rewardVault.value.amount), 2_700_000_000, "AFHO deposited to reward vault (both legs)");
 
         const pool = await staking.account.stakePool.fetch(poolPda);
         assert.isAbove(pool.accruedRewardPerShare.toNumber(), 0, "MasterChef index bumped");
@@ -459,8 +464,10 @@ describe("offer_claim + distribute_staker_rewards", () => {
                     usdcRewards,
                     solRewards: solRewardsPda,
                     solOracle: solOraclePda,
+                    spotOracle: mockPricePda,
                     afhoVault,
                     afhoMint,
+                    usdcMint,
                     poolState,
                     poolAfho,
                     poolUsdc,

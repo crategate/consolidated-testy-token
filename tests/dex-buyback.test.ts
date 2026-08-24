@@ -33,6 +33,7 @@ describe("dex_buyback", () => {
     let usdcVault: PublicKey;
     let solVault: PublicKey;
     let solOraclePda: PublicKey;
+    let mockPricePda: PublicKey;
     let poolState: PublicKey;
     let poolAfho: PublicKey;
     let poolUsdc: PublicKey;
@@ -48,6 +49,13 @@ describe("dex_buyback", () => {
         await crank.methods
             .testSetState(state, new anchor.BN(day), new anchor.BN(ts))
             .accounts({ marketStatus: marketStatusPda })
+            .rpc();
+    }
+
+    async function setPrice(price: number) {
+        await mock.methods
+            .setPrice(new anchor.BN(price))
+            .accounts({ payer: payer.publicKey, afhoMint, mockPrice: mockPricePda })
             .rpc();
     }
 
@@ -90,7 +98,9 @@ describe("dex_buyback", () => {
                 afhoVault,
                 solVault,
                 solOracle: solOraclePda,
+                spotOracle: mockPricePda,
                 afhoMint,
+                usdcMint,
                 poolState,
                 poolAfho,
                 poolUsdc,
@@ -128,7 +138,7 @@ describe("dex_buyback", () => {
         // dip/rewards USDC vaults are PDA token accounts created by initialize_amm
         const [usdcDip] = PublicKey.findProgramAddressSync([Buffer.from("amm_usdc_dip"), afhoMint.toBuffer()], amm.programId);
         const [usdcRewards] = PublicKey.findProgramAddressSync([Buffer.from("amm_usdc_rewards"), afhoMint.toBuffer()], amm.programId);
-        const [mockPricePda] = PublicKey.findProgramAddressSync([Buffer.from("mock_price"), afhoMint.toBuffer()], mock.programId);
+        [mockPricePda] = PublicKey.findProgramAddressSync([Buffer.from("mock_price"), afhoMint.toBuffer()], mock.programId);
         // SOL/USD oracle (same mock pattern, seeded with a stand-in mint —
         // the SOL leg never fires in this suite, so it stays unset)
         [solOraclePda] = PublicKey.findProgramAddressSync([Buffer.from("mock_price"), usdcMint.toBuffer()], mock.programId);
@@ -181,6 +191,9 @@ describe("dex_buyback", () => {
         // fund: USDC in the amm vault (mock "proceeds"), AFHO liquidity in the pool
         await mintTo(provider.connection, payer, usdcMint, usdcVault, payer.publicKey, USDC_FUND);
         await mintTo(provider.connection, payer, afhoMint, poolAfho, payer.publicKey, 1_000_000_000_000_000, undefined, undefined, TOKEN_2022_PROGRAM_ID);
+
+        // M3 spot band: exec price 10 must sit within 5% of the spot oracle.
+        await setPrice(10);
     });
 
     it("rejects buybacks while the market is closed", async () => {
@@ -208,6 +221,7 @@ describe("dex_buyback", () => {
                 smlAccepted: [0, 0, 0, 0, 50],
                 buybackBasis: new anchor.BN(0),
                 untakenDays: 0,
+                offerDayIndex: new anchor.BN("18446744073709551615"), // u64::MAX = leave sheet day alone
                 bigOffered: 0, bigRemaining: 0,
                 medOffered: 0, medRemaining: 0,
                 smlOffered: 0, smlRemaining: 0,

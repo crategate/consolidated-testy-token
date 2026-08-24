@@ -660,7 +660,7 @@ pub struct UserStakeIndex {
 pub struct InitializePool<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
-    pub mint: InterfaceAccount<'info, Mint>,
+    pub mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(
         init,
         payer = authority,
@@ -677,7 +677,7 @@ pub struct InitializePool<'info> {
         token::mint = mint,
         token::authority = pool,
     )]
-    pub vault: InterfaceAccount<'info, TokenAccount>,
+    pub vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(
         init,
         payer = authority,
@@ -686,7 +686,7 @@ pub struct InitializePool<'info> {
         token::mint = mint,
         token::authority = pool,
     )]
-    pub reward_vault: InterfaceAccount<'info, TokenAccount>,
+    pub reward_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(
         init,
         payer = authority,
@@ -695,7 +695,7 @@ pub struct InitializePool<'info> {
         token::mint = mint,
         token::authority = pool,
     )]
-    pub penalty_vault: InterfaceAccount<'info, TokenAccount>,
+    pub penalty_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(
         init,
         payer = authority,
@@ -704,7 +704,7 @@ pub struct InitializePool<'info> {
         token::mint = mint,
         token::authority = pool,
     )]
-    pub afho_vault: InterfaceAccount<'info, TokenAccount>,
+    pub afho_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     /// CHECK: Verified in instruction via find_program_address
     pub market_status_pda: UncheckedAccount<'info>,
     pub token_program: Interface<'info, TokenInterface>,

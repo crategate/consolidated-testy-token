@@ -99,6 +99,7 @@ describe("buy_the_dip", () => {
                 solDip,
                 afhoVault,
                 afhoMint,
+                usdcMint,
                 poolState,
                 poolAfho,
                 poolUsdc,
@@ -126,6 +127,7 @@ describe("buy_the_dip", () => {
                 smlAccepted: [0, 0, 0, 0, 0],
                 buybackBasis: new anchor.BN(0),
                 untakenDays: 0,
+                offerDayIndex: new anchor.BN("18446744073709551615"), // u64::MAX = leave sheet day alone
                 spotPrices: new Array(32).fill(new anchor.BN(ref)),
                 spotHead: 0,
                 bigOffered: 0, bigRemaining: 0,
