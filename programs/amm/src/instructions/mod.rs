@@ -22,6 +22,9 @@ pub use set_cpmm_pool::*;
 pub mod set_sol_usdc_pool;
 pub use set_sol_usdc_pool::*;
 
+pub mod bounty_top_up;
+pub use bounty_top_up::*;
+
 pub mod load_test_data;
 pub use load_test_data::*;
 pub mod update_tradeday_stats;

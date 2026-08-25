@@ -27,6 +27,8 @@ type DeploymentState = {
     raydiumPool?: string;
     raydiumAmmConfig?: string;
     raydiumProgram?: string;
+    raydiumSolUsdcPool?: string;
+    raydiumSolUsdcConfig?: string;
 };
 
 const deploymentPath = path.join(process.cwd(), "app", "public", "deployment.json");

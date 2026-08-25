@@ -31,7 +31,7 @@ Everything required to go from the current devnet build to a mainnet launch, in 
 
 - [x] **Raydium CPMM TWAP reader** exists (`programs/amm/src/instructions/raydium.rs::read_twap_token0_in_token1`) — reads the `observation` ring and computes the time-weighted token_0/token_1 price (Q32.32).
 - [ ] `spot_oracle` → wire the CPMM pool **TWAP** (`observation_state`) for claims, floor decay, dip trigger. Currently still the raw-u64 mock PDA.
-- [ ] `sol_oracle` → Raydium SOL/USDC pool TWAP (or keep an external SOL/USD feed).
+- [ ] `sol_oracle` → Raydium SOL/USDC pool TWAP (or keep an external SOL/USD feed). Devnet: raw-u64 mock pinned at 200 USDC/SOL (200000) by `amm-init` — the claim prices lamports from it, and the devnet-created SOL/USDC pool is seeded at the same 200:1 parity so min-out math lines up. MAINNET: a real feed + a deep canonical pool are both required (claim reverts when the pool can't deliver ≥98% of the oracle-priced cost).
 - [ ] `priceChange24h` (momentum) → keep Jupiter Price API via Switchboard for now (market-wide 24h change); optional later: self-sampled daily diff of the pool TWAP. **Revisit `calculate_momentum_score` weighting once the source changes** (see §9).
 - [ ] Staleness/validity checks on whatever replaces the raw-u64 stubs.
 
@@ -40,7 +40,10 @@ Everything required to go from the current devnet build to a mainnet launch, in 
 - [x] **Rewrite `execute_swap` via raw `invoke_signed`** (not a typed Anchor CPI — the modern `raydium-cpmm-cpi` crate pins anchor 1.0, incompatible with our 0.31). The `raydium.rs` module builds the exact `swap_base_input` instruction (discriminator + 13 accounts) + PDAs. USDC leg routed when `cpmm_pool_state` is pinned; mock is the fallback.
 - [x] **Pin the CPMM in state** — `AmmState.cpmm_program` / `cpmm_pool_state` / `cpmm_amm_config`, set via `set_cpmm_pool` (3 args, authority||keeper) + `scripts/set-cpmm-pool.ts`. Keeper derives the real vault/observation/authority PDAs.
 - [ ] **H1 re-pin for CPMM** — the CPMM accounts are currently `UncheckedAccount` (validated only by the CPI); pin `address =` constraints against the derived vault/observation/authority PDAs so a compromised keeper can't redirect them.
-- [ ] **All-USDC at claim (locked model: 80 buyback / 10 dip / 10 reward, all USDC)** — `offer_claim_sol` still needs the SOL→USDC swap via the Raydium SOL/USDC pool + USDC split. **Done:** the SOL swap legs in `dex_buyback`/`buy_the_dip`/`distribute_staker_rewards` are retired (USDC-only), `execute_swap` simplified, `set_sol_usdc_pool` + `cpmm_sol_usdc_pool`/`cpmm_sol_usdc_config` added. Remaining: the claim conversion + removing the dead `sol_*` state/accounts.
+- [x] **All-USDC claim conversion + SOL-leg retirement.** `offer_claim_sol` wraps the buyer's SOL → `swap_base_input` on the SOL/USDC pool → splits USDC 80/10/10 into `usdc_vault`/`usdc_dip`/`usdc_rewards`. Buyer covers the CPMM 0.25% input fee (+25bps on the lamports); min-out = 98% of cost (2% tolerance for pool drift/slippage — never binds on a deep mainnet pool). `wsol_vault` ATA is created idempotently on each claim (and in `bounty_top_up`) because the top-up closes it after unwrapping. The SOL swap legs in `dex_buyback`/`buy_the_dip`/`distribute_staker_rewards` are removed (USDC-only); `execute_swap` simplified; `set_sol_usdc_pool` + `cpmm_sol_usdc_pool`/`cpmm_sol_usdc_config` added.
+- [ ] Remove the now-dead `sol_vault`/`sol_dip`/`sol_rewards`/`sol_oracle` state fields + accounts (left in place this pass to limit churn).
+- [x] **SOL/USDC pool provisioning.** `scripts/set-sol-usdc-pool.ts` pins the pool: env vars (`DEVNET_SOL_USDC_POOL`/`DEVNET_SOL_USDC_CONFIG`) → deployment.json → devnet fallback that creates its own SOL/USDC CPMM pool seeded at 200 USDC/SOL (parity with the mock `sol_oracle`), writing `raydiumSolUsdcPool`/`raydiumSolUsdcConfig`. MAINNET: set the env vars to the canonical Raydium SOL/USDC pool — see §7.
+- [ ] Devnet runtime-verify the SOL claim end-to-end (pool created + pinned now; claim swap + wSOL wrap still need a live run).
 - [x] **`minimum_amount_out`** from the spot oracle (front-line M3 band) inside the CPI — done for the USDC leg.
 - [x] **USDC-denominated exec price for the ratchet** — post-swap `(usdc_raw × 1e6)/afho_raw` reload + `ratchet_within_band` (unchanged).
 
@@ -56,7 +59,8 @@ Everything required to go from the current devnet build to a mainnet launch, in 
 - [x] Rotate keeper off authority via `set_keeper` (H1 urgency reduced post-pin, still do it).
 - [x] Bounty vault rent floor + setters (L5).
 - [x] Bounty pays only on state transitions (rate ~2/day).
-- [ ] **Bounty auto-top-up from POSR vault.** When `bounty_vault` SOL < 0.2 SOL, swap AFHO from POSR → SOL via the DEX, then fund `bounty_vault` to 0.4 SOL. (Blocked on §4 swap; POSR vault is staking-owned, so this is an AMM↔staking CPI or a keeper-run swap.)
+- [x] **Bounty auto-top-up implemented (`bounty_top_up`, permissionless).** When `bounty_vault` SOL < 0.2 SOL: swap USDC → wSOL through the pinned SOL/USDC pool (USDC from `usdc_vault` — the buyback vault, per the All-USDC route), unwrap via `close_account` into `bounty_vault` up to 0.4 SOL. `wsol_vault` ATA created idempotently each run. NOTE: the earlier "fund from POSR vault" idea was superseded by the All-USDC treasury model — this tops up from the same buyback vault that feeds buybacks/dip/rewards.
+- [ ] Devnet runtime-verify `bounty_top_up` (drain `bounty_vault` below 0.2 SOL, crank it, confirm it refills to 0.4 SOL).
 - [ ] Size bounty amount (`set_bounty_amount`) — 0.005 SOL/transition is fine; tune post-launch.
 
 ## 7. Ops / launch sequence
@@ -64,7 +68,7 @@ Everything required to go from the current devnet build to a mainnet launch, in 
 - [x] Staking issues: `amm_stake.rs` is_signer (verify after §4 CPI), `Stake` INIT_SPACE — check.
 - [ ] `current_stake_ratio` uses `total_supply` vs circulating (`helpers_make_offers.rs:31-33`) — resolve or accept.
 - [x] Fresh `anchor build` + full test suite green (**34/34** local suites).
-- [x] **Devnet end-to-end rig** — `anchor run mint` (fresh 1.2M mint + CPMM pool) → `anchor run amm-init` (now also initializes the **staking pool**) → `anchor run set-cpmm-pool` (pins program+pool+config) → `anchor run bount` (keeper derives CPMM accounts). USDC legs live; SOL legs `CpmmSolLegNotWired` until wSOL. (`scripts/pool-init.ts` still exists as a standalone staking backfill.)
+- [x] **Devnet end-to-end rig** — `anchor run mint` (fresh mint + AFHO/USDC CPMM pool) → `anchor run amm-init` (now also initializes the **staking pool**) → `anchor run set-cpmm-pool` (pins program+pool+config) → `anchor run set-sol-usdc-pool` (pins/creates the SOL/USDC pool) → `anchor run bount` (keeper derives CPMM accounts). USDC legs live; SOL claim leg live on devnet pending a runtime claim test. (`scripts/pool-init.ts` still exists as a standalone staking backfill.)
 - [ ] `amm-init` with real mint/pool/oracle addresses; verify `deployment.json` consumed by app.
 - [ ] External audit pass on the final diff (§1 fixes + §4 adapter + §5 LP).
 - [ ] Doc cleanup: staking header describes removed claim penalties; stale comment in `dex_buyback.rs:332-334`.

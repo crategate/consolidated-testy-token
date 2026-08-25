@@ -353,46 +353,6 @@ describe("offer_claim + distribute_staker_rewards", () => {
         assert.equal(sheet.totalComplete, 20);
     });
 
-    it("claims with SOL payment: lamports split 80/10/10 into the SOL vaults", async () => {
-        // SOL at $100 → sol_price = (100e6 usdc-raw × 1e6) / 1e9 lamports = 100_000
-        // ($100 rather than $200 so the SOL leg's exec price lands at 10 — same
-        // as the USDC leg — and sits inside the M3 slippage band vs spot 10).
-        await setSolPrice(100_000);
-
-        // 1 lot = 10 AFHO at effective price 9 → cost 90_000 raw USDC
-        //   → lamports = 90_000 × 1e6 / 100_000 = 900_000
-        const expectedLamports = 900_000;
-        const rent = await provider.connection.getMinimumBalanceForRentExemption(0);
-        const vaultBefore = await provider.connection.getBalance(solVault);
-        const dipBefore = await provider.connection.getBalance(solDip);
-        const rewBefore = await provider.connection.getBalance(solRewardsPda);
-        assert.equal(vaultBefore, rent, "sol vault starts at rent floor");
-
-        await claimSolTx(0, 1, 1);
-
-        const vaultAfter = await provider.connection.getBalance(solVault);
-        const dipAfter = await provider.connection.getBalance(solDip);
-        const rewAfter = await provider.connection.getBalance(solRewardsPda);
-        assert.equal(vaultAfter - vaultBefore, expectedLamports * 0.8, "80% to SOL buyback vault");
-        assert.equal(dipAfter - dipBefore, expectedLamports * 0.1, "10% to SOL dip vault");
-        assert.equal(rewAfter - rewBefore, expectedLamports * 0.1, "10% to SOL rewards holding");
-
-        // position created at index 1: 10 AFHO, 5-day vest
-        const [positionPda] = PublicKey.findProgramAddressSync(
-            [Buffer.from("position"), poolPda.toBuffer(), buyer.publicKey.toBuffer(), new anchor.BN(1).toArrayLike(Buffer, "le", 8)],
-            staking.programId
-        );
-        const pos = await staking.account.stakePosition.fetch(positionPda);
-        assert.equal(pos.amount.toNumber(), 10 * AFHO_UNIT);
-        assert.equal(pos.daysToUnlock, 5);
-
-        const state = await amm.account.ammState.fetch(ammStatePda);
-        assert.equal(state.totalSolProceeds.toNumber(), expectedLamports, "SOL proceeds tracked in lamports");
-
-        const sheet = await amm.account.offerList.fetch(offerListPda);
-        assert.equal(sheet.smlOffer.remaining, 7);
-        assert.equal(sheet.totalComplete, 30);
-    });
 
     it("rejects claims while the market is open", async () => {
         await setMarket(0, 1, now());

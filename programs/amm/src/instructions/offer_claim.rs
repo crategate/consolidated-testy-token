@@ -17,13 +17,16 @@
 //
 // The floor (highest_buyback_basis) is USDC-denominated in BOTH paths: a SOL
 // claim converts its USDC-terms cost to lamports at the sol_oracle rate, so
-// the ratchet never mixes units.
+// the ratchet never mixes units. The buyer covers the CPMM 0.25% input fee
+// (+25bps on the lamports); min-out tolerates 2% pool drift/slippage.
 
 use crate::state::offersState::{lot_sizer, AmmState, OfferList};
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{
     transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked,
 };
+use anchor_spl::associated_token::{create_idempotent, AssociatedToken, Create};
+use anchor_spl::token::{sync_native, SyncNative};
 
 // ---------------------------------------------------------------------------
 // USDC payment
@@ -239,6 +242,8 @@ pub struct OfferClaimSol<'info> {
 
     #[account(address = amm_state.afho_mint)]
     pub afho_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(address = amm_state.usdc_mint)]
+    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
 
     /// AFHO absolute-price oracle (same as the USDC path)
     /// CHECK: address-verified against amm_state.spot_oracle
@@ -259,18 +264,38 @@ pub struct OfferClaimSol<'info> {
     )]
     pub market_status: UncheckedAccount<'info>,
 
-    /// 80% — SOL buyback vault (dex_buyback's SOL leg spends from here)
-    /// CHECK: address-verified system PDA
-    #[account(mut, address = amm_state.sol_vault)]
-    pub sol_vault: AccountInfo<'info>,
-    /// 10% — SOL dip reserve
-    /// CHECK: address-verified system PDA
-    #[account(mut, address = amm_state.sol_dip)]
-    pub sol_dip: AccountInfo<'info>,
-    /// 10% — staker rewards holding vault (SOL)
-    /// CHECK: address-verified system PDA
-    #[account(mut, address = amm_state.sol_rewards)]
-    pub sol_rewards: AccountInfo<'info>,
+    /// 80% — USDC buyback vault (also the SOL→USDC swap output)
+    #[account(mut, address = amm_state.usdc_vault)]
+    pub usdc_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    /// 10% — USDC dip reserve
+    #[account(mut, address = amm_state.usdc_dip)]
+    pub usdc_dip: Box<InterfaceAccount<'info, TokenAccount>>,
+    /// 10% — staker rewards holding vault (USDC)
+    #[account(mut, address = amm_state.usdc_rewards)]
+    pub usdc_rewards: Box<InterfaceAccount<'info, TokenAccount>>,
+
+    // --- wSOL wrap + SOL/USDC swap (All-USDC conversion) ---
+    /// CHECK: wSOL ATA owned by amm_state — lamports land here, then sync_native
+    #[account(mut)]
+    pub wsol_vault: UncheckedAccount<'info>,
+    /// wSOL mint (So1111...)
+    pub wrapped_sol_mint: Box<InterfaceAccount<'info, Mint>>,
+    /// CHECK: SOL/USDC CPMM pool state PDA
+    #[account(mut)]
+    pub sol_usdc_pool_state: UncheckedAccount<'info>,
+    /// CHECK: SOL/USDC amm_config
+    pub sol_usdc_amm_config: UncheckedAccount<'info>,
+    /// CHECK: pool wSOL vault
+    #[account(mut)]
+    pub sol_usdc_input_vault: UncheckedAccount<'info>,
+    /// CHECK: pool USDC vault
+    #[account(mut)]
+    pub sol_usdc_output_vault: UncheckedAccount<'info>,
+    /// CHECK: pool observation
+    #[account(mut)]
+    pub sol_usdc_observation: UncheckedAccount<'info>,
+    /// CHECK: pool authority PDA
+    pub sol_usdc_authority: UncheckedAccount<'info>,
 
     // --- staking CPI (identical to the USDC path) ---
     pub staking_program: Program<'info, staking::program::Staking>,
@@ -305,6 +330,9 @@ pub struct OfferClaimSol<'info> {
     #[account(mut, address = staking_pool.vault)]
     pub staking_vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
+    /// Classic SPL (wSOL + USDC legs)
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub token_program: Interface<'info, TokenInterface>,
     /// Token-2022 (AFHO leg into staking)
     pub token_2022_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
@@ -323,47 +351,140 @@ pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u8, index: u64)
 
     // ── Convert the USDC-denominated cost into lamports ──
     // sol_price units match the spot oracle: (usdc_raw x 1e6) / lamports,
-    // so lamports = cost_usdc x 1e6 / sol_price.
+    // so lamports = cost_usdc x 1e6 / sol_price. The CPMM charges a 0.25%
+    // fee on the input leg, so the buyer is charged 25bps on top — the pool
+    // then nets the protocol the full USDC cost (min-out below guards the
+    // residual slippage/drift).
     let sol_price = read_live_price(&ctx.accounts.sol_oracle.to_account_info())?;
     require!(sol_price > 0, ErrorCode::InvalidOracle);
     let lamports = (q.cost_usdc as u128)
         .checked_mul(1_000_000u128)
         .ok_or(ErrorCode::MathOverflow)?
-        / sol_price as u128;
+        .checked_mul(10_025u128)
+        .ok_or(ErrorCode::MathOverflow)?
+        .checked_div(sol_price as u128)
+        .ok_or(ErrorCode::MathOverflow)?
+        .checked_div(10_000u128)
+        .ok_or(ErrorCode::MathOverflow)?;
     let lamports = u64::try_from(lamports).map_err(|_| ErrorCode::MathOverflow)?;
     require!(lamports > 0, ErrorCode::ZeroAmount);
 
-    // ── 80/10/10 split of the payment (rounding favors the buyback vault) ──
-    let dip = lamports / 10;
-    let rewards = lamports / 10;
-    let buyback = lamports - dip - rewards;
+    // ── 0. Ensure the wSOL ATA exists. bounty_top_up closes it after
+    //       unwrapping, and nothing else recreates it — without this the
+    //       first (or post-top-up) SOL claim would fail. ──
+    let mint_key = ctx.accounts.amm_state.afho_mint;
+    let state_bump = ctx.accounts.amm_state.bump;
+    let seeds: &[&[u8]] = &[b"amm_state", mint_key.as_ref(), &[state_bump]];
+    create_idempotent(
+        CpiContext::new(
+            ctx.accounts.associated_token_program.to_account_info(),
+            Create {
+                payer: ctx.accounts.buyer.to_account_info(),
+                associated_token: ctx.accounts.wsol_vault.to_account_info(),
+                authority: ctx.accounts.amm_state.to_account_info(),
+                mint: ctx.accounts.wrapped_sol_mint.to_account_info(),
+                system_program: ctx.accounts.system_program.to_account_info(),
+                token_program: ctx.accounts.token_program.to_account_info(),
+            },
+        )
+        .with_signer(&[seeds]),
+    )?;
 
+    // ── 1. Wrap the buyer's lamports into the wSOL vault ──
     let buyer_key = ctx.accounts.buyer.key();
+    anchor_lang::solana_program::program::invoke(
+        &anchor_lang::solana_program::system_instruction::transfer(
+            &buyer_key,
+            &ctx.accounts.wsol_vault.key(),
+            lamports,
+        ),
+        &[
+            ctx.accounts.buyer.to_account_info(),
+            ctx.accounts.wsol_vault.to_account_info(),
+            ctx.accounts.system_program.to_account_info(),
+        ],
+    )?;
+    sync_native(CpiContext::new(
+        ctx.accounts.token_program.to_account_info(),
+        SyncNative {
+            account: ctx.accounts.wsol_vault.to_account_info(),
+        },
+    ))?;
+
+    // ── 2. Swap wSOL → USDC via the SOL/USDC pool, output into usdc_vault ──
+    let mint_key = ctx.accounts.amm_state.afho_mint;
+    let state_bump = ctx.accounts.amm_state.bump;
+    let cpmm_program = ctx.accounts.amm_state.cpmm_program;
+    let seeds: &[&[u8]] = &[b"amm_state", mint_key.as_ref(), &[state_bump]];
+    let ix = crate::instructions::raydium::cpmm_swap_base_input_ix(
+        cpmm_program,
+        ctx.accounts.amm_state.key(),
+        ctx.accounts.sol_usdc_authority.key(),
+        ctx.accounts.sol_usdc_amm_config.key(),
+        ctx.accounts.sol_usdc_pool_state.key(),
+        ctx.accounts.wsol_vault.key(),
+        ctx.accounts.usdc_vault.key(),
+        ctx.accounts.sol_usdc_input_vault.key(),
+        ctx.accounts.sol_usdc_output_vault.key(),
+        ctx.accounts.token_program.key(),
+        ctx.accounts.token_program.key(),
+        ctx.accounts.wrapped_sol_mint.key(),
+        ctx.accounts.usdc_mint.key(),
+        ctx.accounts.sol_usdc_observation.key(),
+        lamports,
+        q.cost_usdc.saturating_mul(98) / 100, // min-out: 2% tolerance for pool drift/slippage
+    );
+    anchor_lang::solana_program::program::invoke_signed(
+        &ix,
+        &[
+            ctx.accounts.amm_state.to_account_info(),
+            ctx.accounts.sol_usdc_authority.to_account_info(),
+            ctx.accounts.sol_usdc_amm_config.to_account_info(),
+            ctx.accounts.sol_usdc_pool_state.to_account_info(),
+            ctx.accounts.wsol_vault.to_account_info(),
+            ctx.accounts.usdc_vault.to_account_info(),
+            ctx.accounts.sol_usdc_input_vault.to_account_info(),
+            ctx.accounts.sol_usdc_output_vault.to_account_info(),
+            ctx.accounts.token_program.to_account_info(),
+            ctx.accounts.token_program.to_account_info(),
+            ctx.accounts.wrapped_sol_mint.to_account_info(),
+            ctx.accounts.usdc_mint.to_account_info(),
+            ctx.accounts.sol_usdc_observation.to_account_info(),
+        ],
+        &[seeds],
+    )?;
+
+    // ── 3. 80/10/10 split of the USDC (rounding favors the buyback vault) ──
+    let dip = q.cost_usdc / 10;
+    let rewards = q.cost_usdc / 10;
+    let usdc_decimals = ctx.accounts.usdc_mint.decimals;
     for (to, amount) in [
-        (ctx.accounts.sol_vault.to_account_info(), buyback),
-        (ctx.accounts.sol_dip.to_account_info(), dip),
-        (ctx.accounts.sol_rewards.to_account_info(), rewards),
+        (ctx.accounts.usdc_dip.to_account_info(), dip),
+        (ctx.accounts.usdc_rewards.to_account_info(), rewards),
     ] {
         if amount == 0 {
             continue;
         }
-        let to_key = to.key();
-        anchor_lang::solana_program::program::invoke(
-            &anchor_lang::solana_program::system_instruction::transfer(
-                &buyer_key, &to_key, amount,
+        transfer_checked(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                TransferChecked {
+                    from: ctx.accounts.usdc_vault.to_account_info(),
+                    mint: ctx.accounts.usdc_mint.to_account_info(),
+                    to,
+                    authority: ctx.accounts.amm_state.to_account_info(),
+                },
+                &[seeds],
             ),
-            &[
-                ctx.accounts.buyer.to_account_info(),
-                to,
-                ctx.accounts.system_program.to_account_info(),
-            ],
+            amount,
+            usdc_decimals,
         )?;
     }
 
     validate_user_index(&ctx.accounts.user_index.to_account_info(), index)?;
     settle_sheet(&mut ctx.accounts.offer_list, tier, units, q.total_tokens);
     let amm_state = &mut ctx.accounts.amm_state;
-    amm_state.total_sol_proceeds = amm_state.total_sol_proceeds.saturating_add(lamports);
+    amm_state.total_usdc_proceeds = amm_state.total_usdc_proceeds.saturating_add(q.cost_usdc);
 
     // ── CPI into staking (identical to the USDC path) ──
     let mint_key = amm_state.afho_mint;
@@ -389,7 +510,7 @@ pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u8, index: u64)
     )?;
 
     msg!(
-        "Claimed {} AFHO ({} lots, tier {}) at {} ({}bps off, floor: {}); paid {} lamports -> {} buyback / {} dip / {} rewards",
+        "Claimed {} AFHO ({} lots, tier {}) at {} ({}bps off, floor: {}); paid {} lamports -> {} usdc",
         q.total_tokens,
         units,
         tier,
@@ -397,9 +518,7 @@ pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u8, index: u64)
         q.discount_bps,
         q.floor,
         lamports,
-        buyback,
-        dip,
-        rewards,
+        q.cost_usdc,
     );
 
     Ok(())

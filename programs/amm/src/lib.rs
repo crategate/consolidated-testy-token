@@ -60,6 +60,11 @@ pub mod amm {
         set_sol_usdc_pool::handler(ctx, pool_state, amm_config)
     }
 
+    // Bounty auto-top-up: swap USDC → SOL and fund the crank bounty vault.
+    pub fn bounty_top_up(ctx: Context<BountyTopUp>) -> Result<()> {
+        bounty_top_up::handler(ctx)
+    }
+
     // DEVNET/TEST ONLY — remove before mainnet
     pub fn load_test_data(ctx: Context<LoadTestData>, data: TestMetrics) -> Result<()> {
         load_test_data::handler(ctx, data)
