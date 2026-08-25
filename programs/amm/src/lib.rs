@@ -51,6 +51,15 @@ pub mod amm {
         set_cpmm_pool::handler(ctx, cpmm_program, pool_state, amm_config)
     }
 
+    // Pin the SOL/USDC pool for All-USDC claim conversion (authority || keeper).
+    pub fn set_sol_usdc_pool(
+        ctx: Context<SetSolUsdcPool>,
+        pool_state: Pubkey,
+        amm_config: Pubkey,
+    ) -> Result<()> {
+        set_sol_usdc_pool::handler(ctx, pool_state, amm_config)
+    }
+
     // DEVNET/TEST ONLY — remove before mainnet
     pub fn load_test_data(ctx: Context<LoadTestData>, data: TestMetrics) -> Result<()> {
         load_test_data::handler(ctx, data)

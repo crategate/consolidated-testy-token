@@ -39,6 +39,8 @@ pub fn handler(
     amm_state.cpmm_pool_state = Pubkey::default();
     amm_state.cpmm_amm_config = Pubkey::default();
     amm_state.cpmm_program = Pubkey::default();
+    amm_state.cpmm_sol_usdc_pool = Pubkey::default();
+    amm_state.cpmm_sol_usdc_config = Pubkey::default();
     amm_state.total_sol_proceeds = 0;
     amm_state.total_usdc_proceeds = 0;
     amm_state.highest_buyback_basis = 0;

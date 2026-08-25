@@ -105,6 +105,10 @@ pub struct AmmState {
     // dex_program, which the mock uses — the mock pool_state seeds constraint
     // depends on it staying the mock program.
     pub cpmm_program: Pubkey,
+    // Second pool (Raydium SOL/USDC CPMM) used to convert SOL bond payments
+    // to USDC at claim time (All-USDC route). Pinned via set_sol_usdc_pool.
+    pub cpmm_sol_usdc_pool: Pubkey,
+    pub cpmm_sol_usdc_config: Pubkey,
 
     // Buyback day schedule. Budget snapshots the vault balances at the first
     // buyback call of a trading day; unspent budget just stays in the vaults

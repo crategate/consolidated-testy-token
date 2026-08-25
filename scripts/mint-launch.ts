@@ -16,13 +16,15 @@ import {
     createAssociatedTokenAccountInstruction,
     createMintToInstruction,
     getAssociatedTokenAddressSync,
+    createBurnInstruction,
+    getAccount,
     TYPE_SIZE,
     LENGTH_SIZE,
     createInitializeMetadataPointerInstruction,
     createSetAuthorityInstruction,
     AuthorityType,
 } from "@solana/spl-token";
-import { createInitializeInstruction, pack, type TokenMetadata } from "@solana/spl-token-metadata";
+import { createInitializeInstruction, pack, type TokenMetadata, createUpdateAuthorityInstruction } from "@solana/spl-token-metadata";
 import * as fs from "fs";
 import * as path from "path";
 import { pubkey, writeDeploymentState } from "./deployment-state";
@@ -141,7 +143,7 @@ async function main() {
     //   25% of total supply → Raydium LP seed (AFHO leg; matching USDC quote
     //   from the raise), 75% → protocol vault. Replace the devnet amounts below
     //   (1.2M to wallet) with the real split at launch.
-    const amountToMint = 1_200_000 * 10 ** decimals; // 1.2M AFHO — covers pool float (1M) + vault seed
+    const amountToMint = 1_000_000_000 * 10 ** decimals; // 1B AFHO — covers pool float (1M) + vault seed
     const amountToTransfer = BigInt(1 * 10 ** decimals);
 
     const transferTx = new Transaction().add(
@@ -182,6 +184,24 @@ async function main() {
         console.log(`✅ Mint authority revoked: ${revokeSig}`);
     } catch (e) {
         console.error("❌ Mint authority revoke failed:", e);
+    }
+
+    // ── Revoke metadata update authority: name/symbol/URI become immutable. ─
+    // The Token-2022 metadata is stored in the mint account itself; clearing
+    // update_authority makes it un-editable.
+    try {
+        const mdRevokeTx = new Transaction().add(
+            createUpdateAuthorityInstruction({
+                programId: TOKEN_2022_PROGRAM_ID,
+                metadata: mint.publicKey,
+                oldAuthority: wallet.publicKey,
+                newAuthority: null,        // revoke — immutable metadata
+            })
+        );
+        const mdSig = await sendAndConfirmTransaction(connection, mdRevokeTx, [wallet.payer], { skipPreflight: true });
+        console.log(`✅ Metadata update authority revoked: ${mdSig}`);
+    } catch (e) {
+        console.error("❌ Metadata update authority revoke failed:", e);
     }
 
     // ── Raydium CPMM liquidity pool (devnet) ────────────────────────────────
@@ -238,6 +258,27 @@ async function main() {
             raydiumAmmConfig: configId.toBase58(),
             raydiumProgram: DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_PROGRAM.toBase58(),
         });
+
+        // ── Burn a sliver of LP (devnet smoke test) ────────────────────────
+        // MAINNET: decide burn-all vs Raydium `cpmm.lockLiquidity` (§5 custody).
+        try {
+            const lpMint = extInfo.address.lpMint;
+            const lpAta = getAssociatedTokenAddressSync(lpMint, wallet.publicKey, false, TOKEN_PROGRAM_ID);
+            const lpBal = await getAccount(connection, lpAta, "confirmed", TOKEN_PROGRAM_ID);
+            if (lpBal.amount > BigInt(0)) {
+                const burnRaw = BigInt(1); // 1 raw LP unit — just proves the flow
+                const burnTx = new Transaction().add(
+                    createBurnInstruction(lpAta, lpMint, wallet.publicKey, burnRaw, [], TOKEN_PROGRAM_ID)
+                );
+                const { blockhash } = await connection.getLatestBlockhash("confirmed");
+                burnTx.recentBlockhash = blockhash;
+                burnTx.feePayer = wallet.publicKey;
+                const burnSig = await sendAndConfirmTransaction(connection, burnTx, [wallet.payer], { skipPreflight: true });
+                console.log(`✅ LP burn smoke test (1 raw LP): ${burnSig}`);
+            }
+        } catch (e) {
+            console.warn("⚠️ LP burn skipped:", e instanceof Error ? e.message : e);
+        }
     } catch (e) {
         console.warn(
             "⚠️ Raydium pool creation skipped (install @raydium-io/raydium-sdk-v2 and fund devnet USDC):",

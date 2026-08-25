@@ -40,7 +40,7 @@ Everything required to go from the current devnet build to a mainnet launch, in 
 - [x] **Rewrite `execute_swap` via raw `invoke_signed`** (not a typed Anchor CPI — the modern `raydium-cpmm-cpi` crate pins anchor 1.0, incompatible with our 0.31). The `raydium.rs` module builds the exact `swap_base_input` instruction (discriminator + 13 accounts) + PDAs. USDC leg routed when `cpmm_pool_state` is pinned; mock is the fallback.
 - [x] **Pin the CPMM in state** — `AmmState.cpmm_program` / `cpmm_pool_state` / `cpmm_amm_config`, set via `set_cpmm_pool` (3 args, authority||keeper) + `scripts/set-cpmm-pool.ts`. Keeper derives the real vault/observation/authority PDAs.
 - [ ] **H1 re-pin for CPMM** — the CPMM accounts are currently `UncheckedAccount` (validated only by the CPI); pin `address =` constraints against the derived vault/observation/authority PDAs so a compromised keeper can't redirect them.
-- [ ] **SOL leg → wSOL** — wrap native lamports into an `amm_state` wSOL ATA + `sync_native`, then swap (wSOL→USDC→AFHO, needs the SOL/USDC pool). Currently hard-errors `CpmmSolLegNotWired`.
+- [ ] **All-USDC at claim (locked model: 80 buyback / 10 dip / 10 reward, all USDC)** — `offer_claim_sol` swaps the buyer's SOL → USDC via the Raydium SOL/USDC pool and splits 80/10/10 into the USDC buyback/dip/reward vaults; retire `sol_vault`/`sol_dip`/`sol_rewards`, the SOL legs in buyback/dip/rewards, and `sol_oracle`. Currently the SOL legs hard-error `CpmmSolLegNotWired`. Dip reserve stays (10% USDC).
 - [x] **`minimum_amount_out`** from the spot oracle (front-line M3 band) inside the CPI — done for the USDC leg.
 - [x] **USDC-denominated exec price for the ratchet** — post-swap `(usdc_raw × 1e6)/afho_raw` reload + `ratchet_within_band` (unchanged).
 
@@ -72,14 +72,16 @@ Everything required to go from the current devnet build to a mainnet launch, in 
 ## 8. Token / program trust posture
 
 - [x] Revoke **mint authority** (in `mint-launch.ts`); freeze authority already `null`.
-- [ ] Revoke **metadata update authority** (immutable name/symbol/URI) — needs the `@solana/spl-token-metadata` update-authority call; add to launch script.
-- [ ] **Program upgrade authorities** for amm/staking/crank-oracle → multisig or renounce (separate from the mint; BPFLoader `set_authority`).
-- [ ] Burn/lock LP tokens (see §5).
+- [x] Revoke **metadata update authority** (immutable name/symbol/URI) — `createUpdateAuthorityInstruction` (`newAuthority: null`) added to `mint-launch.ts`.
+- [ ] **Program upgrade authorities** for amm/staking/crank-oracle → renounce or multisig. Not blocked — it's a deploy-side CLI step (needs the deployer keypair + a live program): `solana program set-upgrade-authority <PROGRAM_ID> --new-upgrade-authority 11111111111111111111111111111111` (burn address = immutability) or point at a multisig. Do at launch after the final audit-pass deploy.
+- [x] **Burn LP tokens (smoke test)** — `createBurnInstruction` on the LP mint added to `mint-launch.ts` (1 raw LP, devnet). MAINNET custody decision (burn-all vs `cpmm.lockLiquidity`) still §5.
 - [ ] No hidden mint path: confirm `mintTo` only via revoked mint authority.
 
-## 9. Momentum metric soundness (question raised)
+## 9. Momentum metric soundness — 🚧 rework to self-sampled pool price
 
-- [ ] **Review `calculate_momentum_score` weighting.** Current input is `priceChange24h` (centi-percent, 20-day ring). Design intent (more offers in bullish regimes) is sound; the risk is the *source*: if Jupiter's 24h change is unavailable/stale for a fresh mint, `record_price_change` silently skips → flat momentum → conservative offer sizing (safe, but may under-offer). Decide: keep JUP 24h, or switch to self-sampled daily pool-price diffs, and re-tune the bump-taper coefficients against `sim/`.
+- [ ] **Source swap + sampling cadence.** Replace Jupiter `priceChange24h` with a daily self-sampled change from the Raydium CPMM pool TWAP. **Cadence is already per-trading-day, not wall-clock 24h**: the ring stores one sample per trading day (written at end-of-day by `update_tradeday_stats`), so a close→close change is the exact native unit — no metric/storage change needed, only the input digit.
+- [ ] **Diagnosis (done, see below):** the momentum→offer-size design is sound and source-agnostic; only the input changes. Notable edge: `raw == 0` reads as "no sample", so a perfectly flat market doesn't count toward `MIN_SAMPLES=5` and the desk can read cold on a flat open.
+- [ ] Re-tune bump-taper coefficients against `sim/` once the source is in (pool price is a single venue, not JUP's market-wide aggregate).
 
 ## 10. Switchboard → mainnet
 
