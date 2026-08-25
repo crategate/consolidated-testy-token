@@ -4,27 +4,26 @@
 use crate::state::offersState::{AcceptedOffers, MarketMetrics};
 use anchor_lang::prelude::*;
 
-// Record today's priceChange24h (feeds[1], centi-percent) into the 20-day ring.
-// Best-effort: a missing or stale price feed skips the write — momentum then
-// stays cold and no offers are built, rather than blocking the whole crank.
-pub(crate) fn record_price_change(
-    metrics: &mut MarketMetrics,
-    quote: &switchboard_on_demand::SwitchboardQuote,
-    current_slot: u64,
-) {
-    use switchboard_on_demand::prelude::rust_decimal::prelude::ToPrimitive;
-    const MAX_STALENESS_SLOTS: u64 = 300;
-    if quote.feeds.len() < 2 || current_slot.saturating_sub(quote.slot) > MAX_STALENESS_SLOTS {
-        msg!("price feed missing or stale — skipping today's price sample");
+// Record today's close→close price change (centi-percent) into the 20-day ring.
+// The input is the absolute close price (floor units) from the spot oracle; the
+// change vs `daily_close` is written once per trading day. First close seeds the
+// baseline; a 0 read (cold oracle) skips.
+pub(crate) fn record_price_change(metrics: &mut MarketMetrics, close: u64) {
+    if close == 0 {
         return;
     }
-    if let Some(cp) = quote.feeds[1].value().to_i32() {
-        let v = cp.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
-        let head = (metrics.sample_head as usize) % metrics.price_changes.len();
-        metrics.price_changes[head] = v;
-        metrics.sample_head = ((head + 1) % metrics.price_changes.len()) as u8;
-        msg!("recorded priceChange24h: {} centi-percent", v);
+    if metrics.daily_close == 0 {
+        metrics.daily_close = close;
+        return;
     }
+    let prev = metrics.daily_close;
+    let change_cp = ((close as i128 - prev as i128) * 10_000 / prev as i128) as i64;
+    let v = change_cp.clamp(i16::MIN as i64, i16::MAX as i64) as i16;
+    let head = (metrics.sample_head as usize) % metrics.price_changes.len();
+    metrics.price_changes[head] = v;
+    metrics.sample_head = ((head + 1) % metrics.price_changes.len()) as u8;
+    metrics.daily_close = close;
+    msg!("recorded daily price change: {} centi-percent", v);
 }
 
 // Current staking participation as a whole %: staked / total_supply.

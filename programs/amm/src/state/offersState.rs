@@ -198,4 +198,7 @@ pub struct MarketMetrics {
     pub spot_prices: [u64; 32],
     pub spot_head: u8, // next write index into spot_prices
     pub spot_last_slot: u64,
+    // Most recent end-of-day absolute close (floor units). Used to compute the
+    // daily change into price_changes (close→close). 0 = no baseline yet.
+    pub daily_close: u64,
 }

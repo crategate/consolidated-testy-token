@@ -170,12 +170,8 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
         ErrorCode::AlreadyDistributed
     );
 
-    // Rent floor for the space-0 system PDA — never swap the lamports that
-    // keep the account alive.
-    let sol_floor = Rent::get()?.minimum_balance(0);
     let usdc_in = ctx.accounts.usdc_rewards.amount;
-    let sol_in = ctx.accounts.sol_rewards.lamports().saturating_sub(sol_floor);
-    if usdc_in == 0 && sol_in == 0 {
+    if usdc_in == 0 {
         // Nothing collected last night — mark the day and move on.
         amm_state.rewards_day_index = current_day;
         return Ok(());
@@ -188,7 +184,6 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
 
     let mint_key = amm_state.afho_mint;
     let state_bump = amm_state.bump;
-    let sol_rewards_bump = amm_state.sol_rewards_bump;
 
     let mut total_out: u64 = 0;
 
@@ -206,10 +201,7 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
             &swap,
             mint_key,
             state_bump,
-            b"amm_sol_rewards",
-            sol_rewards_bump,
             usdc_in,
-            false,
             min_out,
             amm_state.cpmm_program,
             amm_state.cpmm_pool_state != Pubkey::default(),
@@ -225,36 +217,6 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
                 (usdc_in as u128 * 1_000_000 / out as u128) as u64,
                 spot,
             )?;
-        }
-        total_out = total_out.saturating_add(out);
-    }
-
-    // ── SOL leg ──
-    if sol_in > 0 {
-        let before = ctx.accounts.afho_vault.amount;
-        execute_swap(
-            &swap,
-            mint_key,
-            state_bump,
-            b"amm_sol_rewards",
-            sol_rewards_bump,
-            sol_in,
-            true,
-            0,
-            amm_state.cpmm_program,
-            amm_state.cpmm_pool_state != Pubkey::default(),
-        )?;
-        ctx.accounts.afho_vault.reload()?;
-        let out = ctx.accounts.afho_vault.amount.saturating_sub(before);
-        if out > 0 {
-            // Convert to USDC units before ratcheting: lamports × sol_price /
-            // out == (usdc_raw × 1e6) / afho_raw — never mix units in floor.
-            // M3: band-checked against the spot oracle like the USDC leg.
-            let sol_price = read_live_price(&ctx.accounts.sol_oracle.to_account_info())?;
-            require!(sol_price > 0, ErrorCode::InvalidOracle);
-            let px = (sol_in as u128).saturating_mul(sol_price as u128) / out as u128;
-            let spot = read_live_price(&ctx.accounts.spot_oracle.to_account_info())?;
-            ratchet_within_band(amm_state, u64::try_from(px).unwrap_or(u64::MAX), spot)?;
         }
         total_out = total_out.saturating_add(out);
     }
@@ -281,10 +243,9 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
     )?;
 
     msg!(
-        "day {}: distributed {} usdc + {} lamports -> {} AFHO to stakers",
+        "day {}: distributed {} usdc -> {} AFHO to stakers",
         current_day,
         usdc_in,
-        sol_in,
         total_out
     );
     Ok(())

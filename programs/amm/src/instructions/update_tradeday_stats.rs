@@ -29,9 +29,10 @@ pub struct UpdateTradedayStats<'info> {
         bump
     )]
     pub market_status: UncheckedAccount<'info>,
-    /// live price oracle — canonical Switchboard quote [market_status, price]
-    #[account(address = amm_state.price_oracle)]
-    pub price_oracle: Box<Account<'info, switchboard_on_demand::SwitchboardQuote>>,
+    /// CHECK: absolute-price oracle (raw u64, floor units) — same source as
+    /// offer_claim::read_live_price; address pinned at init.
+    #[account(address = amm_state.spot_oracle)]
+    pub spot_oracle: UncheckedAccount<'info>,
 
     /// Staking pool — the source of truth for total_staked (stake-health
     /// metric). Typed account: owner + discriminator checked automatically.
@@ -71,12 +72,11 @@ pub fn handler(ctx: Context<UpdateTradedayStats>) -> Result<()> {
     ctx.accounts.market_metrics.total_staked = ctx.accounts.staking_pool.total_staked;
     ctx.accounts.market_metrics.total_supply = ctx.accounts.afho_mint.supply;
 
-    // End-of-day metric writes (helpers_make_offers.rs)
-    record_price_change(
-        &mut ctx.accounts.market_metrics,
-        &ctx.accounts.price_oracle,
-        Clock::get()?.slot,
-    );
+    // End-of-day metric writes (helpers_make_offers.rs). The momentum input is
+    // now a close→close change computed from the absolute spot oracle (not the
+    // Jupiter 24h feed): record today's close against the previous day's.
+    let spot = super::offer_claim::read_live_price(&ctx.accounts.spot_oracle.to_account_info())?;
+    record_price_change(&mut ctx.accounts.market_metrics, spot);
     record_stake_ratio(&mut ctx.accounts.market_metrics);
 
     Ok(())

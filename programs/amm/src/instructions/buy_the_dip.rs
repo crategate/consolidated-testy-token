@@ -283,16 +283,11 @@ pub fn handler(ctx: Context<BuyTheDip>) -> Result<()> {
         return Ok(());
     }
 
-    // Rent floor for the space-0 system PDA sol_dip.
-    let sol_floor = Rent::get()?.minimum_balance(0);
-
-    // New trading day: snapshot the dip reserves as today's budget base.
+    // New trading day: snapshot the dip reserve as today's budget base.
     if amm_state.dip_day_index != current_day {
         amm_state.dip_day_index = current_day;
         amm_state.dip_day_usdc = ctx.accounts.usdc_dip.amount;
-        amm_state.dip_day_sol = ctx.accounts.sol_dip.lamports().saturating_sub(sol_floor);
         amm_state.dip_spent_usdc = 0;
-        amm_state.dip_spent_sol = 0;
         amm_state.dip_slice_count = 0;
         amm_state.dip_last_slot = 0;
     }
@@ -304,7 +299,6 @@ pub fn handler(ctx: Context<BuyTheDip>) -> Result<()> {
 
     let mint_key = amm_state.afho_mint;
     let state_bump = amm_state.bump;
-    let sol_dip_bump = amm_state.sol_dip_bump;
 
     // ---- USDC leg ----
     let day_cap_usdc = amm_state.dip_day_usdc as u128 * DIP_DAY_CAP_BPS as u128 / 10_000u128;
@@ -319,7 +313,7 @@ pub fn handler(ctx: Context<BuyTheDip>) -> Result<()> {
         } else {
             0
         };
-        execute_swap(&swap, mint_key, state_bump, b"amm_sol_dip", sol_dip_bump, slice_usdc, false, min_out, amm_state.cpmm_program, amm_state.cpmm_pool_state != Pubkey::default())?;
+        execute_swap(&swap, mint_key, state_bump, slice_usdc, min_out, amm_state.cpmm_program, amm_state.cpmm_pool_state != Pubkey::default())?;
         ctx.accounts.afho_vault.reload()?;
         let out = ctx.accounts.afho_vault.amount.saturating_sub(before);
         if out > 0 {
@@ -333,47 +327,21 @@ pub fn handler(ctx: Context<BuyTheDip>) -> Result<()> {
         amm_state.dip_spent_usdc += slice_usdc;
     }
 
-    // ---- SOL leg ----
-    let day_cap_sol = amm_state.dip_day_sol as u128 * DIP_DAY_CAP_BPS as u128 / 10_000u128;
-    let cap_left_sol = day_cap_sol.saturating_sub(amm_state.dip_spent_sol as u128) as u64;
-    let sol_available = ctx.accounts.sol_dip.lamports().saturating_sub(sol_floor);
-    let slice_sol = (sol_available as u128 * spend_bps as u128 / 10_000u128) as u64;
-    let slice_sol = slice_sol.min(cap_left_sol);
-    if slice_sol > 0 {
-        let before = ctx.accounts.afho_vault.amount;
-        execute_swap(&swap, mint_key, state_bump, b"amm_sol_dip", sol_dip_bump, slice_sol, true, 0, amm_state.cpmm_program, amm_state.cpmm_pool_state != Pubkey::default())?;
-        ctx.accounts.afho_vault.reload()?;
-        let out = ctx.accounts.afho_vault.amount.saturating_sub(before);
-        if out > 0 {
-            // Ratchet in USDC units (lamports x sol_price / out), same as
-            // dex_buyback's SOL leg — never mix units in the floor. M3:
-            // band-checked against the AFHO spot price like the USDC leg.
-            let sol_price = read_live_price(&ctx.accounts.sol_oracle.to_account_info())?;
-            require!(sol_price > 0, ErrorCode::InvalidOracle);
-            let px = (slice_sol as u128).saturating_mul(sol_price as u128) / out as u128;
-            ratchet_within_band(amm_state, u64::try_from(px).unwrap_or(u64::MAX), spot)?;
-        }
-        amm_state.dip_spent_sol += slice_sol;
-    }
-
-    if slice_usdc == 0 && slice_sol == 0 {
-        return Ok(()); // day cap exhausted / empty reserves
+    if slice_usdc == 0 {
+        return Ok(()); // day cap exhausted / empty reserve
     }
 
     amm_state.dip_slice_count += 1;
     amm_state.dip_last_slot = clock.slot;
     msg!(
-        "dip slice {}: depth {}bps, slope {}cp, spend {}bps -> {} usdc, {} sol (spent {}/{} usdc, {}/{} sol)",
+        "dip slice {}: depth {}bps, slope {}cp, spend {}bps -> {} usdc (spent {}/{})",
         amm_state.dip_slice_count,
         depth_bps,
         slope,
         spend_bps,
         slice_usdc,
-        slice_sol,
         amm_state.dip_spent_usdc,
         amm_state.dip_day_usdc,
-        amm_state.dip_spent_sol,
-        amm_state.dip_day_sol,
     );
     Ok(())
 }

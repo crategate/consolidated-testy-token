@@ -197,30 +197,15 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
     require!(had_fills, ErrorCode::NoFillsToBuyBack);
 
     let clock = Clock::get()?;
-    // Rent floor for the space-0 system PDA sol_vault — never buy back with
-    // the lamports that keep the account alive.
-    let sol_floor = Rent::get()?.minimum_balance(0);
 
-    // New trading day: snapshot the vault balances as today's budget. Unspent
-    // budget simply stays in the vaults — rollover needs no bookkeeping.
+    // New trading day: snapshot the USDC vault balance as today's budget.
+    // Unspent budget stays in the vault — rollover needs no bookkeeping.
     if amm_state.bb_day_index != current_day {
         amm_state.bb_day_index = current_day;
         amm_state.bb_budget_usdc = ctx.accounts.usdc_vault.amount;
         amm_state.bb_spent_usdc = 0;
-        amm_state.bb_budget_sol = ctx
-            .accounts
-            .sol_vault
-            .lamports()
-            .saturating_sub(sol_floor);
-        amm_state.bb_spent_sol = 0;
         amm_state.bb_slice_count = 0;
         amm_state.bb_last_slot = 0;
-        msg!(
-            "buyback day {} budget: {} usdc raw, {} sol lamports",
-            current_day,
-            amm_state.bb_budget_usdc,
-            amm_state.bb_budget_sol,
-        );
     }
 
     // Pacing: at most one slice per MIN_SLICE_SLOTS.
@@ -232,12 +217,8 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
         .bb_budget_usdc
         .saturating_sub(amm_state.bb_spent_usdc)
         .min(ctx.accounts.usdc_vault.amount);
-    let remaining_sol = amm_state
-        .bb_budget_sol
-        .saturating_sub(amm_state.bb_spent_sol)
-        .min(ctx.accounts.sol_vault.lamports().saturating_sub(sol_floor));
-    if remaining_usdc == 0 && remaining_sol == 0 {
-        return Ok(()); // day's budget exhausted; leftovers (rounding) roll over
+    if remaining_usdc == 0 {
+        return Ok(());
     }
 
     // Slice size: front-loaded weight × pseudo-random factor 0.5x–1.5x derived
@@ -254,9 +235,8 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
 
     let mint_key = amm_state.afho_mint;
     let state_bump = amm_state.bump;
-    let sol_vault_bump = amm_state.sol_vault_bump;
 
-    // ---- USDC leg ----
+    // USDC leg.
     let slice_usdc = ((remaining_usdc as u128 * weight_bps as u128 * factor_bps as u128)
         / 100_000_000u128) as u64;
     let slice_usdc = slice_usdc.min(remaining_usdc);
@@ -275,10 +255,7 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
             &swap,
             mint_key,
             state_bump,
-            b"amm_sol_vault",
-            sol_vault_bump,
             slice_usdc,
-            false,
             min_out,
             amm_state.cpmm_program,
             amm_state.cpmm_pool_state != Pubkey::default(),
@@ -296,49 +273,14 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
         amm_state.bb_spent_usdc += slice_usdc;
     }
 
-    // ---- SOL leg ----
-    let slice_sol = ((remaining_sol as u128 * weight_bps as u128 * factor_bps as u128)
-        / 100_000_000u128) as u64;
-    let slice_sol = slice_sol.min(remaining_sol);
-    if slice_sol > 0 {
-        let before = ctx.accounts.afho_vault.amount;
-        execute_swap(
-            &swap,
-            mint_key,
-            state_bump,
-            b"amm_sol_vault",
-            sol_vault_bump,
-            slice_sol,
-            true,
-            0,
-            amm_state.cpmm_program,
-            amm_state.cpmm_pool_state != Pubkey::default(),
-        )?;
-        ctx.accounts.afho_vault.reload()?;
-        let out = ctx.accounts.afho_vault.amount.saturating_sub(before);
-        if out > 0 {
-            // Ratchet in USDC units: lamports × sol_price / out equals
-            // (usdc_raw × 1e6) / afho_raw — same units as the USDC leg.
-            let sol_price = read_live_price(&ctx.accounts.sol_oracle.to_account_info())?;
-            require!(sol_price > 0, ErrorCode::InvalidOracle);
-            let px = (slice_sol as u128).saturating_mul(sol_price as u128) / out as u128;
-            let spot = read_live_price(&ctx.accounts.spot_oracle.to_account_info())?;
-            ratchet_within_band(amm_state, u64::try_from(px).unwrap_or(u64::MAX), spot)?;
-        }
-        amm_state.bb_spent_sol += slice_sol;
-    }
-
     amm_state.bb_slice_count += 1;
     amm_state.bb_last_slot = clock.slot;
     msg!(
-        "buyback slice {}: {} usdc, {} sol (spent {}/{} usdc, {}/{} sol)",
+        "buyback slice {}: {} usdc (spent {}/{})",
         amm_state.bb_slice_count,
         slice_usdc,
-        slice_sol,
         amm_state.bb_spent_usdc,
         amm_state.bb_budget_usdc,
-        amm_state.bb_spent_sol,
-        amm_state.bb_budget_sol,
     );
     Ok(())
 }
@@ -354,19 +296,14 @@ pub(crate) fn execute_swap(
     swap: &SwapInfos,
     mint_key: Pubkey,
     state_bump: u8,
-    sol_vault_seed: &[u8],
-    sol_vault_bump: u8,
     amount_in: u64,
-    sol_in: bool,
     min_amount_out: u64,
     cpmm_program: Pubkey,
     cpmm_active: bool,
 ) -> Result<()> {
-    // Raydium CPMM path (USDC leg). When the CPMM pool is pinned, route
-    // through swap_base_input instead of the mock. The SOL leg still needs
-    // WSOL wrapping and isn't wired here yet.
+    // Raydium CPMM path (USDC → AFHO). When the CPMM pool is pinned, route
+    // through swap_base_input instead of the mock.
     if cpmm_active {
-        require!(!sol_in, ErrorCode::CpmmSolLegNotWired);
         let pool_state = &swap.cpmm_pool_state;
         let amm_config = &swap.cpmm_amm_config;
         let input_vault = &swap.cpmm_input_vault;
@@ -411,36 +348,19 @@ pub(crate) fn execute_swap(
         return Ok(());
     }
 
-    if sol_in {
-        let seeds: &[&[u8]] = &[sol_vault_seed, mint_key.as_ref(), &[sol_vault_bump]];
-        anchor_lang::solana_program::program::invoke_signed(
-            &anchor_lang::solana_program::system_instruction::transfer(
-                &swap.sol_vault.key(),
-                &swap.pool_sol.key(),
-                amount_in,
-            ),
-            &[
-                swap.sol_vault.to_account_info(),
-                swap.pool_sol.to_account_info(),
-                swap.system_program.to_account_info(),
-            ],
+    let seeds: &[&[u8]] = &[b"amm_state", mint_key.as_ref(), &[state_bump]];
+    anchor_spl::token_interface::transfer(
+        CpiContext::new_with_signer(
+            swap.token_program.to_account_info(),
+            anchor_spl::token_interface::Transfer {
+                from: swap.usdc_vault.to_account_info(),
+                to: swap.pool_usdc.to_account_info(),
+                authority: swap.amm_state.to_account_info(),
+            },
             &[seeds],
-        )?;
-    } else {
-        let seeds: &[&[u8]] = &[b"amm_state", mint_key.as_ref(), &[state_bump]];
-        anchor_spl::token_interface::transfer(
-            CpiContext::new_with_signer(
-                swap.token_program.to_account_info(),
-                anchor_spl::token_interface::Transfer {
-                    from: swap.usdc_vault.to_account_info(),
-                    to: swap.pool_usdc.to_account_info(),
-                    authority: swap.amm_state.to_account_info(),
-                },
-                &[seeds],
-            ),
-            amount_in,
-        )?;
-    }
+        ),
+        amount_in,
+    )?;
     mock_dex_pool::cpi::send_afho(
         CpiContext::new(
             swap.dex_program.to_account_info(),
@@ -453,7 +373,7 @@ pub(crate) fn execute_swap(
             },
         ),
         amount_in,
-        sol_in,
+        false,
     )?;
     Ok(())
 }
@@ -503,6 +423,4 @@ pub enum ErrorCode {
     SlippageExceeded,
     #[msg("Invalid SOL price oracle")]
     InvalidOracle,
-    #[msg("Raydium CPMM SOL leg is not wired yet (WSOL pending)")]
-    CpmmSolLegNotWired,
 }

@@ -40,7 +40,7 @@ Everything required to go from the current devnet build to a mainnet launch, in 
 - [x] **Rewrite `execute_swap` via raw `invoke_signed`** (not a typed Anchor CPI — the modern `raydium-cpmm-cpi` crate pins anchor 1.0, incompatible with our 0.31). The `raydium.rs` module builds the exact `swap_base_input` instruction (discriminator + 13 accounts) + PDAs. USDC leg routed when `cpmm_pool_state` is pinned; mock is the fallback.
 - [x] **Pin the CPMM in state** — `AmmState.cpmm_program` / `cpmm_pool_state` / `cpmm_amm_config`, set via `set_cpmm_pool` (3 args, authority||keeper) + `scripts/set-cpmm-pool.ts`. Keeper derives the real vault/observation/authority PDAs.
 - [ ] **H1 re-pin for CPMM** — the CPMM accounts are currently `UncheckedAccount` (validated only by the CPI); pin `address =` constraints against the derived vault/observation/authority PDAs so a compromised keeper can't redirect them.
-- [ ] **All-USDC at claim (locked model: 80 buyback / 10 dip / 10 reward, all USDC)** — `offer_claim_sol` swaps the buyer's SOL → USDC via the Raydium SOL/USDC pool and splits 80/10/10 into the USDC buyback/dip/reward vaults; retire `sol_vault`/`sol_dip`/`sol_rewards`, the SOL legs in buyback/dip/rewards, and `sol_oracle`. Currently the SOL legs hard-error `CpmmSolLegNotWired`. Dip reserve stays (10% USDC).
+- [ ] **All-USDC at claim (locked model: 80 buyback / 10 dip / 10 reward, all USDC)** — `offer_claim_sol` still needs the SOL→USDC swap via the Raydium SOL/USDC pool + USDC split. **Done:** the SOL swap legs in `dex_buyback`/`buy_the_dip`/`distribute_staker_rewards` are retired (USDC-only), `execute_swap` simplified, `set_sol_usdc_pool` + `cpmm_sol_usdc_pool`/`cpmm_sol_usdc_config` added. Remaining: the claim conversion + removing the dead `sol_*` state/accounts.
 - [x] **`minimum_amount_out`** from the spot oracle (front-line M3 band) inside the CPI — done for the USDC leg.
 - [x] **USDC-denominated exec price for the ratchet** — post-swap `(usdc_raw × 1e6)/afho_raw` reload + `ratchet_within_band` (unchanged).
 
@@ -79,15 +79,18 @@ Everything required to go from the current devnet build to a mainnet launch, in 
 
 ## 9. Momentum metric soundness — 🚧 rework to self-sampled pool price
 
-- [ ] **Source swap + sampling cadence.** Replace Jupiter `priceChange24h` with a daily self-sampled change from the Raydium CPMM pool TWAP. **Cadence is already per-trading-day, not wall-clock 24h**: the ring stores one sample per trading day (written at end-of-day by `update_tradeday_stats`), so a close→close change is the exact native unit — no metric/storage change needed, only the input digit.
+- [x] **Source swap + sampling cadence.** Momentum now reads the **spot oracle's close→close change** (`record_price_change` computes `(close−prev)/prev × 10000` centi-percent into the same `price_changes[20]` ring), instead of Jupiter's `priceChange24h`. Cadence is per-trading-day (one close per day). `MarketMetrics.daily_close` holds the baseline.
+- [ ] Wire the spot oracle itself to the Raydium pool TWAP (see §3) — currently still the raw-u64 mock PDA.
+- [ ] **Diagnosis (done):** design is sound and source-agnostic. Edge: `raw == 0` reads as "no sample", so a perfectly flat market doesn't count toward `MIN_SAMPLES=5`.
+- [ ] Re-tune bump-taper coefficients against `sim/` once the source is a live pool price (single venue, not JUP's aggregate).
 - [ ] **Diagnosis (done, see below):** the momentum→offer-size design is sound and source-agnostic; only the input changes. Notable edge: `raw == 0` reads as "no sample", so a perfectly flat market doesn't count toward `MIN_SAMPLES=5` and the desk can read cold on a flat open.
 - [ ] Re-tune bump-taper coefficients against `sim/` once the source is in (pool price is a single venue, not JUP's market-wide aggregate).
 
 ## 10. Switchboard → mainnet
 
-- [ ] Redeploy feeds to the **mainnet default queue** (`A43DyUGA7s8eXPxqEjJY6EBu1KKbNgfxF8h17VAHn13w`) — `feed-deploy.ts` currently uses `getDefaultQueue(rpcEndpoint)`; confirm it resolves mainnet.
-- [ ] Set mainnet feed job API keys (MASSIVE/EARNINGS/JUP) as `variableOverrides`.
-- [ ] Confirm Jupiter indexes the mainnet mint (unlocks the combined `[status, price]` quote); else status-only fallback stays.
+- [x] **Status-only quote.** `feed-deploy.ts` now deploys just the market-status feed (JUP price feed removed); the keeper already falls back to status-only when `priceFeedId` is absent.
+- [ ] Redeploy feeds to the **mainnet default queue** (`A43DyUGA7s8eXPxqEjJY6EBu1KKbNgfxF8h17VAHn13w`) — `feed-deploy.ts` uses `getDefaultQueue(rpcEndpoint)`; confirm it resolves mainnet.
+- [ ] Set mainnet feed job API keys (MASSIVE/EARNINGS) as `variableOverrides`.
 - [ ] Mainnet oracle-program/quote-program IDs (see switchboard skill) vs devnet.
 
 ## 11. Frontend

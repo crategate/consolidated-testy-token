@@ -237,7 +237,7 @@ async function main() {
                                 ammState: ammStatePda,
                                 marketMetrics: metricsPda,
                                 marketStatus: marketStatusPda,
-                                priceOracle: quoteAccount,
+                                spotOracle: ammStateForStats.spotOracle,
                                 stakingPool: ammStateForStats.stakingPool,
                                 afhoMint,
                             })

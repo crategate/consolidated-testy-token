@@ -446,15 +446,10 @@ describe("offer_claim + distribute_staker_rewards", () => {
         const rewAfter = await provider.connection.getTokenAccountBalance(usdcRewards);
         assert.equal(Number(rewAfter.value.amount), 0, "USDC holding vault drained");
 
-        // SOL leg fires too: 90_000 lamports (from the SOL claim test) at
-        // mock rate 10_000 AFHO/SOL → 9e8 raw; USDC leg 18_000 × 100_000
-        // → 1.8e9 raw. Combined deposit: 2.7e9 AFHO raw.
-        const solRent = await provider.connection.getMinimumBalanceForRentExemption(0);
-        const solRewBal = await provider.connection.getBalance(solRewardsPda);
-        assert.equal(solRewBal, solRent, "SOL holding vault drained to rent floor");
-
+        // USDC-only distribution: 18_000 × 100_000 → 1.8e9 AFHO raw. (The SOL
+        // leg is retired — rewards are USDC-denominated now.)
         const rewardVault = await provider.connection.getTokenAccountBalance(rewardVaultPda);
-        assert.equal(Number(rewardVault.value.amount), 2_700_000_000, "AFHO deposited to reward vault (both legs)");
+        assert.equal(Number(rewardVault.value.amount), 1_800_000_000, "AFHO deposited to reward vault");
 
         const pool = await staking.account.stakePool.fetch(poolPda);
         assert.isAbove(pool.accruedRewardPerShare.toNumber(), 0, "MasterChef index bumped");

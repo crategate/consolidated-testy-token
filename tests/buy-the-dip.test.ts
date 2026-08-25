@@ -281,33 +281,6 @@ describe("buy_the_dip", () => {
         assert.equal(before - (await dipBalance()), slice, "throttled to 25% of base");
     });
 
-    it("SOL leg: spends the SOL reserve too", async () => {
-        // back to a flat trend, new day
-        await loadMetrics(new Array(20).fill(100), REF_PRICE);
-        await setMarket(2, 4, now());
-        await mock.methods
-            .setPrice(new anchor.BN(200_000)) // SOL = $200 in floor units
-            .accounts({ payer: payer.publicKey, afhoMint: usdcMint, mockPrice: solOraclePda })
-            .rpc();
-        await provider.sendAndConfirm(new Transaction().add(SystemProgram.transfer({
-            fromPubkey: payer.publicKey, toPubkey: solDip, lamports: SOL_DIP_FUND, // on top of init's rent
-        })));
-
-        const solBefore = await solDipBalance();
-        const dipBefore = await dipBalance();
-        const afhoBefore = await afhoBalance();
-        await dipTx();
-        const solAfter = await solDipBalance();
-        const afhoAfter = await afhoBalance();
-
-        const rent0 = await provider.connection.getMinimumBalanceForRentExemption(0);
-        const sliceSol = Math.floor((solBefore - rent0) * 0.25);
-        const sliceUsdc = Math.floor(dipBefore * 0.25);
-        assert.equal(solBefore - solAfter, sliceSol, "spent 25% of the SOL dip reserve");
-        // mock rates: 100_000 AFHO per USDC raw, 10_000 per SOL lamport
-        assert.equal(afhoAfter - afhoBefore, sliceUsdc * 100_000 + sliceSol * 10_000, "both legs paid out at the fixed rate");
-    });
-
     it("rejects an unauthorized cranker", async () => {
         const rando = Keypair.generate();
         await provider.connection.requestAirdrop(rando.publicKey, 1_000_000_000);
