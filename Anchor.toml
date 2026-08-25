@@ -25,6 +25,8 @@ wallet = "~/.config/solana/id.json"
 [scripts]
 feed-deploy = "npx ts-node ./scripts/oracle/feed-deploy.ts"
 
+# current flow after feed is set:
+# anchor run mint → anchor run amm-init → anchor run set-cpmm-pool → anchor run bount
 mint = "npx ts-node scripts/mint-launch.ts"
 pool = "npx ts-node ./scripts/pool-init.ts"
 
@@ -35,6 +37,7 @@ init-o = "npx ts-node ./scripts/initialize.ts"
 
 amm-init = "npx ts-node ./scripts/amm-init.ts"
 set-cpmm-pool="npx ts-node ./scripts/set-cpmm-pool.ts"
+pool-status = "npx ts-node ./scripts/raydium-pool-status.ts"
 amm-test-data = "npx ts-node ./scripts/amm-test-data.ts"
 
 bount = "npx ts-node ./scripts/oracle/mev-keeper.ts"

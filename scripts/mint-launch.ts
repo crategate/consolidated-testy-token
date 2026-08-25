@@ -77,8 +77,8 @@ async function main() {
     // 4. Token Metadata Configuration
     const metadata: TokenMetadata = {
         mint: mint.publicKey,
-        name: 'rayray',
-        symbol: '8-24',
+        name: 'plzzz',
+        symbol: '8-25',
         uri: 'https://copper-quick-koi-488.mypinata.cloud/ipfs/bafkreiblskodz5bwtelz4id437rnhsndtq3rfh7jjsgaj72wb55cgnbbea',
         additionalMetadata: [['description', 'combining concepts and learning the basics']],
     };
@@ -137,6 +137,10 @@ async function main() {
     const recipient = Keypair.generate();
     const destinationTokenAccount = getAssociatedTokenAddressSync(mint.publicKey, recipient.publicKey, false, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
 
+    // ⚠️ MAINNET LAUNCH SPLIT — see MAINNET_CHECKLIST.md §5:
+    //   25% of total supply → Raydium LP seed (AFHO leg; matching USDC quote
+    //   from the raise), 75% → protocol vault. Replace the devnet amounts below
+    //   (1.2M to wallet) with the real split at launch.
     const amountToMint = 1_200_000 * 10 ** decimals; // 1.2M AFHO — covers pool float (1M) + vault seed
     const amountToTransfer = BigInt(1 * 10 ** decimals);
 
@@ -207,7 +211,8 @@ async function main() {
         const afhoInfo = await getToken(mint.publicKey, TOKEN_2022_PROGRAM_ID.toBase58());
         const usdcInfo = await getToken(USDC_MINT, TOKEN_PROGRAM_ID.toBase58());
 
-        // Small devnet seed amounts — tune as needed.
+        // Small devnet seed amounts — tune as needed. MAINNET: these become
+        // the 25% LP leg (AFHO side) + the matching USDC quote side.
         const seedAfho = new anchor.BN(1000 * 10 ** decimals);
         const seedUsdc = new anchor.BN(10 * 1_000_000); // 10 USDC raw (6 dec)
 

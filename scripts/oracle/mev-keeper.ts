@@ -519,7 +519,9 @@ async function main() {
                 } else {
                     const dipSig = await connection.sendTransaction(dipTx);
                     await connection.confirmTransaction(dipSig, "confirmed");
-                    console.log(`✅ buy_the_dip slice fired! ${dipSig}`);
+                    // NB: a successful tx is usually a no-op (ring sampling / no dip
+                    // / pacing) — the on-chain trigger decides whether a slice is spent.
+                    console.log(`✅ buy_the_dip called (slice only on a real ≥3% dip): ${dipSig}`);
                 }
             } catch (e) {
                 // Never let a dip attempt kill the crank loop

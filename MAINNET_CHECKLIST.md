@@ -47,7 +47,7 @@ Everything required to go from the current devnet build to a mainnet launch, in 
 ## 5. Liquidity pool (Raydium CPMM — Token-2022 compatible)
 
 - [x] **Programmatic pool init.** `scripts/mint-launch.ts` creates the devnet CPMM pool via `raydium.cpmm.createPool` and writes `raydiumPool`/`raydiumAmmConfig`/`raydiumProgram` to `deployment.json` (mainnet USDC swap line commented). Replaces the old "manual UI" plan.
-- [ ] **Launch split 25% LP / 75% protocol.** Seed via the create-pool call at launch; both sides (AFHO + USDC) from a dedicated LP-funder account, not `afho_vault`.
+- [ ] **Launch split 25% LP / 75% protocol.** Seed via the create-pool call at launch; both sides (AFHO + USDC) from a dedicated LP-funder account, not `afho_vault`. **Where the numbers live:** `scripts/mint-launch.ts` — `amountToMint` (supply) and `seedAfho`/`seedUsdc` (pool seed), marked with `⚠️ MAINNET LAUNCH SPLIT` comments. Swap the devnet test amounts for the real 25/75 split there.
 - [ ] **1% of bond sales → LP until target.** 4th split leg in `offer_claim` routing 1% of proceeds to an LP-funding vault + a permissionless `lp_fund` instruction that CPI-`addLiquidity` until pool liquidity ≥ target. **Target: $100,000** (sanity: at 0.25% fee this is enough to make swap depth / TWAP meaningful; revisit after launch volume).
 - [ ] **LP custody.** Burn vs lock LP tokens (Raydium `cpmm.lockLiquidity` supports locking). Protocol-owned PDA affects "target size" measurement + withdrawal risk.
 
@@ -64,7 +64,7 @@ Everything required to go from the current devnet build to a mainnet launch, in 
 - [x] Staking issues: `amm_stake.rs` is_signer (verify after §4 CPI), `Stake` INIT_SPACE — check.
 - [ ] `current_stake_ratio` uses `total_supply` vs circulating (`helpers_make_offers.rs:31-33`) — resolve or accept.
 - [x] Fresh `anchor build` + full test suite green (**34/34** local suites).
-- [x] **Devnet end-to-end rig** — `anchor run mint` (fresh 1.2M mint + CPMM pool) → `anchor run amm-init` → `anchor run set-cpmm-pool` (pins program+pool+config) → `anchor run bount` (keeper derives CPMM accounts). USDC legs live; SOL legs `CpmmSolLegNotWired` until wSOL.
+- [x] **Devnet end-to-end rig** — `anchor run mint` (fresh 1.2M mint + CPMM pool) → `anchor run amm-init` (now also initializes the **staking pool**) → `anchor run set-cpmm-pool` (pins program+pool+config) → `anchor run bount` (keeper derives CPMM accounts). USDC legs live; SOL legs `CpmmSolLegNotWired` until wSOL. (`scripts/pool-init.ts` still exists as a standalone staking backfill.)
 - [ ] `amm-init` with real mint/pool/oracle addresses; verify `deployment.json` consumed by app.
 - [ ] External audit pass on the final diff (§1 fixes + §4 adapter + §5 LP).
 - [ ] Doc cleanup: staking header describes removed claim penalties; stale comment in `dex_buyback.rs:332-334`.

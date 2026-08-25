@@ -157,6 +157,58 @@ async function main() {
         STAKING_PROGRAM_ID
     );
 
+    // ── Initialize the staking pool (offer_claim / distribute CPI into it) ──
+    // Was a separate `anchor run pool`; folded here so amm-init sets up the
+    // whole mint-keyed stack in one pass. Idempotent-ish: skips if present.
+    {
+        const stakingIdl = JSON.parse(
+            fs.readFileSync(path.join(process.cwd(), "target", "idl", "staking.json"), "utf-8")
+        );
+        const stakingProgram = new anchor.Program(stakingIdl as anchor.Idl, provider);
+        const [stakingMarketStatusPda] = PublicKey.findProgramAddressSync(
+            [Buffer.from("market_status")], CRANK_PROGRAM_ID
+        );
+        const [stakingVaultPda] = PublicKey.findProgramAddressSync(
+            [Buffer.from("vault"), stakingPoolPda.toBuffer()], STAKING_PROGRAM_ID
+        );
+        const [stakingRewardPda] = PublicKey.findProgramAddressSync(
+            [Buffer.from("rewards"), stakingPoolPda.toBuffer()], STAKING_PROGRAM_ID
+        );
+        const [stakingPenaltyPda] = PublicKey.findProgramAddressSync(
+            [Buffer.from("penalties"), stakingPoolPda.toBuffer()], STAKING_PROGRAM_ID
+        );
+        const [stakingPosrPda] = PublicKey.findProgramAddressSync(
+            [Buffer.from("posr"), stakingPoolPda.toBuffer()], STAKING_PROGRAM_ID
+        );
+        try {
+            await stakingProgram.methods
+                .initializePool(CRANK_PROGRAM_ID, 30000, 500, 400, 800, 1800, AMM_PROGRAM_ID)
+                .accounts({
+                    authority: provider.wallet.publicKey,
+                    mint: AFHO_MINT,
+                    pool: stakingPoolPda,
+                    vault: stakingVaultPda,
+                    rewardVault: stakingRewardPda,
+                    penaltyVault: stakingPenaltyPda,
+                    afhoVault: stakingPosrPda,
+                    marketStatusPda: stakingMarketStatusPda,
+                    tokenProgram: TOKEN_2022_PROGRAM_ID,
+                    systemProgram: anchor.web3.SystemProgram.programId,
+                })
+                .rpc();
+            console.log("  ✅ Staking pool initialized:", stakingPoolPda.toBase58());
+        } catch (e) {
+            console.log("  ⚠️  Staking pool already initialized (or failed):", (e as Error).message);
+        }
+        writeDeploymentState({
+            pool: stakingPoolPda.toBase58(),
+            vault: stakingVaultPda.toBase58(),
+            rewardVault: stakingRewardPda.toBase58(),
+            penaltyVault: stakingPenaltyPda.toBase58(),
+            posrVault: stakingPosrPda.toBase58(),
+        });
+    }
+
     const [solDipPda] = PublicKey.findProgramAddressSync(
         [
             Buffer.from("amm_sol_dip"),
