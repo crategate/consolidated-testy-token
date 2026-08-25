@@ -17,7 +17,7 @@ use crate::state::offersState::AmmState;
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
-use super::dex_buyback::{execute_swap, ratchet_within_band, SwapInfos};
+use super::dex_buyback::{execute_swap, ratchet_within_band, SwapInfos, MAX_SLIPPAGE_BPS};
 use super::offer_claim::read_live_price;
 
 #[derive(Accounts)]
@@ -103,6 +103,24 @@ pub struct DistributeStakerRewards<'info> {
     /// Token-2022 (AFHO out-leg + staking deposit)
     pub token_2022_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
+
+    // --- Raydium CPMM accounts (None while the mock adapter is active) ---
+    #[account(mut)]
+    /// CHECK: Raydium CPMM account (validated at CPI time).
+    pub cpmm_pool_state: UncheckedAccount<'info>,
+    /// CHECK: Raydium CPMM account (validated at CPI time).
+    pub cpmm_amm_config: UncheckedAccount<'info>,
+    #[account(mut)]
+    /// CHECK: Raydium CPMM account (validated at CPI time).
+    pub cpmm_input_vault: UncheckedAccount<'info>,
+    #[account(mut)]
+    /// CHECK: Raydium CPMM account (validated at CPI time).
+    pub cpmm_output_vault: UncheckedAccount<'info>,
+    #[account(mut)]
+    /// CHECK: Raydium CPMM account (validated at CPI time).
+    pub cpmm_observation: UncheckedAccount<'info>,
+    /// CHECK: Raydium CPMM account (validated at CPI time).
+    pub cpmm_authority: UncheckedAccount<'info>,
 }
 
 pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
@@ -119,10 +137,17 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
         pool_usdc: ctx.accounts.pool_usdc.to_account_info(),
         pool_sol: ctx.accounts.pool_sol.to_account_info(),
         afho_mint: ctx.accounts.afho_mint.to_account_info(),
+        usdc_mint: ctx.accounts.usdc_mint.to_account_info(),
         dex_program: ctx.accounts.dex_program.to_account_info(),
         token_program: ctx.accounts.token_program.to_account_info(),
         token_2022_program: ctx.accounts.token_2022_program.to_account_info(),
         system_program: ctx.accounts.system_program.to_account_info(),
+        cpmm_pool_state: ctx.accounts.cpmm_pool_state.to_account_info(),
+        cpmm_amm_config: ctx.accounts.cpmm_amm_config.to_account_info(),
+        cpmm_input_vault: ctx.accounts.cpmm_input_vault.to_account_info(),
+        cpmm_output_vault: ctx.accounts.cpmm_output_vault.to_account_info(),
+        cpmm_observation: ctx.accounts.cpmm_observation.to_account_info(),
+        cpmm_authority: ctx.accounts.cpmm_authority.to_account_info(),
     };
 
     let amm_state = &mut ctx.accounts.amm_state;
@@ -170,6 +195,13 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
     // ── USDC leg ──
     if usdc_in > 0 {
         let before = ctx.accounts.afho_vault.amount;
+        let spot = read_live_price(&ctx.accounts.spot_oracle.to_account_info())?;
+        let min_out = if spot > 0 {
+            (usdc_in as u128 * 1_000_000u128 * 10_000u128
+                / (spot as u128 * (10_000 + MAX_SLIPPAGE_BPS) as u128)) as u64
+        } else {
+            0
+        };
         execute_swap(
             &swap,
             mint_key,
@@ -178,6 +210,9 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
             sol_rewards_bump,
             usdc_in,
             false,
+            min_out,
+            amm_state.cpmm_program,
+            amm_state.cpmm_pool_state != Pubkey::default(),
         )?;
         ctx.accounts.afho_vault.reload()?;
         let out = ctx.accounts.afho_vault.amount.saturating_sub(before);
@@ -205,6 +240,9 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
             sol_rewards_bump,
             sol_in,
             true,
+            0,
+            amm_state.cpmm_program,
+            amm_state.cpmm_pool_state != Pubkey::default(),
         )?;
         ctx.accounts.afho_vault.reload()?;
         let out = ctx.accounts.afho_vault.amount.saturating_sub(before);

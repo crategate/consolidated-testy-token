@@ -354,16 +354,26 @@ async function main() {
             const authorityAfhoAta = getAssociatedTokenAddressSync(
                 AFHO_MINT, provider.wallet.publicKey, false, TOKEN_2022_PROGRAM_ID
             );
-            const fundTx = new Transaction().add(createTransferCheckedInstruction(
-                authorityAfhoAta, AFHO_MINT, poolAfhoAta,
-                provider.wallet.publicKey, BigInt(floatRaw.toString()), 9, [],
-                TOKEN_2022_PROGRAM_ID
-            ));
-            const { blockhash } = await provider.connection.getLatestBlockhash("confirmed");
-            fundTx.recentBlockhash = blockhash;
-            fundTx.feePayer = provider.wallet.publicKey;
-            const sig = await provider.sendAndConfirm(fundTx);
-            console.log(`  ✅ Pool float funded with ${floatWhole} AFHO:`, sig);
+            // Cap the float at the authority's actual balance — the mint only
+            // has what mint-launch created (no mint authority post-revoke).
+            const authorityBal = await getAccount(
+                provider.connection, authorityAfhoAta, "confirmed", TOKEN_2022_PROGRAM_ID
+            );
+            const capped = anchor.BN.min(floatRaw, new anchor.BN(authorityBal.amount.toString()));
+            if (capped.isZero()) {
+                console.log("  ⚠️  Authority AFHO balance is zero — pool float not funded (mint more or re-run mint-launch with a fresh mint).");
+            } else {
+                const fundTx = new Transaction().add(createTransferCheckedInstruction(
+                    authorityAfhoAta, AFHO_MINT, poolAfhoAta,
+                    provider.wallet.publicKey, BigInt(capped.toString()), 9, [],
+                    TOKEN_2022_PROGRAM_ID
+                ));
+                const { blockhash } = await provider.connection.getLatestBlockhash("confirmed");
+                fundTx.recentBlockhash = blockhash;
+                fundTx.feePayer = provider.wallet.publicKey;
+                const sig = await provider.sendAndConfirm(fundTx);
+                console.log(`  ✅ Pool float funded with ${(Number(capped) / 1e9).toFixed(0)} AFHO (capped at balance):`, sig);
+            }
         } else {
             console.log("  ⚠️  Pool float already funded, skipping.");
         }

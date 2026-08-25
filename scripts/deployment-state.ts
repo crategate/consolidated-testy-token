@@ -24,6 +24,9 @@ type DeploymentState = {
     marketStatusFeedId?: string;
     priceFeedId?: string;
     oracleQuoteAccount?: string;
+    raydiumPool?: string;
+    raydiumAmmConfig?: string;
+    raydiumProgram?: string;
 };
 
 const deploymentPath = path.join(process.cwd(), "app", "public", "deployment.json");

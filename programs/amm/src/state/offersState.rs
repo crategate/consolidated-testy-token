@@ -96,6 +96,16 @@ pub struct AmmState {
     // point at the real DEX pool program at launch.
     pub dex_program: Pubkey,
 
+    // Raydium CPMM pool pinning (Path A swap adapter). Pubkey::default() while
+    // the mock is in use; set via set_cpmm_pool once the real pool exists. The
+    // vaults and authority are derived on-chain from these + the mints.
+    pub cpmm_pool_state: Pubkey,
+    pub cpmm_amm_config: Pubkey,
+    // The CPMM program itself (CPI target for the swap adapter). Distinct from
+    // dex_program, which the mock uses — the mock pool_state seeds constraint
+    // depends on it staying the mock program.
+    pub cpmm_program: Pubkey,
+
     // Buyback day schedule. Budget snapshots the vault balances at the first
     // buyback call of a trading day; unspent budget just stays in the vaults
     // and rolls into the next day with fills (no bookkeeping needed for that).

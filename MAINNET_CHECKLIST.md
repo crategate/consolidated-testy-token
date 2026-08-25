@@ -27,24 +27,26 @@ Everything required to go from the current devnet build to a mainnet launch, in 
 - [ ] Permissionless `set_price` mock oracle PDAs.
 - Note: these stay for devnet testing until the real DEX adapter + oracles (§3/§4) are in and green.
 
-## 3. Real price oracles — ⏳ plan: Raydium TWAP + Switchboard(status) + optional JUP(24h)
+## 3. Real price oracles — 🚧 TWAP module written, not wired
 
-- [ ] `spot_oracle` → Raydium CPMM pool **TWAP** (`observation_state`), not raw reserves. Used by claims, floor decay, dip trigger.
-- [ ] `sol_oracle` → Raydium SOL/USDC pool TWAP.
+- [x] **Raydium CPMM TWAP reader** exists (`programs/amm/src/instructions/raydium.rs::read_twap_token0_in_token1`) — reads the `observation` ring and computes the time-weighted token_0/token_1 price (Q32.32).
+- [ ] `spot_oracle` → wire the CPMM pool **TWAP** (`observation_state`) for claims, floor decay, dip trigger. Currently still the raw-u64 mock PDA.
+- [ ] `sol_oracle` → Raydium SOL/USDC pool TWAP (or keep an external SOL/USD feed).
 - [ ] `priceChange24h` (momentum) → keep Jupiter Price API via Switchboard for now (market-wide 24h change); optional later: self-sampled daily diff of the pool TWAP. **Revisit `calculate_momentum_score` weighting once the source changes** (see §9).
 - [ ] Staleness/validity checks on whatever replaces the raw-u64 stubs.
 
-## 4. Real DEX integration — ⏳ Raydium CPMM
+## 4. Real DEX integration — 🚧 Raydium CPMM, USDC leg live (Path A raw CPI)
 
-- [ ] Rewrite `execute_swap` via `raydium_cp_swap` CPI (`swap_base_input`). Spec in `docs/DEX-INTEGRATION.md`. Dep: `raydium-cp-swap` (crates.io).
-- [ ] `amm_state.dex_program` → CPMM program; pin pool state/vaults/`amm_config`/`observation_state` in state (H1 re-pin).
-- [ ] SOL leg → **WSOL** handling (wrap `sol_vault` lamports) or route through AFHO/USDC only (decision).
-- [ ] Adapter reports USDC-denominated exec price for the ratchet.
-- [ ] `minimum_amount_out` from the spot oracle (front-line M3 band) inside the CPI.
+- [x] **Rewrite `execute_swap` via raw `invoke_signed`** (not a typed Anchor CPI — the modern `raydium-cpmm-cpi` crate pins anchor 1.0, incompatible with our 0.31). The `raydium.rs` module builds the exact `swap_base_input` instruction (discriminator + 13 accounts) + PDAs. USDC leg routed when `cpmm_pool_state` is pinned; mock is the fallback.
+- [x] **Pin the CPMM in state** — `AmmState.cpmm_program` / `cpmm_pool_state` / `cpmm_amm_config`, set via `set_cpmm_pool` (3 args, authority||keeper) + `scripts/set-cpmm-pool.ts`. Keeper derives the real vault/observation/authority PDAs.
+- [ ] **H1 re-pin for CPMM** — the CPMM accounts are currently `UncheckedAccount` (validated only by the CPI); pin `address =` constraints against the derived vault/observation/authority PDAs so a compromised keeper can't redirect them.
+- [ ] **SOL leg → wSOL** — wrap native lamports into an `amm_state` wSOL ATA + `sync_native`, then swap (wSOL→USDC→AFHO, needs the SOL/USDC pool). Currently hard-errors `CpmmSolLegNotWired`.
+- [x] **`minimum_amount_out`** from the spot oracle (front-line M3 band) inside the CPI — done for the USDC leg.
+- [x] **USDC-denominated exec price for the ratchet** — post-swap `(usdc_raw × 1e6)/afho_raw` reload + `ratchet_within_band` (unchanged).
 
 ## 5. Liquidity pool (Raydium CPMM — Token-2022 compatible)
 
-- [x] **Programmatic pool init.** `scripts/mint-launch.ts` now scaffolds `raydium.cpmm.createPool` (devnet; mainnet USDC swap line commented). Replaces the old "manual UI" plan.
+- [x] **Programmatic pool init.** `scripts/mint-launch.ts` creates the devnet CPMM pool via `raydium.cpmm.createPool` and writes `raydiumPool`/`raydiumAmmConfig`/`raydiumProgram` to `deployment.json` (mainnet USDC swap line commented). Replaces the old "manual UI" plan.
 - [ ] **Launch split 25% LP / 75% protocol.** Seed via the create-pool call at launch; both sides (AFHO + USDC) from a dedicated LP-funder account, not `afho_vault`.
 - [ ] **1% of bond sales → LP until target.** 4th split leg in `offer_claim` routing 1% of proceeds to an LP-funding vault + a permissionless `lp_fund` instruction that CPI-`addLiquidity` until pool liquidity ≥ target. **Target: $100,000** (sanity: at 0.25% fee this is enough to make swap depth / TWAP meaningful; revisit after launch volume).
 - [ ] **LP custody.** Burn vs lock LP tokens (Raydium `cpmm.lockLiquidity` supports locking). Protocol-owned PDA affects "target size" measurement + withdrawal risk.
@@ -62,6 +64,7 @@ Everything required to go from the current devnet build to a mainnet launch, in 
 - [x] Staking issues: `amm_stake.rs` is_signer (verify after §4 CPI), `Stake` INIT_SPACE — check.
 - [ ] `current_stake_ratio` uses `total_supply` vs circulating (`helpers_make_offers.rs:31-33`) — resolve or accept.
 - [x] Fresh `anchor build` + full test suite green (**34/34** local suites).
+- [x] **Devnet end-to-end rig** — `anchor run mint` (fresh 1.2M mint + CPMM pool) → `anchor run amm-init` → `anchor run set-cpmm-pool` (pins program+pool+config) → `anchor run bount` (keeper derives CPMM accounts). USDC legs live; SOL legs `CpmmSolLegNotWired` until wSOL.
 - [ ] `amm-init` with real mint/pool/oracle addresses; verify `deployment.json` consumed by app.
 - [ ] External audit pass on the final diff (§1 fixes + §4 adapter + §5 LP).
 - [ ] Doc cleanup: staking header describes removed claim penalties; stale comment in `dex_buyback.rs:332-334`.

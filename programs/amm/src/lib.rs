@@ -41,6 +41,16 @@ pub mod amm {
         set_keeper::handler(ctx, new_keeper)
     }
 
+    // Pin the Raydium CPMM pool for the swap adapter (authority || keeper).
+    pub fn set_cpmm_pool(
+        ctx: Context<SetCpmmPool>,
+        cpmm_program: Pubkey,
+        pool_state: Pubkey,
+        amm_config: Pubkey,
+    ) -> Result<()> {
+        set_cpmm_pool::handler(ctx, cpmm_program, pool_state, amm_config)
+    }
+
     // DEVNET/TEST ONLY — remove before mainnet
     pub fn load_test_data(ctx: Context<LoadTestData>, data: TestMetrics) -> Result<()> {
         load_test_data::handler(ctx, data)

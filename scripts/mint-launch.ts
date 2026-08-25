@@ -9,6 +9,7 @@ import {
 import {
     ExtensionType,
     TOKEN_2022_PROGRAM_ID,
+    TOKEN_PROGRAM_ID,
     getMintLen,
     createInitializeMintInstruction,
     ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -76,8 +77,8 @@ async function main() {
     // 4. Token Metadata Configuration
     const metadata: TokenMetadata = {
         mint: mint.publicKey,
-        name: 'winning',
-        symbol: '8-15',
+        name: 'rayray',
+        symbol: '8-24',
         uri: 'https://copper-quick-koi-488.mypinata.cloud/ipfs/bafkreiblskodz5bwtelz4id437rnhsndtq3rfh7jjsgaj72wb55cgnbbea',
         additionalMetadata: [['description', 'combining concepts and learning the basics']],
     };
@@ -136,7 +137,7 @@ async function main() {
     const recipient = Keypair.generate();
     const destinationTokenAccount = getAssociatedTokenAddressSync(mint.publicKey, recipient.publicKey, false, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
 
-    const amountToMint = 9090 * 10 ** decimals;
+    const amountToMint = 1_200_000 * 10 ** decimals; // 1.2M AFHO — covers pool float (1M) + vault seed
     const amountToTransfer = BigInt(1 * 10 ** decimals);
 
     const transferTx = new Transaction().add(
@@ -147,7 +148,7 @@ async function main() {
 
     try {
         const sig3 = await sendAndConfirmTransaction(connection, transferTx, [wallet.payer], { skipPreflight: true });
-        console.log(`✅ Minted ${722} tokens to source wallet! Signature: ${sig3}`);
+        console.log(`✅ Minted ${(amountToMint / 10 ** decimals).toLocaleString()} AFHO to source wallet! Signature: ${sig3}`);
 
         //  const transferIx = await createTransferCheckedWithTransferHookInstruction(
         //      connection, sourceTokenAccount, mint.publicKey, destinationTokenAccount, wallet.publicKey, amountToTransfer, decimals, [], "confirmed", TOKEN_2022_PROGRAM_ID
@@ -185,33 +186,53 @@ async function main() {
     // funded devnet USDC ATA. On MAINNET: set USDC_MINT to EPjFWdd5... above and
     // run once at launch.
     try {
-        const { Raydium } = await import("@raydium-io/raydium-sdk-v2");
+        const { Raydium, TxVersion, DEVNET_PROGRAM_ID } = await import("@raydium-io/raydium-sdk-v2");
         const raydium = await Raydium.load({ connection, owner: wallet.payer, cluster: "devnet" });
         const feeConfigs = await raydium.api.getCpmmConfigs();
-        const feeConfig = feeConfigs.find((c: any) => c.tradeFeeRate === 2500);
+        const feeConfig = feeConfigs.find((c) => c.tradeFeeRate === 2500);
         if (!feeConfig) throw new Error("No 0.25% CPMM fee config on devnet");
 
-        const [afhoInfo, usdcInfo] = await raydium.token.getTokenInfo([
-            mint.publicKey.toBase58(),
-            USDC_MINT.toBase58(),
-        ]);
+        // The Raydium token API is mainnet-oriented — on devnet it may not know
+        // these mints, so fall back to reading the mint accounts from the RPC.
+        const getToken = async (mintKey: PublicKey, programId: string) => {
+            try {
+                const t = await raydium.token.getTokenInfo(mintKey.toBase58());
+                return { address: t.address, decimals: t.decimals, programId: t.programId };
+            } catch {
+                const parsed = await connection.getParsedAccountInfo(mintKey);
+                const info = (parsed.value!.data as { parsed: { info: { decimals: number } } }).parsed.info;
+                return { address: mintKey.toBase58(), decimals: info.decimals, programId };
+            }
+        };
+        const afhoInfo = await getToken(mint.publicKey, TOKEN_2022_PROGRAM_ID.toBase58());
+        const usdcInfo = await getToken(USDC_MINT, TOKEN_PROGRAM_ID.toBase58());
 
         // Small devnet seed amounts — tune as needed.
         const seedAfho = new anchor.BN(1000 * 10 ** decimals);
         const seedUsdc = new anchor.BN(10 * 1_000_000); // 10 USDC raw (6 dec)
 
         const { execute, extInfo } = await raydium.cpmm.createPool({
+            programId: DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_PROGRAM,
+            poolFeeAccount: DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_FEE_ACC,
             mintA: afhoInfo,
             mintB: usdcInfo,
             mintAAmount: seedAfho,
             mintBAmount: seedUsdc,
             startTime: new anchor.BN(0),
             feeConfig,
-            txVersion: "V0",
+            associatedOnly: false,
+            ownerInfo: { useSOLBalance: true },
+            txVersion: TxVersion.V0,
         });
         const { txId } = await execute({ sendAndConfirm: true });
-        console.log(`✅ Raydium CPMM pool created: ${extInfo.address.toBase58()} (tx ${txId})`);
-        writeDeploymentState({ raydiumPool: extInfo.address.toBase58() });
+        const poolId = extInfo.address.poolId;
+        const configId = extInfo.address.configId;
+        console.log(`✅ Raydium CPMM pool created: ${poolId.toBase58()} (tx ${txId})`);
+        writeDeploymentState({
+            raydiumPool: poolId.toBase58(),
+            raydiumAmmConfig: configId.toBase58(),
+            raydiumProgram: DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_PROGRAM.toBase58(),
+        });
     } catch (e) {
         console.warn(
             "⚠️ Raydium pool creation skipped (install @raydium-io/raydium-sdk-v2 and fund devnet USDC):",

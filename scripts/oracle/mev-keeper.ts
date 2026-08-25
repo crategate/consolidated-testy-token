@@ -69,6 +69,52 @@ async function main() {
     const metricsPda = ammPda("metrics");
     const acceptedOffersPda = ammPda("accepted_offers");
 
+    // Raydium CPMM accounts for the swap adapter. When the pool is pinned in
+    // state (set_cpmm_pool), derive the real CPMM PDAs; otherwise fall back to
+    // the mock pool so the required accounts still resolve.
+    function cpmmAccountsFor(
+        ammState: any,
+        usdcMint: PublicKey,
+        mockPool: PublicKey
+    ) {
+        if (!ammState.cpmmPoolState || !ammState.cpmmProgram) {
+            return {
+                cpmmPoolState: mockPool,
+                cpmmAmmConfig: mockPool,
+                cpmmInputVault: mockPool,
+                cpmmOutputVault: mockPool,
+                cpmmObservation: mockPool,
+                cpmmAuthority: mockPool,
+            };
+        }
+        const program = new PublicKey(ammState.cpmmProgram);
+        const pool = new PublicKey(ammState.cpmmPoolState);
+        const [authority] = PublicKey.findProgramAddressSync(
+            [Buffer.from("vault_and_lp_mint_auth_seed")],
+            program
+        );
+        const [observation] = PublicKey.findProgramAddressSync(
+            [Buffer.from("observation"), pool.toBuffer()],
+            program
+        );
+        const [inputVault] = PublicKey.findProgramAddressSync(
+            [Buffer.from("pool_vault"), pool.toBuffer(), usdcMint.toBuffer()],
+            program
+        );
+        const [outputVault] = PublicKey.findProgramAddressSync(
+            [Buffer.from("pool_vault"), pool.toBuffer(), afhoMint.toBuffer()],
+            program
+        );
+        return {
+            cpmmPoolState: pool,
+            cpmmAmmConfig: new PublicKey(ammState.cpmmAmmConfig),
+            cpmmInputVault: inputVault,
+            cpmmOutputVault: outputVault,
+            cpmmObservation: observation,
+            cpmmAuthority: authority,
+        };
+    }
+
     console.log("🔍 Keeper started");
     console.log("Program ID:", programId.toBase58());
     console.log("Market Status:", marketStatusPda.toBase58());
@@ -328,6 +374,7 @@ async function main() {
                                 poolUsdc,
                                 poolSol: poolState,
                                 dexProgram: dexProgramId,
+                                ...cpmmAccountsFor(ammStateForDist, usdcMint, poolState),
                                 stakingProgram: stakingProgramId,
                                 stakingPool: stakingPoolPda,
                                 stakingRewardVault,
@@ -393,6 +440,7 @@ async function main() {
                             poolUsdc,
                             poolSol: poolState,
                             dexProgram: dexProgramId,
+                            ...cpmmAccountsFor(ammState, usdcMint, poolState),
                             tokenProgram: TOKEN_PROGRAM_ID,
                             token2022Program: TOKEN_2022_PROGRAM_ID,
                             systemProgram: anchor.web3.SystemProgram.programId,
@@ -453,6 +501,7 @@ async function main() {
                         poolUsdc,
                         poolSol: poolState,
                         dexProgram: dexProgramId,
+                        ...cpmmAccountsFor(ammState, usdcMint, poolState),
                         tokenProgram: TOKEN_PROGRAM_ID,
                         token2022Program: TOKEN_2022_PROGRAM_ID,
                         systemProgram: anchor.web3.SystemProgram.programId,

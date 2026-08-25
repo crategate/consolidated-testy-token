@@ -106,6 +106,12 @@ describe("dex_buyback", () => {
                 poolUsdc,
                 poolSol: poolState,
                 dexProgram: mock.programId,
+                cpmmPoolState: poolState,
+                cpmmAmmConfig: poolState,
+                cpmmInputVault: poolState,
+                cpmmOutputVault: poolState,
+                cpmmObservation: poolState,
+                cpmmAuthority: poolState,
                 tokenProgram: TOKEN_PROGRAM_ID,
                 token2022Program: TOKEN_2022_PROGRAM_ID,
             })

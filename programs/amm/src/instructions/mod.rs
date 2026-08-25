@@ -16,6 +16,9 @@ pub use calc_completed_offers::*;
 pub mod set_keeper;
 pub use set_keeper::*;
 
+pub mod set_cpmm_pool;
+pub use set_cpmm_pool::*;
+
 pub mod load_test_data;
 pub use load_test_data::*;
 pub mod update_tradeday_stats;
@@ -29,3 +32,7 @@ pub use dex_buyback::*;
 
 pub mod distribute_staker_rewards;
 pub use distribute_staker_rewards::*;
+
+// Raw Raydium CPMM adapter + TWAP oracle (not an instruction module).
+pub mod raydium;
+pub use raydium::*;

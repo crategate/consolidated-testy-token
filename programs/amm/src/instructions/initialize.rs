@@ -34,6 +34,11 @@ pub fn handler(
     amm_state.crank_program = ctx.accounts.crank_program.key();
     amm_state.price_oracle = ctx.accounts.price_oracle.key();
     amm_state.dex_program = ctx.accounts.dex_program.key();
+    // Raydium CPMM pool is pinned later via set_cpmm_pool (once the launch
+    // pool exists); default(0) keeps the mock adapter active until then.
+    amm_state.cpmm_pool_state = Pubkey::default();
+    amm_state.cpmm_amm_config = Pubkey::default();
+    amm_state.cpmm_program = Pubkey::default();
     amm_state.total_sol_proceeds = 0;
     amm_state.total_usdc_proceeds = 0;
     amm_state.highest_buyback_basis = 0;
