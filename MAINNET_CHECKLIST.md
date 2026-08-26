@@ -62,6 +62,8 @@ Everything required to go from the current devnet build to a mainnet launch, in 
 - [x] **Bounty auto-top-up implemented (`bounty_top_up`, permissionless).** When `bounty_vault` SOL < 0.2 SOL: swap USDC → wSOL through the pinned SOL/USDC pool (USDC from `usdc_vault` — the buyback vault, per the All-USDC route), unwrap via `close_account` into `bounty_vault` up to 0.4 SOL. `wsol_vault` ATA created idempotently each run. NOTE: the earlier "fund from POSR vault" idea was superseded by the All-USDC treasury model — this tops up from the same buyback vault that feeds buybacks/dip/rewards.
 - [ ] Devnet runtime-verify `bounty_top_up` (drain `bounty_vault` below 0.2 SOL, crank it, confirm it refills to 0.4 SOL).
 - [ ] Size bounty amount (`set_bounty_amount`) — 0.005 SOL/transition is fine; tune post-launch.
+- [ ] resize  bounty amount to be priced in USD..?
+
 
 ## 7. Ops / launch sequence
 

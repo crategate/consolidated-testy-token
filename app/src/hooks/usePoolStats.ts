@@ -3,7 +3,7 @@ import { useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey, type ParsedAccountData } from '@solana/web3.js';
 import { useReadOnlyStakingProgram } from './useReadOnlyProgram';
 import { STAKING_PROGRAM_ID } from '../anchor/setup';
-import type { StakePoolData } from './usePool';
+import type { StakePoolData } from './stake/usePool';
 export interface PoolStats {
     totalStaked: number;
     totalSupply: number;

@@ -55,77 +55,119 @@ async function main() {
     let poolStateKey = process.env.DEVNET_SOL_USDC_POOL || deployment.raydiumSolUsdcPool;
     let ammConfigKey = process.env.DEVNET_SOL_USDC_CONFIG || deployment.raydiumSolUsdcConfig;
 
-    // ── Devnet fallback: create our own SOL/USDC pool ──────────────────────
+    // ── Devnet fallback: find-or-create our own SOL/USDC pool ──────────────
     if (!poolStateKey || !ammConfigKey) {
-        console.log("🔧 No SOL/USDC pool configured — creating a devnet SOL/USDC CPMM pool…");
-        const { Raydium, TxVersion, DEVNET_PROGRAM_ID } = await import("@raydium-io/raydium-sdk-v2");
+        console.log("🔧 No SOL/USDC pool configured — looking for an existing devnet SOL/USDC CPMM pool…");
+        const { Raydium, TxVersion, DEVNET_PROGRAM_ID, getCreatePoolKeys } =
+            await import("@raydium-io/raydium-sdk-v2");
         const raydium = await Raydium.load({ connection, owner: wallet.payer, cluster: "devnet" });
 
         const feeConfigs = await raydium.api.getCpmmConfigs();
-        const feeConfig = feeConfigs.find((c) => c.tradeFeeRate === 2500);
-        if (!feeConfig) throw new Error("No 0.25% CPMM fee config on devnet");
+        const feeConfigs2500 = feeConfigs.filter((c) => c.tradeFeeRate === 2500);
+        if (feeConfigs2500.length === 0) throw new Error("No 0.25% CPMM fee config on devnet");
 
-        // ── Wrap SOL → wSOL (pool legs must be SPL tokens) ─────────────────
-        const wsolAta = getAssociatedTokenAddressSync(WSOL_MINT, wallet.publicKey, false);
-        if (!(await connection.getAccountInfo(wsolAta))) {
-            const createIx = createAssociatedTokenAccountInstruction(
-                wallet.publicKey,
-                wsolAta,
-                wallet.publicKey,
-                WSOL_MINT,
-                TOKEN_PROGRAM_ID
-            );
-            const tx = new Transaction().add(createIx);
-            tx.feePayer = wallet.publicKey;
-            tx.recentBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
-            await sendAndConfirmTransaction(connection, tx, [wallet.payer], { skipPreflight: true });
-            console.log(`  ✅ wSOL ATA created: ${wsolAta.toBase58()}`);
+        // Mints in the same sorted order the CPMM program derives pool PDAs in.
+        const [mintA, mintB] =
+            Buffer.compare(WSOL_MINT.toBuffer(), USDC_MINT.toBuffer()) <= 0
+                ? [WSOL_MINT, USDC_MINT]
+                : [USDC_MINT, WSOL_MINT];
+
+        // Reuse a pool if one already exists for a 0.25% config. A previous
+        // run can create the pool but die before recording it in
+        // deployment.json — re-creating then fails inside the CPMM initialize
+        // with "Allocate: account already in use" on the LP-mint PDA.
+        for (const config of feeConfigs2500) {
+            const keys = getCreatePoolKeys({
+                programId: DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_PROGRAM,
+                configId: new PublicKey(config.id),
+                mintA,
+                mintB,
+            });
+            if (await connection.getAccountInfo(keys.poolId)) {
+                poolStateKey = keys.poolId.toBase58();
+                ammConfigKey = config.id;
+                console.log(`  ♻️  Reusing existing SOL/USDC pool: ${poolStateKey} (config ${ammConfigKey})`);
+                writeDeploymentState({
+                    raydiumSolUsdcPool: poolStateKey,
+                    raydiumSolUsdcConfig: ammConfigKey,
+                });
+                break;
+            }
+            if (await connection.getAccountInfo(keys.lpMint)) {
+                throw new Error(
+                    `SOL/USDC LP mint ${keys.lpMint.toBase58()} exists but pool state ` +
+                        `${keys.poolId.toBase58()} does not — a previous createPool died mid-flight. ` +
+                        `Set DEVNET_SOL_USDC_POOL to an existing pool or clean up the half-created accounts.`
+                );
+            }
         }
-        const rentExempt = await getMinimumBalanceForRentExemptAccount(connection);
-        const wrapLamports = Math.round(seedSol * 1e9) + rentExempt;
-        const wrapTx = new Transaction().add(
-            SystemProgram.transfer({
-                fromPubkey: wallet.publicKey,
-                toPubkey: wsolAta,
-                lamports: wrapLamports,
-            }),
-            createSyncNativeInstruction(wsolAta, TOKEN_PROGRAM_ID)
-        );
-        wrapTx.feePayer = wallet.publicKey;
-        wrapTx.recentBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
-        await sendAndConfirmTransaction(connection, wrapTx, [wallet.payer], { skipPreflight: true });
-        console.log(`  ✅ Wrapped ${seedSol} SOL → wSOL`);
 
-        const getToken = async (mintKey: PublicKey, programId: string) => {
-            const parsed = await connection.getParsedAccountInfo(mintKey);
-            const info = (parsed.value!.data as { parsed: { info: { decimals: number } } }).parsed.info;
-            return { address: mintKey.toBase58(), decimals: info.decimals, programId };
-        };
-        const wsolInfo = await getToken(WSOL_MINT, TOKEN_PROGRAM_ID.toBase58());
-        const usdcInfo = await getToken(USDC_MINT, TOKEN_PROGRAM_ID.toBase58());
+        if (!poolStateKey || !ammConfigKey) {
+            console.log("  ✨ No existing pool — creating a devnet SOL/USDC CPMM pool…");
+            const feeConfig = feeConfigs2500[0];
 
-        const { execute, extInfo } = await raydium.cpmm.createPool({
-            programId: DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_PROGRAM,
-            poolFeeAccount: DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_FEE_ACC,
-            mintA: wsolInfo,
-            mintB: usdcInfo,
-            mintAAmount: new anchor.BN(Math.round(seedSol * 1e9)),
-            mintBAmount: new anchor.BN(Math.round(seedUsdc * 1_000_000)),
-            startTime: new anchor.BN(0),
-            feeConfig,
-            associatedOnly: false,
-            ownerInfo: { useSOLBalance: true },
-            txVersion: TxVersion.V0,
-        });
-        const { txId } = await execute({ sendAndConfirm: true });
-        poolStateKey = extInfo.address.poolId.toBase58();
-        ammConfigKey = extInfo.address.configId.toBase58();
-        console.log(`  ✅ SOL/USDC pool created: ${poolStateKey} (tx ${txId})`);
-        console.log(`  ℹ️  Seeded ${seedSol} SOL : ${seedUsdc} USDC (~${SEED_RATE_USDC_PER_SOL} USDC/SOL — matches the mock sol_oracle)`);
-        writeDeploymentState({
-            raydiumSolUsdcPool: poolStateKey,
-            raydiumSolUsdcConfig: ammConfigKey,
-        });
+            // ── Wrap SOL → wSOL (pool legs must be SPL tokens) ──────────────
+            const wsolAta = getAssociatedTokenAddressSync(WSOL_MINT, wallet.publicKey, false);
+            if (!(await connection.getAccountInfo(wsolAta))) {
+                const createIx = createAssociatedTokenAccountInstruction(
+                    wallet.publicKey,
+                    wsolAta,
+                    wallet.publicKey,
+                    WSOL_MINT,
+                    TOKEN_PROGRAM_ID
+                );
+                const tx = new Transaction().add(createIx);
+                tx.feePayer = wallet.publicKey;
+                tx.recentBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
+                await sendAndConfirmTransaction(connection, tx, [wallet.payer], { skipPreflight: true });
+                console.log(`  ✅ wSOL ATA created: ${wsolAta.toBase58()}`);
+            }
+            const rentExempt = await getMinimumBalanceForRentExemptAccount(connection);
+            const wrapLamports = Math.round(seedSol * 1e9) + rentExempt;
+            const wrapTx = new Transaction().add(
+                SystemProgram.transfer({
+                    fromPubkey: wallet.publicKey,
+                    toPubkey: wsolAta,
+                    lamports: wrapLamports,
+                }),
+                createSyncNativeInstruction(wsolAta, TOKEN_PROGRAM_ID)
+            );
+            wrapTx.feePayer = wallet.publicKey;
+            wrapTx.recentBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
+            await sendAndConfirmTransaction(connection, wrapTx, [wallet.payer], { skipPreflight: true });
+            console.log(`  ✅ Wrapped ${seedSol} SOL → wSOL`);
+
+            const getToken = async (mintKey: PublicKey, programId: string) => {
+                const parsed = await connection.getParsedAccountInfo(mintKey);
+                const info = (parsed.value!.data as { parsed: { info: { decimals: number } } }).parsed.info;
+                return { address: mintKey.toBase58(), decimals: info.decimals, programId };
+            };
+            const wsolInfo = await getToken(WSOL_MINT, TOKEN_PROGRAM_ID.toBase58());
+            const usdcInfo = await getToken(USDC_MINT, TOKEN_PROGRAM_ID.toBase58());
+
+            const { execute, extInfo } = await raydium.cpmm.createPool({
+                programId: DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_PROGRAM,
+                poolFeeAccount: DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_FEE_ACC,
+                mintA: wsolInfo,
+                mintB: usdcInfo,
+                mintAAmount: new anchor.BN(Math.round(seedSol * 1e9)),
+                mintBAmount: new anchor.BN(Math.round(seedUsdc * 1_000_000)),
+                startTime: new anchor.BN(0),
+                feeConfig,
+                associatedOnly: false,
+                ownerInfo: { useSOLBalance: true },
+                txVersion: TxVersion.V0,
+            });
+            const { txId } = await execute({ sendAndConfirm: true });
+            poolStateKey = extInfo.address.poolId.toBase58();
+            ammConfigKey = extInfo.address.configId.toBase58();
+            console.log(`  ✅ SOL/USDC pool created: ${poolStateKey} (tx ${txId})`);
+            console.log(`  ℹ️  Seeded ${seedSol} SOL : ${seedUsdc} USDC (~${SEED_RATE_USDC_PER_SOL} USDC/SOL — matches the mock sol_oracle)`);
+            writeDeploymentState({
+                raydiumSolUsdcPool: poolStateKey,
+                raydiumSolUsdcConfig: ammConfigKey,
+            });
+        }
     }
 
     const poolState = new PublicKey(poolStateKey!);

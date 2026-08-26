@@ -25,9 +25,20 @@ function decode(coder: BorshAccountsCoder, name: string, data: Uint8Array) {
     catch { return null; }
 }
 
-function pub(obj: Record<string, unknown> | null, name: string): PublicKey | null {
-    const v = obj?.[name];
+function pub(obj: Record<string, unknown> | null, ...names: string[]): PublicKey | null {
+    const v = field(obj, ...names);
     return v instanceof PublicKey ? v : null;
+}
+
+// Anchor 0.31 `anchor build` emits snake_case IDL field names, while
+// Program-based accessors (and older coders) use camelCase — accept both so
+// the desk works regardless of which IDL naming the build produced.
+function field<T>(obj: Record<string, unknown> | null | undefined, ...names: string[]): T | undefined {
+    for (const n of names) {
+        const v = obj?.[n];
+        if (v !== undefined && v !== null) return v as T;
+    }
+    return undefined;
 }
 
 function big(v: unknown): bigint {
@@ -112,17 +123,17 @@ const INITIAL: Omit<OfferDeskData, 'refresh'> = {
 
 function parseTier(key: 'sml' | 'med' | 'big', tier: number, label: string, raw: unknown): OfferTierData {
     const o = (raw ?? {}) as Record<string, unknown>;
-    const lotTier = Number(o.lotSize ?? 0);
+    const lotTier = Number(field(o, 'lotSize', 'lot_size') ?? 0);
     return {
         key,
         tier,
         label,
         lotTier,
         lotTokens: lotTokens(lotTier),
-        vestingDays: Number(o.vestingDays ?? 0),
-        discountBps: Number(o.discountBps ?? 0),
-        remaining: Number(o.remaining ?? 0),
-        totalOffered: Number(o.totalOffered ?? 0),
+        vestingDays: Number(field(o, 'vestingDays', 'vesting_days') ?? 0),
+        discountBps: Number(field(o, 'discountBps', 'discount_bps') ?? 0),
+        remaining: Number(field(o, 'remaining') ?? 0),
+        totalOffered: Number(field(o, 'totalOffered', 'total_offered') ?? 0),
     };
 }
 
@@ -153,9 +164,9 @@ export function useAmmData(): OfferDeskData {
             if (!ammState) throw new Error('Failed to decode AmmState');
             const offerList = sheetInfo ? decode(ammCoder, 'OfferList', sheetInfo.data) : null;
 
-            const spotOracle = pub(ammState, 'spotOracle');
-            const crankProgram = pub(ammState, 'crankProgram');
-            const stakingPool = pub(ammState, 'stakingPool');
+            const spotOracle = pub(ammState, 'spotOracle', 'spot_oracle');
+            const crankProgram = pub(ammState, 'crankProgram', 'crank_program');
+            const stakingPool = pub(ammState, 'stakingPool', 'staking_pool');
             if (!spotOracle || !crankProgram || !stakingPool) {
                 throw new Error('AmmState missing oracle/crank/staking addresses');
             }
@@ -169,7 +180,7 @@ export function useAmmData(): OfferDeskData {
                     spotOracle,
                     marketStatusPda,
                     mint,
-                    pub(ammState, 'usdcMint') ?? PublicKey.default,
+                    pub(ammState, 'usdcMint', 'usdc_mint') ?? PublicKey.default,
                     stakingPool,
                 ]);
 
@@ -197,23 +208,23 @@ export function useAmmData(): OfferDeskData {
 
             const tiers = offerList
                 ? [
-                    parseTier('big', 2, 'Bulk lot', offerList.bigOffer),
-                    parseTier('med', 1, 'Medium lot', offerList.medOffer),
-                    parseTier('sml', 0, 'Small lot', offerList.smlOffer),
+                    parseTier('big', 2, 'Bulk lot', field(offerList, 'bigOffer', 'big_offer')),
+                    parseTier('med', 1, 'Medium lot', field(offerList, 'medOffer', 'med_offer')),
+                    parseTier('sml', 0, 'Small lot', field(offerList, 'smlOffer', 'sml_offer')),
                 ]
                 : [];
 
-            const sheetDay = offerList ? Number(big(offerList.dayIndex)) : null;
+            const sheetDay = offerList ? Number(big(field(offerList, 'dayIndex', 'day_index'))) : null;
             const offersLive = tiers.some((t) => t.remaining > 0);
             const nightGate = marketState === 1 || marketState === 2;
             const sheetStale = sheetDay !== null && tradingDay !== null && sheetDay !== tradingDay;
             const deskOpen = nightGate && offersLive && !sheetStale;
 
-            const usdcMint = pub(ammState, 'usdcMint');
-            const usdcVault = pub(ammState, 'usdcVault');
-            const usdcDip = pub(ammState, 'usdcDip');
-            const usdcRewards = pub(ammState, 'usdcRewards');
-            const afhoVault = pub(ammState, 'afhoVault');
+            const usdcMint = pub(ammState, 'usdcMint', 'usdc_mint');
+            const usdcVault = pub(ammState, 'usdcVault', 'usdc_vault');
+            const usdcDip = pub(ammState, 'usdcDip', 'usdc_dip');
+            const usdcRewards = pub(ammState, 'usdcRewards', 'usdc_rewards');
+            const afhoVault = pub(ammState, 'afhoVault', 'afho_vault');
             const accounts: ClaimAccounts | null =
                 usdcMint && usdcVault && usdcDip && usdcRewards && afhoVault && stakingVault
                     ? {
@@ -235,7 +246,7 @@ export function useAmmData(): OfferDeskData {
             setData({
                 tiers,
                 livePrice,
-                floorBasis: big(ammState.highestBuybackBasis),
+                floorBasis: big(field(ammState, 'highestBuybackBasis', 'highest_buyback_basis')),
                 afhoDecimals,
                 usdcDecimals,
                 marketState,

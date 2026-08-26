@@ -10,7 +10,7 @@
   "penaltyVault": "CLi5FRprbPsa93kpC7nyxJxeCXzUtNvxc2hbYGN24wSw",
   "posrVault": "Hab6TXsX8K3o2qqcWxCcQTH7B9xygMJdD6CwAJ5Q91MZ",
   "marketStatus": "BWfxxThGQVyrwc6bX25p23J2DfZ9Zkqsbn8BfZJYhroN",
-  "updatedAt": "2026-08-25T19:39:23.954Z",
+  "updatedAt": "2026-08-25T21:07:32.368Z",
   "ammProgram": "7L32KRgZAttvuiY7LgtLTUwTAYL54JfyELVd7CUxVKgy",
   "ammState": "2zSNgAZNKUEx3BVf5TrEtck8RaDccZ7cxa9EWwRDLUER",
   "ammOfferList": "Hy4zHd3wx5QrXEjp9M3Acm4RGgf3uU2GYvSdsD5nuDjc",
@@ -22,5 +22,7 @@
   "oracleQuoteAccount": "A5znvF6FUto22ajKDA893HsKWqgysADjVyG4qwVSz3jM",
   "raydiumPool": "F3KWZUwbkCwdUKSRDnML4rgYAisXJSAZs8HYbjV5RZ1h",
   "raydiumAmmConfig": "5MxLgy9oPdTC3YgkiePHqr3EoCRD9uLVYRQS2ANAs7wy",
-  "raydiumProgram": "DRaycpLY18LhpbydsBWbVJtxpNv9oXPgjRSfpF2bWpYb"
+  "raydiumProgram": "DRaycpLY18LhpbydsBWbVJtxpNv9oXPgjRSfpF2bWpYb",
+  "raydiumSolUsdcPool": "GoZmddUBTdiyRoGZSfxwX8p5ZNoVhDo42YN996JdDwoi",
+  "raydiumSolUsdcConfig": "5MxLgy9oPdTC3YgkiePHqr3EoCRD9uLVYRQS2ANAs7wy"
 }
