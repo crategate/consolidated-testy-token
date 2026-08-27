@@ -224,7 +224,7 @@ async function main() {
                     crankQuote = statusQuoteAccount;
                 }
 
-                const crankIx = await program.methods.permissionlessCrank().accountsStrict({
+                const crankAccounts: any = {
                     cranker: keypair.publicKey,
                     bountyConfig: bountyConfigPda,
                     bountyVault: bountyVaultPda,
@@ -232,7 +232,27 @@ async function main() {
                     clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
                     marketStatus: marketStatusPda,
                     systemProgram: anchor.web3.SystemProgram.programId,
-                }).instruction();
+                };
+                if (
+                    bountyConfig.solUsdcPool &&
+                    !new PublicKey(bountyConfig.solUsdcPool).equals(PublicKey.default)
+                ) {
+                    const cpmmProgram = new PublicKey(bountyConfig.cpmmProgram);
+                    const pool = new PublicKey(bountyConfig.solUsdcPool);
+                    const usdcMint = new PublicKey(bountyConfig.usdcMint);
+                    const [wsolVault] = PublicKey.findProgramAddressSync(
+                        [Buffer.from("pool_vault"), pool.toBuffer(), WSOL_MINT.toBuffer()],
+                        cpmmProgram
+                    );
+                    const [usdcVault] = PublicKey.findProgramAddressSync(
+                        [Buffer.from("pool_vault"), pool.toBuffer(), usdcMint.toBuffer()],
+                        cpmmProgram
+                    );
+                    crankAccounts.solUsdcWsolVault = wsolVault;
+                    crankAccounts.solUsdcUsdcVault = usdcVault;
+                }
+
+                const crankIx = await program.methods.permissionlessCrank().accountsStrict(crankAccounts).instruction();
 
                 ixs.push(crankIx);
 
@@ -591,8 +611,14 @@ async function main() {
             try {
                 const ammState = await (ammProgram.account as any).ammState.fetch(ammStatePda);
                 const solUsdc = solUsdcAccountsFor(ammState);
-                if (solUsdc) {
+                const afhoUsdc = cpmmAccountsFor(
+                    ammState,
+                    new PublicKey(ammState.usdcMint),
+                    PublicKey.default
+                );
+                if (solUsdc && ammState.cpmmPoolState && !new PublicKey(ammState.cpmmPoolState).equals(PublicKey.default)) {
                     const usdcMint = new PublicKey(ammState.usdcMint);
+                    const afhoMint = new PublicKey(ammState.afhoMint);
                     const wsolVault = getAssociatedTokenAddressSync(WSOL_MINT, ammStatePda, true);
                     const topupIx = await ammProgram.methods
                         .bountyTopUp()
@@ -600,14 +626,22 @@ async function main() {
                             cranker: keypair.publicKey,
                             ammState: ammStatePda,
                             bountyVault: bountyVaultPda,
+                            afhoVault: ammState.afhoVault,
                             usdcVault: ammState.usdcVault,
+                            afhoMint,
                             usdcMint,
-                            solOracle: ammState.solOracle,
                             wsolVault,
                             wrappedSolMint: WSOL_MINT,
+                            cpmmPoolState: afhoUsdc.cpmmPoolState,
+                            cpmmAmmConfig: afhoUsdc.cpmmAmmConfig,
+                            cpmmInputVault: afhoUsdc.cpmmInputVault,
+                            cpmmOutputVault: afhoUsdc.cpmmOutputVault,
+                            cpmmObservation: afhoUsdc.cpmmObservation,
+                            cpmmAuthority: afhoUsdc.cpmmAuthority,
                             ...solUsdc,
                             associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
                             tokenProgram: TOKEN_PROGRAM_ID,
+                            token2022Program: TOKEN_2022_PROGRAM_ID,
                             systemProgram: anchor.web3.SystemProgram.programId,
                         })
                         .instruction();

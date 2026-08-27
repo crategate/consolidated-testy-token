@@ -432,7 +432,7 @@ async function main() {
     }
 
     // ── 6. Transfer AFHO from authority → AMM vault ──
-    const transferPct = parseFloat(process.argv[2] || "0.10"); // default 10%
+    const transferPct = parseFloat(process.argv[2] || "0.75"); // default 10%
     if (transferPct > 0) {
         console.log(`\n💸 Transferring ${(transferPct * 100).toFixed(0)}% of supply to AMM vault...`);
 

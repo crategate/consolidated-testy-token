@@ -4,6 +4,9 @@ use switchboard_on_demand::{default_queue, SwitchboardQuote, SwitchboardQuoteExt
 
 declare_id!("ENJn9r8uCBLZXJ4unADAJfgNScWZuEm3rHD2LoBDpAki");
 
+const WSOL_MINT: Pubkey = pubkey!("So11111111111111111111111111111111111111112");
+const POOL_VAULT_SEED: &[u8] = b"pool_vault";
+
 #[error_code]
 pub enum CrankError {
     #[msg("No feeds found in oracle quote")]
@@ -20,17 +23,36 @@ pub enum CrankError {
     StaleQuote,
     #[msg("Bounty vault is empty")]
     BountyExhausted,
+    #[msg("SOL/USDC price could not be read")]
+    InvalidSolPrice,
+    #[msg("Math overflow")]
+    MathOverflow,
 }
 
 #[program]
 pub mod crank_oracle {
     use super::*;
 
-    pub fn initialize_bounty(ctx: Context<InitializeBounty>, bounty_amount: u64) -> Result<()> {
+    pub fn initialize_bounty(
+        ctx: Context<InitializeBounty>,
+        bounty_amount: u64,
+        bounty_usd_raw: u64,
+        base_year: u16,
+        annual_inflation_bps: u16,
+        sol_usdc_pool: Pubkey,
+        cpmm_program: Pubkey,
+        usdc_mint: Pubkey,
+    ) -> Result<()> {
         ctx.accounts.bounty_config.set_inner(BountyConfig {
             authority: ctx.accounts.payer.key(),
             bounty_amount,
+            bounty_usd_raw,
+            base_year,
+            annual_inflation_bps,
             last_crank_slot: 0,
+            sol_usdc_pool,
+            cpmm_program,
+            usdc_mint,
             bump: ctx.bumps.bounty_config,
         });
         Ok(())
@@ -105,7 +127,52 @@ pub mod crank_oracle {
             return Ok(());
         }
 
-        let bounty = ctx.accounts.bounty_config.bounty_amount;
+        // Payout amount. USD-denominated when the SOL/USDC pool is pinned:
+        // lamports = (usd_raw × 1e6) / sol_price_floor, where usd_raw is the
+        // base bounty escalated 5%/yr (or the configured bps) since base_year.
+        // Falls back to the fixed lamport bounty when the pool isn't set.
+        let cfg = &ctx.accounts.bounty_config;
+        let bounty = if cfg.sol_usdc_pool != Pubkey::default() {
+            let wsol_vault = ctx
+                .accounts
+                .sol_usdc_wsol_vault
+                .as_ref()
+                .ok_or(CrankError::InvalidSolPrice)?;
+            let usdc_vault = ctx
+                .accounts
+                .sol_usdc_usdc_vault
+                .as_ref()
+                .ok_or(CrankError::InvalidSolPrice)?;
+            // Pin the two vaults to the pool's derived PDAs.
+            let (expected_wsol, _) = Pubkey::find_program_address(
+                &[
+                    POOL_VAULT_SEED,
+                    cfg.sol_usdc_pool.as_ref(),
+                    WSOL_MINT.as_ref(),
+                ],
+                &cfg.cpmm_program,
+            );
+            let (expected_usdc, _) = Pubkey::find_program_address(
+                &[
+                    POOL_VAULT_SEED,
+                    cfg.sol_usdc_pool.as_ref(),
+                    cfg.usdc_mint.as_ref(),
+                ],
+                &cfg.cpmm_program,
+            );
+            require!(
+                wsol_vault.key() == expected_wsol && usdc_vault.key() == expected_usdc,
+                CrankError::InvalidSolPrice
+            );
+            let sol_price = read_sol_usdc_price(wsol_vault, usdc_vault)?;
+            require!(sol_price > 0, CrankError::InvalidSolPrice);
+            let year = year_from_unix(ctx.accounts.clock.unix_timestamp);
+            let usd_raw = effective_bounty_usd(cfg, year)?;
+            (usd_raw as u128 * 1_000_000u128 / sol_price as u128) as u64
+        } else {
+            cfg.bounty_amount
+        };
+        require!(bounty > 0, CrankError::InvalidSolPrice);
         require!(
             ctx.accounts.bounty_vault.lamports()
                 >= bounty + Rent::get()?.minimum_balance(1),
@@ -197,7 +264,13 @@ pub mod crank_oracle {
 
     pub fn set_bounty_amount(ctx: Context<UpdateBounty>, new_amount: u64) -> Result<()> {
         ctx.accounts.bounty_config.bounty_amount = new_amount;
-        msg!("Bounty amount set to: {}", new_amount);
+        msg!("Bounty fallback amount set to: {}", new_amount);
+        Ok(())
+    }
+
+    pub fn set_bounty_usd(ctx: Context<UpdateBounty>, new_usd_raw: u64) -> Result<()> {
+        ctx.accounts.bounty_config.bounty_usd_raw = new_usd_raw;
+        msg!("USD bounty set to {} usdc raw", new_usd_raw);
         Ok(())
     }
 
@@ -239,8 +312,20 @@ pub struct FundBounty<'info> {
 #[account]
 pub struct BountyConfig {
     pub authority: Pubkey,
+    /// Fallback lamport payout used when the SOL/USDC pool isn't configured.
     pub bounty_amount: u64,
+    /// USD-denominated payout in USDC raw units (6 dp). $0.50 = 500_000.
+    pub bounty_usd_raw: u64,
+    /// Calendar year the USD bounty is denominated in (inflation baseline).
+    pub base_year: u16,
+    /// Annual inflation in bps (500 = +5%/yr) applied each year after base_year.
+    pub annual_inflation_bps: u16,
     pub last_crank_slot: u64,
+    /// Pinned Raydium SOL/USDC CPMM pool + program + USDC mint for the
+    /// USD→SOL conversion at payout time.
+    pub sol_usdc_pool: Pubkey,
+    pub cpmm_program: Pubkey,
+    pub usdc_mint: Pubkey,
     pub bump: u8,
 }
 
@@ -248,7 +333,7 @@ pub struct BountyConfig {
 pub struct InitializeBounty<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
-    #[account(init, payer = payer, space = 8 + 32 + 8 + 8 + 1, seeds = [b"bounty_config"], bump)]
+    #[account(init, payer = payer, space = 8 + 32 + 8 + 8 + 2 + 2 + 8 + 32 + 32 + 32 + 1, seeds = [b"bounty_config"], bump)]
     pub bounty_config: Account<'info, BountyConfig>,
     /// CHECK: Lamport holding account for bounty payouts
     #[account(init, payer = payer, space = 1, seeds = [b"bounty_vault"], bump)]
@@ -270,6 +355,11 @@ pub struct PermissionlessCrank<'info> {
     pub clock: Sysvar<'info, Clock>,
     #[account(mut, seeds = [b"market_status"], bump)]
     pub market_status: Account<'info, MarketStatus>,
+    /// CHECK: SOL/USDC pool wSOL vault (vault-ratio price read). None when the
+    /// pool isn't configured; pinned in the handler when it is.
+    pub sol_usdc_wsol_vault: Option<AccountInfo<'info>>,
+    /// CHECK: SOL/USDC pool USDC vault. See above.
+    pub sol_usdc_usdc_vault: Option<AccountInfo<'info>>,
     pub system_program: Program<'info, System>,
 }
 
@@ -311,4 +401,55 @@ pub struct InitializeState<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
     pub system_program: Program<'info, System>,
+}
+
+// ────────────────────────────── USD bounty helpers ─────────────────────────
+
+/// Calendar year from a unix timestamp (exact integer civil-date algorithm;
+/// no floating point on-chain).
+fn year_from_unix(ts: i64) -> u16 {
+    let days = ts.div_euclid(86_400); // days since 1970-01-01
+    let z = days + 719_468;           // shift to the 0000-03-01 civil epoch
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let mut year = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let month = mp + if mp < 10 { 3 } else { -9 };
+    if month <= 2 {
+        year += 1;
+    }
+    year as u16
+}
+
+/// Base USD bounty escalated by `annual_inflation_bps` per calendar year since
+/// `base_year` (compounded).
+fn effective_bounty_usd(cfg: &BountyConfig, year: u16) -> Result<u64> {
+    let years = (year as u32).saturating_sub(cfg.base_year as u32);
+    let mut usd = cfg.bounty_usd_raw as u128;
+    let scale = 10_000u128 + cfg.annual_inflation_bps as u128;
+    for _ in 0..years {
+        usd = usd
+            .checked_mul(scale)
+            .ok_or(CrankError::MathOverflow)?
+            / 10_000;
+    }
+    Ok(usd as u64)
+}
+
+/// SOL/USDC price in floor units — (usdc_raw × 1e6) / wsol_raw — from the two
+/// pool vault token accounts.
+fn read_sol_usdc_price(wsol_vault: &AccountInfo, usdc_vault: &AccountInfo) -> Result<u64> {
+    let wsol_raw = token_account_amount(wsol_vault)?;
+    let usdc_raw = token_account_amount(usdc_vault)?;
+    require!(wsol_raw > 0, CrankError::InvalidSolPrice);
+    Ok((usdc_raw as u128 * 1_000_000u128 / wsol_raw as u128) as u64)
+}
+
+/// Token-account `amount` field (u64 LE at offset 64), SPL and Token-2022.
+fn token_account_amount(account: &AccountInfo) -> Result<u64> {
+    let data = account.try_borrow_data()?;
+    require!(data.len() >= 72, CrankError::InvalidSolPrice);
+    Ok(u64::from_le_bytes(data[64..72].try_into().unwrap()))
 }

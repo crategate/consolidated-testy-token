@@ -31,7 +31,7 @@ Everything required to go from the current devnet build to a mainnet launch, in 
 
 - [x] **Raydium CPMM TWAP reader** (`programs/amm/src/instructions/raydium.rs::read_twap_token0_in_token1`) — reads the `observation` ring and computes the time-weighted token_0/token_1 price (Q32.32). Fixed the ring layout (the account has an 8-byte anchor discriminator the reader originally skipped) and added a window-density guard (sparse rings fall back to vault ratio instead of returning a stale long-window TWAP).
 - [x] `spot_oracle` → CPMM pool **TWAP** (`observation_state`) for claims, floor decay, dip trigger, buyback band. `read_cpmm_price_floor` uses TWAP when the ring is fresh+dense, else the instantaneous pool vault ratio; mock raw-u64 PDA remains the fallback only when `cpmm_pool_state` is unpinned (localnet tests).
-- [x] `sol_oracle` → Raydium SOL/USDC pool TWAP (same reader, base=wSOL). Used by `offer_claim_sol` and `bounty_top_up`. Mock `sol_oracle` remains the unpinned fallback. MAINNET: a deep canonical pool is still required (claim reverts when the pool can't deliver ≥98% of the oracle-priced cost).
+- [x] `sol_oracle` → Raydium SOL/USDC pool (same reader, base=wSOL). Used by `offer_claim_sol` (mock `sol_oracle` remains the unpinned fallback). `bounty_top_up` and the crank's USD bounty read the SOL/USDC pool directly (`read_cpmm_price_floor` / vault ratio) and require the pool pinned — no mock fallback. MAINNET: a deep canonical pool is still required (claim reverts when the pool can't deliver ≥98% of the oracle-priced cost).
 - [x] `priceChange24h` (momentum) → the close→close sample in `update_tradeday_stats` now reads the pool TWAP (via the same `read_cpmm_price_floor`), so momentum is self-sampled from the pool price, not Jupiter. **Revisit `calculate_momentum_score` weighting once the pool is live** (see §9).
 - [x] Staleness/validity checks — fail-closed on missing/zero price; TWAP freshness gate (`TWAP_MAX_AGE_SECONDS`) + window-density guard; pinned-pool PDA verification (H1 re-pin).
 
@@ -59,10 +59,10 @@ Everything required to go from the current devnet build to a mainnet launch, in 
 - [x] Rotate keeper off authority via `set_keeper` (H1 urgency reduced post-pin, still do it).
 - [x] Bounty vault rent floor + setters (L5).
 - [x] Bounty pays only on state transitions (rate ~2/day).
-- [x] **Bounty auto-top-up implemented (`bounty_top_up`, permissionless).** When `bounty_vault` SOL < 0.2 SOL: swap USDC → wSOL through the pinned SOL/USDC pool (USDC from `usdc_vault` — the buyback vault), unwrap via `close_account` into `bounty_vault`, adding **0.4 SOL per top-up** (BY, not TO). SOL price is the pool TWAP when pinned, else the mock. Keeper now attempts `bounty_top_up` every loop. NOTE: funding source is under review — see the AFHO-treasury question (open).
-- [ ] Devnet runtime-verify `bounty_top_up` (drain `bounty_vault` below 0.2 SOL, crank it, confirm it adds 0.4 SOL).
-- [ ] Size bounty amount (`set_bounty_amount`) — 0.005 SOL/transition is fine; tune post-launch.
-- [ ] resize  bounty amount to be priced in USD..?
+- [x] **Bounty auto-top-up implemented (`bounty_top_up`, permissionless).** When `bounty_vault` SOL < 0.2 SOL: sell AFHO from the treasury `afho_vault` → USDC (AFHO/USDC pool) → wSOL (SOL/USDC pool) → unwrap into `bounty_vault`, adding **0.4 SOL per top-up** (BY, not TO). Two pool hops, one atomic instruction (the intermediate USDC passes through `usdc_vault` net-zero within the same instruction). Keeper attempts it every loop.
+- [ ] Devnet runtime-verify `bounty_top_up` (drain `bounty_vault` below 0.2 SOL, crank it, confirm it adds 0.4 SOL funded from AFHO).
+- [x] **USD-priced bounty + inflation.** `BountyConfig` now stores `bounty_usd_raw` (USDC raw, 6 dp) + `base_year` + `annual_inflation_bps`; `permissionless_crank` pays `lamports = usd_raw × 1e6 / sol_price` where `usd_raw` is the base amount compounded by the configured bps per calendar year since `base_year`. Defaults in `init-bounty.ts`: $0.50, base year 2026, +5%/yr. The SOL price is the pinned SOL/USDC pool vault ratio; falls back to the legacy fixed-lamport `bounty_amount` when the pool isn't configured (the oracle never dies).
+- [ ] Devnet runtime-verify the USD bounty (force a transition, confirm ~$0.50 worth of SOL lands).
 
 
 ## 7. Ops / launch sequence

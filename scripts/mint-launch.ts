@@ -28,9 +28,11 @@ import { createInitializeInstruction, pack, type TokenMetadata, createUpdateAuth
 import * as fs from "fs";
 import * as path from "path";
 import { pubkey, writeDeploymentState } from "./deployment-state";
-
+import * as dotenv from "dotenv";
 // Devnet USDC (the faucet mint used across the scripts). MAINNET: swap in the
 // real USDC mint and uncomment it.
+dotenv.config();
+
 const USDC_MINT = new PublicKey("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"); // devnet
 // const USDC_MINT = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"); // MAINNET
 
@@ -79,8 +81,8 @@ async function main() {
     // 4. Token Metadata Configuration
     const metadata: TokenMetadata = {
         mint: mint.publicKey,
-        name: 'plzzz',
-        symbol: '8-25',
+        name: 'LFG then',
+        symbol: '8-27',
         uri: 'https://copper-quick-koi-488.mypinata.cloud/ipfs/bafkreiblskodz5bwtelz4id437rnhsndtq3rfh7jjsgaj72wb55cgnbbea',
         additionalMetadata: [['description', 'combining concepts and learning the basics']],
     };
@@ -132,6 +134,13 @@ async function main() {
     } catch (e) {
         console.log("Mint already initialized or failed:   ", e);
     }
+
+    // MINT & POOL CONFIG
+    const FULL_MINT_AMOUNT = 10000;
+    const AFHO_TO_LP = 1000;
+    const USDC_TO_LP = 10;
+    const AFHO_TO_VAULT = 1000;
+
     /// MINT TOKENS & TEST TRANSFER
     // ==========================================
     console.log("📝 Minting tokens and running test transfer...");
@@ -143,7 +152,7 @@ async function main() {
     //   25% of total supply → Raydium LP seed (AFHO leg; matching USDC quote
     //   from the raise), 75% → protocol vault. Replace the devnet amounts below
     //   (1.2M to wallet) with the real split at launch.
-    const amountToMint = 1_000_000_000 * 10 ** decimals; // 1B AFHO — covers pool float (1M) + vault seed
+    const amountToMint = FULL_MINT_AMOUNT * 10 ** decimals; // 1B AFHO — covers pool float (1M) + vault seed
     const amountToTransfer = BigInt(1 * 10 ** decimals);
 
     const transferTx = new Transaction().add(
@@ -233,8 +242,8 @@ async function main() {
 
         // Small devnet seed amounts — tune as needed. MAINNET: these become
         // the 25% LP leg (AFHO side) + the matching USDC quote side.
-        const seedAfho = new anchor.BN(1000 * 10 ** decimals);
-        const seedUsdc = new anchor.BN(10 * 1_000_000); // 10 USDC raw (6 dec)
+        const seedAfho = new anchor.BN(AFHO_TO_LP * 10 ** decimals);
+        const seedUsdc = new anchor.BN(USDC_TO_LP * 1_000_000); // 10 USDC raw (6 dec)
 
         const { execute, extInfo } = await raydium.cpmm.createPool({
             programId: DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_PROGRAM,

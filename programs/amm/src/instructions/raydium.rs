@@ -281,9 +281,10 @@ const fn size_of_observation() -> usize {
 pub const TWAP_WINDOW_SECONDS: u64 = 600;
 
 /// Maximum age of the LATEST observation for the TWAP to be considered fresh.
-/// A protocol pool that hasn't traded recently has a stale time-weighted
-/// price; fall back to the instantaneous vault ratio in that case.
-pub const TWAP_MAX_AGE_SECONDS: u64 = 1_200;
+/// Set to one window (600s): if the pool hasn't traded in the last 10 minutes
+/// the TWAP is treated as stale and we use the instantaneous vault ratio
+/// instead (which is always current, not stale).
+pub const TWAP_MAX_AGE_SECONDS: u64 = 600;
 
 /// Conversion factor from a Q32.32 whole-token price to this protocol's
 /// floor-units price: floor = (quote_raw × 1e6) / base_raw. With both the
