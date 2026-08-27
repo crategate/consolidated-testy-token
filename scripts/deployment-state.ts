@@ -22,7 +22,6 @@ type DeploymentState = {
     posrVault?: string;
     marketStatus?: string;
     marketStatusFeedId?: string;
-    priceFeedId?: string;
     oracleQuoteAccount?: string;
     raydiumPool?: string;
     raydiumAmmConfig?: string;

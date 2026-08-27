@@ -18,7 +18,6 @@
   "ammUsdcVault": "DUyBGxgmNqBsJYVgbNzXKdL2AL2NLXngdJWiawZmj67N",
   "ammAfhoVault": "ErJ7VEWPpqQWwZjJw5n58vJQRqGehkTGwsVzyvepoDbv",
   "marketStatusFeedId": "0xfdc555a86f8389c64f71f59a5676eccbd207a6be0ee0ec166373de8af69f9ff4",
-  "priceFeedId": "0xed92673c2e7e4d41eef91d7f065fbed999badebcdceea79884f6afc062fa2253",
   "oracleQuoteAccount": "A5znvF6FUto22ajKDA893HsKWqgysADjVyG4qwVSz3jM",
   "raydiumPool": "765K1mJ5GpCirwgTTaECuw5ksDLrJNUUDxNPwLMmVXRJ",
   "raydiumAmmConfig": "5MxLgy9oPdTC3YgkiePHqr3EoCRD9uLVYRQS2ANAs7wy",

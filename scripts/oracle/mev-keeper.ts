@@ -47,12 +47,11 @@ async function main() {
         fs.readFileSync(path.join(process.cwd(), "app", "public", "deployment.json"), "utf-8")
     );
     const statusFeedId = deployment.marketStatusFeedId ?? process.env.FEED_ID!;
-    const priceFeedId = deployment.priceFeedId;
-    // Order pinned with feed-deploy: [0] = market status, [1] = price change
-    const feedIds = priceFeedId ? [statusFeedId, priceFeedId] : [statusFeedId];
+    // Status-only quote: the price feed is gone (momentum is a self-sampled
+    // close→close change computed on-chain from the spot oracle), so the
+    // quote covers [market_status] alone.
+    const feedIds = [statusFeedId];
     const [quoteAccount] = OracleQuote.getCanonicalPubkey(queue.pubkey, feedIds);
-    // Single-feed quote used when the price feed can't resolve yet (devnet / pre-indexing)
-    const [statusQuoteAccount] = OracleQuote.getCanonicalPubkey(queue.pubkey, [statusFeedId]);
 
     // AMM program client for firing make_offers at end of trading day
     const ammIdl = JSON.parse(
@@ -179,13 +178,7 @@ async function main() {
         try {
             const marketStatus = await program.account.marketStatus.fetch(marketStatusPda);
             const bountyConfig = await program.account.bountyConfig.fetch(bountyConfigPda);
-            // Prefer the combined [status, price] quote; fall back to the status-only one
-            let activeQuote = quoteAccount;
             let quoteAccountInfo = await connection.getAccountInfo(quoteAccount);
-            if (!quoteAccountInfo && feedIds.length > 1) {
-                activeQuote = statusQuoteAccount;
-                quoteAccountInfo = await connection.getAccountInfo(statusQuoteAccount);
-            }
 
             if (!quoteAccountInfo) {
                 console.log("Quote account not found, sleeping...");
@@ -202,27 +195,12 @@ async function main() {
                 const overrides = {
                     MASSIVE_API_KEY: process.env.MASSIVE_API_KEY!,
                     EARNINGSAPI_KEY: process.env.EARNINGSAPI_KEY!,
-                    JUP_API_KEY: process.env.JUP_API_KEY!,
                 };
-                let ixs;
-                let crankQuote = activeQuote;
-                try {
-                    ixs = await queue.fetchManagedUpdateIxs(crossbar, feedIds, {
-                        variableOverrides: overrides,
-                        payer: keypair.publicKey,
-                    });
-                    crankQuote = quoteAccount;
-                } catch (e) {
-                    // Price feed won't resolve until Jupiter indexes the mint (always on devnet).
-                    // Fall back to status-only so the market status crank never stalls.
-                    if (feedIds.length < 2) throw e;
-                    console.warn("⚠️ Combined update failed, falling back to status-only:", (e as Error).message);
-                    ixs = await queue.fetchManagedUpdateIxs(crossbar, [statusFeedId], {
-                        variableOverrides: overrides,
-                        payer: keypair.publicKey,
-                    });
-                    crankQuote = statusQuoteAccount;
-                }
+                const ixs = await queue.fetchManagedUpdateIxs(crossbar, feedIds, {
+                    variableOverrides: overrides,
+                    payer: keypair.publicKey,
+                });
+                const crankQuote = quoteAccount;
 
                 const crankAccounts: any = {
                     cranker: keypair.publicKey,
