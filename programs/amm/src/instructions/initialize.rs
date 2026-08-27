@@ -153,7 +153,7 @@ pub struct InitializeAmm<'info> {
         payer=authority,
         seeds=[b"amm_state", afho_mint.key().as_ref()],
         bump,
-        space = 8 + AmmState::INIT_SPACE,
+        space = 8 + std::mem::size_of::<AmmState>(),
     )]
     pub amm_state: Box<Account<'info, AmmState>>,
     /// CHECK: afho vault
@@ -212,7 +212,7 @@ pub struct InitializeAmm<'info> {
         payer = authority,
         seeds = [b"offer_list", afho_mint.key().as_ref()],
         bump,
-        space = 8 + OfferList::INIT_SPACE,
+        space = 8 + std::mem::size_of::<OfferList>(),
     )]
     pub offer_list: Box<Account<'info, OfferList>>,
     #[account(
@@ -220,7 +220,7 @@ pub struct InitializeAmm<'info> {
         payer = authority,
         seeds = [b"accepted_offers", afho_mint.key().as_ref()],
         bump,
-        space = 8 + AcceptedOffers::INIT_SPACE,
+        space = 8 + std::mem::size_of::<AcceptedOffers>(),
     )]
     pub accepted_offers: Box<Account<'info, AcceptedOffers>>,
     #[account(
@@ -228,7 +228,7 @@ pub struct InitializeAmm<'info> {
         payer = authority,
         seeds = [b"metrics", afho_mint.key().as_ref()],
         bump,
-        space = 8 + MarketMetrics::INIT_SPACE,
+        space = 8 + std::mem::size_of::<MarketMetrics>(),
     )]
     pub metrics: Box<Account<'info, MarketMetrics>>,
 

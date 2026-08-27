@@ -4,17 +4,20 @@ import { Amm } from "../target/types/amm";
 import { CrankOracle } from "../target/types/crank_oracle";
 import { MockDexPool } from "../target/types/mock_dex_pool";
 import { Staking } from "../target/types/staking";
-import { PublicKey, Keypair, Transaction } from "@solana/web3.js";
+import { PublicKey, Keypair, SystemProgram, Transaction } from "@solana/web3.js";
 import {
     createMint,
     mintTo,
     createAssociatedTokenAccount,
     getAssociatedTokenAddressSync,
     createAssociatedTokenAccountIdempotentInstruction,
+    ASSOCIATED_TOKEN_PROGRAM_ID,
     TOKEN_PROGRAM_ID,
     TOKEN_2022_PROGRAM_ID,
 } from "@solana/spl-token";
 import { assert } from "chai";
+
+const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
 
 // End-to-end offer_claim: buyer pays USDC for a discounted vesting lot,
 // payment splits 80/10/10, AFHO lands directly in a locked StakePosition;
@@ -139,6 +142,10 @@ describe("offer_claim + distribute_staker_rewards", () => {
                 stakePosition: positionPda,
                 ammAfhoVault: afhoVault,
                 stakingVault: stakingVaultPda,
+                cpmmPoolState: amm.programId,
+                cpmmObservation: amm.programId,
+                cpmmInputVault: amm.programId,
+                cpmmOutputVault: amm.programId,
                 tokenProgram: TOKEN_PROGRAM_ID,
                 token2022Program: TOKEN_2022_PROGRAM_ID,
             })
@@ -166,19 +173,38 @@ describe("offer_claim + distribute_staker_rewards", () => {
                 ammState: ammStatePda,
                 offerList: offerListPda,
                 afhoMint,
+                usdcMint,
                 spotOracle: mockPricePda,
                 solOracle: solOraclePda,
+                cpmmPoolState: amm.programId,
+                cpmmObservation: amm.programId,
+                cpmmInputVault: amm.programId,
+                cpmmOutputVault: amm.programId,
                 marketStatus: marketStatusPda,
-                solVault,
-                solDip,
-                solRewards: solRewardsPda,
+                usdcVault,
+                usdcDip,
+                usdcRewards,
+                wsolVault: getAssociatedTokenAddressSync(WSOL_MINT, ammStatePda, true, TOKEN_PROGRAM_ID),
+                wrappedSolMint: WSOL_MINT,
+                // NOTE: offer_claim_sol unconditionally CPIs the wSOL→USDC swap,
+                // so these SOL/USDC CPMM accounts must be the real pinned pool
+                // (set via set_sol_usdc_pool). Leave uninvoked until §7 lands.
+                solUsdcPoolState: PublicKey.default,
+                solUsdcAmmConfig: PublicKey.default,
+                solUsdcInputVault: PublicKey.default,
+                solUsdcOutputVault: PublicKey.default,
+                solUsdcObservation: PublicKey.default,
+                solUsdcAuthority: PublicKey.default,
                 stakingProgram: staking.programId,
                 stakingPool: poolPda,
                 userIndex: userIndexPda,
                 stakePosition: positionPda,
                 ammAfhoVault: afhoVault,
                 stakingVault: stakingVaultPda,
+                associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+                tokenProgram: TOKEN_PROGRAM_ID,
                 token2022Program: TOKEN_2022_PROGRAM_ID,
+                systemProgram: SystemProgram.programId,
             })
             .signers([buyer])
             .rpc();

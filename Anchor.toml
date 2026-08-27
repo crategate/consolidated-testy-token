@@ -44,6 +44,7 @@ pool-status = "npx ts-node ./scripts/raydium-pool-status.ts"
 set-cpmm-pool = "npx ts-node ./scripts/set-cpmm-pool.ts"
 set-oracle = "npx ts-node ./scripts/oracle/set-oracle-state.ts"
 set-sol-usdc-pool = "npx ts-node ./scripts/set-sol-usdc-pool.ts"
+twitter = "npx ts-node ./scripts/twitter-announcer.ts"
 
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
 test-staking = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/staking.test.ts"

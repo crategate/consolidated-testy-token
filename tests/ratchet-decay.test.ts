@@ -109,6 +109,10 @@ describe("ratchet floor decay", () => {
                 offerList: offerListPda,
                 marketStatus: marketStatusPda,
                 acceptedOffers: acceptedOffersPda,
+                cpmmPoolState: amm.programId,
+                cpmmObservation: amm.programId,
+                cpmmInputVault: amm.programId,
+                cpmmOutputVault: amm.programId,
                 priceOracle: mockPricePda,
             })
             .rpc();
