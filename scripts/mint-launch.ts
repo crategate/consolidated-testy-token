@@ -165,11 +165,6 @@ async function main() {
         const sig3 = await sendAndConfirmTransaction(connection, transferTx, [wallet.payer], { skipPreflight: true });
         console.log(`✅ Minted ${(amountToMint / 10 ** decimals).toLocaleString()} AFHO to source wallet! Signature: ${sig3}`);
 
-        //  const transferIx = await createTransferCheckedWithTransferHookInstruction(
-        //      connection, sourceTokenAccount, mint.publicKey, destinationTokenAccount, wallet.publicKey, amountToTransfer, decimals, [], "confirmed", TOKEN_2022_PROGRAM_ID
-        //  );
-
-        //  const sig4 = await sendAndConfirmTransaction(connection, new Transaction().add(transferIx), [wallet.payer], { skipPreflight: true });
         console.log(`✅ Hook Transfer Successful! Signature: ${sig3}`);
 
     } catch (e) {

@@ -822,7 +822,7 @@ pub(crate) fn read_live_price(oracle: &AccountInfo) -> Result<u64> {
 /// (pool state, observation, USDC vault, AFHO vault) are the pool's own
 /// derived PDAs. No-op in mock/localnet mode.
 #[allow(clippy::too_many_arguments)]
-fn require_pinned_pricing_accounts(
+pub(crate) fn require_pinned_pricing_accounts(
     pinned: bool,
     cpmm_program: Pubkey,
     expected_pool_state: Pubkey,

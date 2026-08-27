@@ -96,7 +96,6 @@ const argv = yargs(process.argv)
     let basicProgram;
     if (fs.existsSync(BASIC_PROGRAM_PATH)) {
         try {
-            //const basicProgram = await loadBasicProgram(program!.provider);
             basicProgram = new anchor.Program(myIdl as anchor.Idl, program!.provider);
             const readOracleIx = await basicReadOracleIx(
                 basicProgram,

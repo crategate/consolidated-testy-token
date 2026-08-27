@@ -70,6 +70,13 @@ pub mod amm {
         load_test_data::handler(ctx, data)
     }
 
+    // DEVNET/TEST ONLY — remove before mainnet. Posts a realistic, claimable
+    // three-tier offer sheet (day_index = today) with the floor anchored to
+    // the live pool price, for UI/claim development without a real make_offers run.
+    pub fn load_offers(ctx: Context<LoadOffers>) -> Result<()> {
+        load_offers::handler(ctx)
+    }
+
     // Night-desk taking instruction. Buyer pays USDC (SOL support at
     // mainnet); payment splits 80% buyback vault / 10% dip reserve / 10%
     // staker-rewards holding vault at claim time. Purchased AFHO goes
