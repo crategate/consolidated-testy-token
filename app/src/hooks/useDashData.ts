@@ -106,49 +106,13 @@ async function fetchConfig(): Promise<DashConfig> {
     return res.ok ? await res.json() : {};
 }
 
-export function useDashData() {
-    const { connection } = useConnection();
-    const [data, setData] = useState<DashData | null>(null);
-    const [error, setError] = useState<string | null>(null);
-
-    useEffect(() => {
-        let cancelled = false;
-
-        async function load() {
-            try {
-                const config = await fetchConfig();
-                const dash = await buildDashData(connection, config);
-                if (!cancelled) {
-                    setData(dash);
-                    setError(null);
-                }
-            } catch (err) {
-                if (!cancelled) setError(err instanceof Error ? err.message : 'RPC fetch failed');
-            }
-        }
-
-        load();
-        const timer = setInterval(load, 30_000);
-        return () => {
-            cancelled = true;
-            clearInterval(timer);
-        };
-    }, [connection]);
-
-    return { data, error };
-}
-
-async function buildDashData(
-    connection: Connection,
-    config: DashConfig,
-): Promise<DashData> {
-    const missing: string[] = [];
-
+// Every account the dashboard reads, keyed by display label. Shared by the
+// build step and the account-change subscriptions so both watch the same set.
+function dashKeys(config: DashConfig): Record<string, PublicKey | null> {
     const mint = pk(config.mint);
     const ammProgram = pk(config.ammProgram) ?? AMM_PROGRAM_ID;
     const crankProgram = pk(config.crankProgram) ?? CRANK_PROGRAM_ID;
 
-    // PDAs not stored in deployment.json — derive from seeds
     const [acceptedOffersPda] = mint
         ? PublicKey.findProgramAddressSync([Buffer.from('accepted_offers'), mint.toBuffer()], ammProgram)
         : [null];
@@ -164,7 +128,7 @@ async function buildDashData(
         crankProgram,
     );
 
-    const keys: Record<string, PublicKey | null> = {
+    return {
         mint,
         pool: pk(config.pool),
         stakeVault: pk(config.vault),
@@ -182,6 +146,70 @@ async function buildDashData(
         ammUsdcVault: pk(config.ammUsdcVault),
         ammSolVault: pk(config.ammSolVault),
     };
+}
+
+export function useDashData() {
+    const { connection } = useConnection();
+    const [data, setData] = useState<DashData | null>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        let cancelled = false;
+        const subscriptions: number[] = [];
+
+        async function load() {
+            try {
+                const config = await fetchConfig();
+                const dash = await buildDashData(connection, config);
+                if (!cancelled) {
+                    setData(dash);
+                    setError(null);
+                }
+            } catch (err) {
+                if (!cancelled) setError(err instanceof Error ? err.message : 'RPC fetch failed');
+            }
+        }
+
+        async function setup() {
+            const config = await fetchConfig();
+            if (cancelled) return;
+            const watch = Object.values(dashKeys(config)).filter(
+                (k): k is PublicKey => k !== null,
+            );
+            for (const key of watch) {
+                subscriptions.push(
+                    connection.onAccountChange(
+                        key,
+                        () => {
+                            void load();
+                        },
+                        'confirmed',
+                    ),
+                );
+            }
+            void load();
+        }
+
+        void setup();
+
+        return () => {
+            cancelled = true;
+            for (const id of subscriptions) {
+                void connection.removeAccountChangeListener(id);
+            }
+        };
+    }, [connection]);
+
+    return { data, error };
+}
+
+async function buildDashData(
+    connection: Connection,
+    config: DashConfig,
+): Promise<DashData> {
+    const missing: string[] = [];
+
+    const keys = dashKeys(config);
 
     const names = Object.keys(keys);
     const infos = await connection.getMultipleAccountsInfo(

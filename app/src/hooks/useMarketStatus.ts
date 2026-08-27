@@ -64,9 +64,26 @@ export function useMarketStatus(marketStatusPda?: PublicKey): UseMarketStatusRet
     useEffect(() => {
         // Deferred to a microtask so no setState runs synchronously inside the effect
         void Promise.resolve().then(fetchStatus);
-        const interval = setInterval(fetchStatus, 30000);
-        return () => clearInterval(interval);
-    }, [fetchStatus]);
+
+        if (!connection) return;
+
+        const fallbackPda = PublicKey.findProgramAddressSync(
+            [new TextEncoder().encode('market_status')],
+            CRANK_PROGRAM_ID,
+        )[0];
+        const pda = marketStatusPda ?? fallbackPda;
+        const subscriptionId = connection.onAccountChange(
+            pda,
+            () => {
+                void fetchStatus();
+            },
+            'confirmed',
+        );
+
+        return () => {
+            void connection.removeAccountChangeListener(subscriptionId);
+        };
+    }, [connection, marketStatusPda, fetchStatus]);
 
     return { data, loading, error, stale, refresh: fetchStatus };
 }

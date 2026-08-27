@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useWallet } from '@solana/wallet-adapter-react';
+import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import BN from 'bn.js';
 import { useStakingProgram, STAKING_PROGRAM_ID } from '../../anchor/setup';
@@ -29,6 +29,7 @@ type AccountNamespace = Record<
 
 export function usePositions(mint: PublicKey | null) {
     const { publicKey } = useWallet();
+    const { connection } = useConnection();
     const program = useStakingProgram();
     const [positions, setPositions] = useState<Position[]>([]);
     const [loading, setLoading] = useState(false);
@@ -94,7 +95,25 @@ export function usePositions(mint: PublicKey | null) {
     useEffect(() => {
         // Deferred to a microtask so no setState runs synchronously inside the effect
         void Promise.resolve().then(fetchPositions);
-    }, [fetchPositions]);
+
+        if (!connection || !publicKey) return;
+
+        // Watch this wallet's position accounts (owner pubkey sits at offset 8
+        // after the Anchor discriminator). Any stake/claim/unstake mutation
+        // fires this subscription, which re-reads the authoritative state.
+        const subscriptionId = connection.onProgramAccountChange(
+            STAKING_PROGRAM_ID,
+            () => {
+                void fetchPositions();
+            },
+            'confirmed',
+            [{ memcmp: { offset: 8, bytes: publicKey.toBase58() } }],
+        );
+
+        return () => {
+            void connection.removeProgramAccountChangeListener(subscriptionId);
+        };
+    }, [connection, publicKey, fetchPositions]);
 
     return { positions, loading, refresh: fetchPositions };
 }

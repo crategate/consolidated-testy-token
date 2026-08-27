@@ -90,7 +90,49 @@ export function usePoolStats(mint: PublicKey | null) {
     useEffect(() => {
         // Deferred to a microtask so no setState runs synchronously inside the effect
         void Promise.resolve().then(fetchStats);
-    }, [fetchStats]);
+
+        if (!connection || !mint) return;
+
+        const [poolPda] = PublicKey.findProgramAddressSync(
+            [Buffer.from('pool'), mint.toBuffer()],
+            STAKING_PROGRAM_ID,
+        );
+
+        const accountSubs: number[] = [
+            connection.onAccountChange(
+                poolPda,
+                () => {
+                    void fetchStats();
+                },
+                'confirmed',
+            ),
+            connection.onAccountChange(
+                mint,
+                () => {
+                    void fetchStats();
+                },
+                'confirmed',
+            ),
+        ];
+
+        // UserStakeIndex accounts are 16 bytes; watching the program for new
+        // or removed ones keeps the staker count live without polling.
+        const programSub = connection.onProgramAccountChange(
+            STAKING_PROGRAM_ID,
+            () => {
+                void fetchStats();
+            },
+            'confirmed',
+            [{ dataSize: 16 }],
+        );
+
+        return () => {
+            for (const id of accountSubs) {
+                void connection.removeAccountChangeListener(id);
+            }
+            void connection.removeProgramAccountChangeListener(programSub);
+        };
+    }, [connection, mint, fetchStats]);
 
     return { stats, loading, refresh: fetchStats };
 }

@@ -324,11 +324,69 @@ export function useAmmData(): OfferDeskData {
     }, [connection]);
 
     useEffect(() => {
-        // Deferred to a microtask so no setState runs synchronously inside the effect
-        void Promise.resolve().then(load);
-        const timer = setInterval(load, 30_000);
-        return () => clearInterval(timer);
-    }, [load]);
+        let cancelled = false;
+        const subscriptions: number[] = [];
+
+        async function setup() {
+            if (!connection) return;
+            const config = await fetchConfig();
+            if (cancelled) return;
+            const mint = pk(config.mint);
+            const ammProgram = pk(config.ammProgram) ?? AMM_PROGRAM_ID;
+            const crankProgram = pk(config.crankProgram);
+            if (!mint) return;
+
+            const [ammStatePda] = PublicKey.findProgramAddressSync(
+                [Buffer.from('amm_state'), mint.toBuffer()], ammProgram,
+            );
+            const [offerListPda] = PublicKey.findProgramAddressSync(
+                [Buffer.from('offer_list'), mint.toBuffer()], ammProgram,
+            );
+
+            const watch: PublicKey[] = [ammStatePda, offerListPda];
+            if (crankProgram) {
+                const [marketStatusPda] = PublicKey.findProgramAddressSync(
+                    [Buffer.from('market_status')], crankProgram,
+                );
+                watch.push(marketStatusPda);
+            }
+
+            // Live price source (mock spot-oracle PDA while the CPMM pool is
+            // unpinned) — resolve once so the desk also refreshes on price.
+            try {
+                const info = await connection.getAccountInfo(ammStatePda, 'confirmed');
+                const ammState = info ? decode(ammCoder, 'AmmState', info.data) : null;
+                const spotOracle = pub(ammState, 'spotOracle', 'spot_oracle');
+                if (spotOracle) watch.push(spotOracle);
+            } catch {
+                // amm_state not initialized yet — offerList/marketStatus watches
+                // still fire once the accounts come into existence.
+            }
+
+            for (const key of watch) {
+                subscriptions.push(
+                    connection.onAccountChange(
+                        key,
+                        () => {
+                            void load();
+                        },
+                        'confirmed',
+                    ),
+                );
+            }
+
+            void load();
+        }
+
+        void setup();
+
+        return () => {
+            cancelled = true;
+            for (const id of subscriptions) {
+                void connection.removeAccountChangeListener(id);
+            }
+        };
+    }, [connection, load]);
 
     return { ...data, refresh: load };
 }

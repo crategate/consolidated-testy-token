@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useStake } from '../hooks/stake/useStake';
-import { useConnection, useWallet } from '@solana/wallet-adapter-react';
+import { useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
-import { getAccount, getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';
+import { useTokenBalance } from '../hooks/useTokenBalance';
 
 interface StakeFormProps {
     mint: PublicKey;
@@ -13,18 +13,9 @@ interface StakeFormProps {
 export function StakeForm({ mint, marketStatusPda, onStakeSuccess }: StakeFormProps) {
     const { stake } = useStake(mint, marketStatusPda);
     const { publicKey } = useWallet();
-    const { connection } = useConnection();
+    const { balance, refresh: refreshBalance } = useTokenBalance(mint, publicKey, 9);
     const [amount, setAmount] = useState('');
     const [loading, setLoading] = useState(false);
-    const [balance, setBalance] = useState<number | null>(null);
-
-    useEffect(() => {
-        if (!publicKey || !connection) return;
-        const ata = getAssociatedTokenAddressSync(mint, publicKey, false, TOKEN_2022_PROGRAM_ID);
-        getAccount(connection, ata, 'confirmed', TOKEN_2022_PROGRAM_ID)
-            .then(acc => setBalance(Number(acc.amount) / 1e9))
-            .catch(() => setBalance(0));
-    }, [publicKey, connection, mint]);
 
     const handleStake = async () => {
         if (!amount) return;
@@ -33,7 +24,7 @@ export function StakeForm({ mint, marketStatusPda, onStakeSuccess }: StakeFormPr
             const tx = await stake(amount);
             alert(`Staked successfully! Tx: ${tx}`);
             setAmount('');
-            setBalance(prev => prev !== null ? Math.max(0, prev - Number(amount)) : null);
+            void refreshBalance();
             setTimeout(() => onStakeSuccess?.(), 2000);
         } catch (e) {
             alert('Stake failed: ' + (e as Error).message);
