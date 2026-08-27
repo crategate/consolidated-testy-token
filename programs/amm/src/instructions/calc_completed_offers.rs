@@ -26,13 +26,20 @@ pub struct CalcCompletedOffers<'info> {
     #[account(mut, seeds = [b"accepted_offers", amm_state.afho_mint.as_ref()], bump)]
     pub accepted_offers: Box<Account<'info, AcceptedOffers>>,
 
-    /// CHECK: live absolute-price oracle — raw u64 stub (first 8 bytes), same
-    /// pattern as offer_claim::read_live_price. Address pinned at init
-    /// (mock-dex-pool's mock_price PDA on devnet). MAINNET TODO: absolute-price
-    /// source in the same units as highest_buyback_basis (raw USDC-in x 1e6 /
-    /// raw AFHO-out).
+    /// CHECK: live absolute-price oracle — mock fallback (raw u64). Used only
+    /// when the CPMM pool is NOT pinned.
     #[account(address = amm_state.spot_oracle)]
     pub price_oracle: UncheckedAccount<'info>,
+
+    // Raydium CPMM AFHO/USDC pool — live price source when pinned.
+    /// CHECK: pool state, pinned to amm_state.cpmm_pool_state in the handler
+    pub cpmm_pool_state: Option<AccountInfo<'info>>,
+    /// CHECK: pool observation (TWAP ring)
+    pub cpmm_observation: Option<AccountInfo<'info>>,
+    /// CHECK: pool USDC vault (quote leg)
+    pub cpmm_input_vault: Option<AccountInfo<'info>>,
+    /// CHECK: pool AFHO vault (base leg)
+    pub cpmm_output_vault: Option<AccountInfo<'info>>,
 }
 
 // Ratchet decay: trading days with no fills before the floor starts decaying,
@@ -85,7 +92,48 @@ pub fn handler(ctx: Context<CalcCompletedOffers>) -> Result<()> {
     // FLOOR_LOCK_GRACE_DAYS straight days with no fills, decay the floor
     // toward the live price by FLOOR_DECAY_PCT of the gap per trading day —
     // exponential convergence that never crosses below live and never zeroes.
-    let live_price = read_live_price(&ctx.accounts.price_oracle)?;
+    let live_price = {
+        let amm_state = &ctx.accounts.amm_state;
+        let pinned = amm_state.cpmm_pool_state != Pubkey::default();
+        if pinned {
+            let clock = Clock::get()?;
+            let pool_state = ctx.accounts.cpmm_pool_state.as_ref().ok_or(ErrorCode::InvalidPoolAccount)?;
+            let observation = ctx.accounts.cpmm_observation.as_ref().ok_or(ErrorCode::InvalidPoolAccount)?;
+            let base_vault = ctx.accounts.cpmm_output_vault.as_ref().ok_or(ErrorCode::InvalidPoolAccount)?;
+            let quote_vault = ctx.accounts.cpmm_input_vault.as_ref().ok_or(ErrorCode::InvalidPoolAccount)?;
+            require!(
+                pool_state.key() == amm_state.cpmm_pool_state,
+                ErrorCode::InvalidPoolAccount
+            );
+            require!(
+                observation.key()
+                    == crate::instructions::raydium::observation_pda(&amm_state.cpmm_program, amm_state.cpmm_pool_state).0,
+                ErrorCode::InvalidPoolAccount
+            );
+            require!(
+                quote_vault.key()
+                    == crate::instructions::raydium::pool_vault_pda(&amm_state.cpmm_program, amm_state.cpmm_pool_state, amm_state.usdc_mint).0,
+                ErrorCode::InvalidPoolAccount
+            );
+            require!(
+                base_vault.key()
+                    == crate::instructions::raydium::pool_vault_pda(&amm_state.cpmm_program, amm_state.cpmm_pool_state, amm_state.afho_mint).0,
+                ErrorCode::InvalidPoolAccount
+            );
+            super::raydium::read_cpmm_price_floor(
+                pool_state,
+                observation,
+                base_vault,
+                quote_vault,
+                &amm_state.afho_mint,
+                &amm_state.usdc_mint,
+                clock.unix_timestamp as u64,
+            )
+            .ok_or(ErrorCode::InvalidOracle)?
+        } else {
+            read_live_price(&ctx.accounts.price_oracle)?
+        }
+    };
     let amm_state = &mut ctx.accounts.amm_state;
     let floor = amm_state.highest_buyback_basis;
 
@@ -170,4 +218,6 @@ pub enum ErrorCode {    #[msg("Unauthorized caller")]
     StaleOfferSheet,
     #[msg("Invalid price oracle")]
     InvalidOracle,
+    #[msg("CPMM pool account mismatch")]
+    InvalidPoolAccount,
 }

@@ -8,6 +8,7 @@ import * as path from "path";
 import { PublicKey } from "@solana/web3.js";
 import {
     getAssociatedTokenAddressSync,
+    ASSOCIATED_TOKEN_PROGRAM_ID,
     TOKEN_PROGRAM_ID,
     TOKEN_2022_PROGRAM_ID,
 } from "@solana/spl-token";
@@ -59,6 +60,7 @@ async function main() {
     );
     const ammProgram = new anchor.Program(ammIdl as anchor.Idl, provider);
     const afhoMint = new PublicKey(deployment.mint);
+    const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
     const ammPda = (seed: string) =>
         anchor.web3.PublicKey.findProgramAddressSync(
             [Buffer.from(seed), afhoMint.toBuffer()],
@@ -112,6 +114,41 @@ async function main() {
             cpmmOutputVault: outputVault,
             cpmmObservation: observation,
             cpmmAuthority: authority,
+        };
+    }
+
+    // Raydium SOL/USDC CPMM accounts for bounty_top_up / offer_claim_sol.
+    // Returns null when the pool isn't pinned in state.
+    function solUsdcAccountsFor(ammState: any) {
+        if (!ammState.cpmmSolUsdcPool || !ammState.cpmmProgram) {
+            return null;
+        }
+        const program = new PublicKey(ammState.cpmmProgram);
+        const pool = new PublicKey(ammState.cpmmSolUsdcPool);
+        const usdcMint = new PublicKey(ammState.usdcMint);
+        const [authority] = PublicKey.findProgramAddressSync(
+            [Buffer.from("vault_and_lp_mint_auth_seed")],
+            program
+        );
+        const [observation] = PublicKey.findProgramAddressSync(
+            [Buffer.from("observation"), pool.toBuffer()],
+            program
+        );
+        const [inputVault] = PublicKey.findProgramAddressSync(
+            [Buffer.from("pool_vault"), pool.toBuffer(), WSOL_MINT.toBuffer()],
+            program
+        );
+        const [outputVault] = PublicKey.findProgramAddressSync(
+            [Buffer.from("pool_vault"), pool.toBuffer(), usdcMint.toBuffer()],
+            program
+        );
+        return {
+            solUsdcPoolState: pool,
+            solUsdcAmmConfig: new PublicKey(ammState.cpmmSolUsdcConfig),
+            solUsdcInputVault: inputVault,
+            solUsdcOutputVault: outputVault,
+            solUsdcObservation: observation,
+            solUsdcAuthority: authority,
         };
     }
 
@@ -230,6 +267,12 @@ async function main() {
                     console.log(`📈 Day ended (${prevState} → ${newStatus.currentState}). Firing update_tradeday_stats + make_offers...`);
                     try {
                         const ammStateForStats = await (ammProgram.account as any).ammState.fetch(ammStatePda);
+                        const statsUsdcMint = new PublicKey(ammStateForStats.usdcMint);
+                        const statsMockPool = PublicKey.findProgramAddressSync(
+                            [Buffer.from("mock_pool"), afhoMint.toBuffer()],
+                            new PublicKey(ammStateForStats.dexProgram)
+                        )[0];
+                        const statsCpmm = cpmmAccountsFor(ammStateForStats, statsUsdcMint, statsMockPool);
                         const statsIx = await ammProgram.methods
                             .updateTradedayStats()
                             .accountsStrict({
@@ -238,6 +281,10 @@ async function main() {
                                 marketMetrics: metricsPda,
                                 marketStatus: marketStatusPda,
                                 spotOracle: ammStateForStats.spotOracle,
+                                cpmmPoolState: statsCpmm.cpmmPoolState,
+                                cpmmObservation: statsCpmm.cpmmObservation,
+                                cpmmInputVault: statsCpmm.cpmmInputVault,
+                                cpmmOutputVault: statsCpmm.cpmmOutputVault,
                                 stakingPool: ammStateForStats.stakingPool,
                                 afhoMint,
                             })
@@ -302,10 +349,17 @@ async function main() {
                         // configured dex_program (devnet stub; MAINNET: the real
                         // absolute-price account in highest_buyback_basis units).
                         const ammStateForCalc = await (ammProgram.account as any).ammState.fetch(ammStatePda);
+                        const calcUsdcMint = new PublicKey(ammStateForCalc.usdcMint);
+                        const calcDexProgramId = new PublicKey(ammStateForCalc.dexProgram);
+                        const [calcMockPool] = PublicKey.findProgramAddressSync(
+                            [Buffer.from("mock_pool"), afhoMint.toBuffer()],
+                            calcDexProgramId
+                        );
                         const [mockPricePda] = PublicKey.findProgramAddressSync(
                             [Buffer.from("mock_price"), afhoMint.toBuffer()],
-                            new PublicKey(ammStateForCalc.dexProgram)
+                            calcDexProgramId
                         );
+                        const calcCpmm = cpmmAccountsFor(ammStateForCalc, calcUsdcMint, calcMockPool);
                         const calcIx = await ammProgram.methods
                             .calcCompletedOffers()
                             .accountsStrict({
@@ -315,6 +369,10 @@ async function main() {
                                 marketStatus: marketStatusPda,
                                 acceptedOffers: acceptedOffersPda,
                                 priceOracle: mockPricePda,
+                                cpmmPoolState: calcCpmm.cpmmPoolState,
+                                cpmmObservation: calcCpmm.cpmmObservation,
+                                cpmmInputVault: calcCpmm.cpmmInputVault,
+                                cpmmOutputVault: calcCpmm.cpmmOutputVault,
                             })
                             .instruction();
                         const calcTx = await sb.asV0Tx({
@@ -526,6 +584,50 @@ async function main() {
             } catch (e) {
                 // Never let a dip attempt kill the crank loop
                 console.error("❌ buy_the_dip attempt failed:", (e as Error).message);
+            }
+
+            // bounty_top_up: attempt every loop — permissionless, and the
+            // on-chain low-water check turns healthy vaults into a cheap no-op.
+            try {
+                const ammState = await (ammProgram.account as any).ammState.fetch(ammStatePda);
+                const solUsdc = solUsdcAccountsFor(ammState);
+                if (solUsdc) {
+                    const usdcMint = new PublicKey(ammState.usdcMint);
+                    const wsolVault = getAssociatedTokenAddressSync(WSOL_MINT, ammStatePda, true);
+                    const topupIx = await ammProgram.methods
+                        .bountyTopUp()
+                        .accountsStrict({
+                            cranker: keypair.publicKey,
+                            ammState: ammStatePda,
+                            bountyVault: bountyVaultPda,
+                            usdcVault: ammState.usdcVault,
+                            usdcMint,
+                            solOracle: ammState.solOracle,
+                            wsolVault,
+                            wrappedSolMint: WSOL_MINT,
+                            ...solUsdc,
+                            associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+                            tokenProgram: TOKEN_PROGRAM_ID,
+                            systemProgram: anchor.web3.SystemProgram.programId,
+                        })
+                        .instruction();
+                    const topupTx = await sb.asV0Tx({
+                        connection,
+                        ixs: [topupIx],
+                        signers: [keypair],
+                        computeUnitPrice: 20_000,
+                    });
+                    const topupSim = await connection.simulateTransaction(topupTx);
+                    if (topupSim.value.err) {
+                        console.log("bounty_top_up skipped (healthy / no USDC / already topped).");
+                    } else {
+                        const topupSig = await connection.sendTransaction(topupTx);
+                        await connection.confirmTransaction(topupSig, "confirmed");
+                        console.log(`✅ bounty_top_up fired: ${topupSig}`);
+                    }
+                }
+            } catch (e) {
+                console.error("❌ bounty_top_up attempt failed:", (e as Error).message);
             }
         } catch (e) {
             console.error("❌ Crank attempt failed:", e);

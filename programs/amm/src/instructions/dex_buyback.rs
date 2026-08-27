@@ -3,8 +3,6 @@ use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 use mock_dex_pool::cpi::accounts::SendAfho;
 
-use super::offer_claim::read_live_price;
-
 // Minimum slots between slices (~1 min) — pacing so one crank burst can't
 // drain the day's budget in a single block.
 const MIN_SLICE_SLOTS: u64 = 150;
@@ -180,6 +178,26 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
         ErrorCode::UnauthorizedCaller
     );
 
+    // H1 re-pin: once the CPMM pool is pinned in state, the swap/pricing
+    // accounts must be the pool's own derived PDAs.
+    require!(
+        super::raydium::pinned_pool_accounts_valid(
+            amm_state.cpmm_pool_state != Pubkey::default(),
+            amm_state.cpmm_program,
+            amm_state.cpmm_pool_state,
+            amm_state.cpmm_amm_config,
+            ctx.accounts.afho_mint.key(),
+            ctx.accounts.usdc_mint.key(),
+            &ctx.accounts.cpmm_pool_state.to_account_info(),
+            &ctx.accounts.cpmm_amm_config.to_account_info(),
+            &ctx.accounts.cpmm_output_vault.to_account_info(),
+            &ctx.accounts.cpmm_input_vault.to_account_info(),
+            &ctx.accounts.cpmm_observation.to_account_info(),
+            &ctx.accounts.cpmm_authority.to_account_info(),
+        ),
+        ErrorCode::InvalidPoolAccount
+    );
+
     // MarketStatus layout: disc(8) + current_state(1) + timestamp(8) + trading_day_index(8)
     let market_data = ctx.accounts.market_status.try_borrow_data()?;
     require!(market_data.len() >= 25, ErrorCode::InvalidMarketStatus);
@@ -241,9 +259,22 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
         / 100_000_000u128) as u64;
     let slice_usdc = slice_usdc.min(remaining_usdc);
     if slice_usdc > 0 {
+        // Live AFHO/USDC price in floor units: pool TWAP (vault-ratio
+        // fallback) when the CPMM pool is pinned, else the mock oracle PDA.
+        let spot = super::raydium::read_price(
+            amm_state.cpmm_pool_state != Pubkey::default(),
+            &ctx.accounts.cpmm_pool_state.to_account_info(),
+            &ctx.accounts.cpmm_observation.to_account_info(),
+            &ctx.accounts.cpmm_output_vault.to_account_info(), // AFHO (base) vault
+            &ctx.accounts.cpmm_input_vault.to_account_info(),  // USDC (quote) vault
+            &ctx.accounts.spot_oracle.to_account_info(),
+            &ctx.accounts.afho_mint.key(),
+            &ctx.accounts.usdc_mint.key(),
+            clock.unix_timestamp as u64,
+        )
+        .ok_or(ErrorCode::InvalidOracle)?;
         // min-out for the CPMM swap: bound the realized price inside the same
-        // M3 band used post-swap (0 when the spot oracle is unset).
-        let spot = read_live_price(&ctx.accounts.spot_oracle.to_account_info())?;
+        // M3 band used post-swap.
         let min_out = if spot > 0 {
             (slice_usdc as u128 * 1_000_000u128 * 10_000u128
                 / (spot as u128 * (10_000 + MAX_SLIPPAGE_BPS) as u128)) as u64
@@ -263,7 +294,6 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
         ctx.accounts.afho_vault.reload()?;
         let out = ctx.accounts.afho_vault.amount.saturating_sub(before);
         if out > 0 {
-            let spot = read_live_price(&ctx.accounts.spot_oracle.to_account_info())?;
             ratchet_within_band(
                 amm_state,
                 (slice_usdc as u128 * 1_000_000 / out as u128) as u64,
@@ -423,4 +453,6 @@ pub enum ErrorCode {
     SlippageExceeded,
     #[msg("Invalid SOL price oracle")]
     InvalidOracle,
+    #[msg("CPMM pool account mismatch")]
+    InvalidPoolAccount,
 }

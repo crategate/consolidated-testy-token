@@ -3,7 +3,6 @@ use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 use anchor_spl::associated_token::{create_idempotent, AssociatedToken, Create};
 
-use super::offer_claim::read_live_price;
 use super::raydium::cpmm_swap_base_input_ix;
 use anchor_spl::token::{close_account, CloseAccount};
 
@@ -11,8 +10,8 @@ use anchor_spl::token::{close_account, CloseAccount};
 // drops below LOW_LAMPORTS, swap USDC → SOL through the pinned SOL/USDC pool
 // and fund the vault back up to TARGET_LAMPORTS. Permissionless (any cranker
 // can keep the bounty funded); the USDC comes from the buyback vault.
-const LOW_LAMPORTS: u64 = 200_000_000; // 0.2 SOL
-const TARGET_LAMPORTS: u64 = 400_000_000; // 0.4 SOL
+const LOW_LAMPORTS: u64 = 200_000_000; // 0.2 SOL — only top up below this
+const TOPUP_AMOUNT: u64 = 400_000_000; // 0.4 SOL added each top-up
 
 #[derive(Accounts)]
 pub struct BountyTopUp<'info> {
@@ -78,11 +77,47 @@ pub fn handler(ctx: Context<BountyTopUp>) -> Result<()> {
         msg!("bounty vault healthy ({} lamports)", current);
         return Ok(());
     }
-    let needed = TARGET_LAMPORTS.saturating_sub(current);
+    // Top up BY 0.4 SOL (not TO a fixed balance) so the refill is constant and
+    // predictable regardless of how far the vault drained.
+    let needed = TOPUP_AMOUNT;
+
+    // H1 re-pin: once the SOL/USDC pool is pinned, the swap/pricing accounts
+    // must be the pool's own derived PDAs.
+    require!(
+        super::raydium::pinned_sol_usdc_accounts_valid(
+            ctx.accounts.amm_state.cpmm_sol_usdc_pool != Pubkey::default(),
+            ctx.accounts.amm_state.cpmm_program,
+            ctx.accounts.amm_state.cpmm_sol_usdc_pool,
+            ctx.accounts.amm_state.cpmm_sol_usdc_config,
+            ctx.accounts.wrapped_sol_mint.key(),
+            ctx.accounts.usdc_mint.key(),
+            &ctx.accounts.sol_usdc_pool_state.to_account_info(),
+            &ctx.accounts.sol_usdc_amm_config.to_account_info(),
+            &ctx.accounts.sol_usdc_input_vault.to_account_info(),
+            &ctx.accounts.sol_usdc_output_vault.to_account_info(),
+            &ctx.accounts.sol_usdc_observation.to_account_info(),
+            &ctx.accounts.sol_usdc_authority.to_account_info(),
+        ),
+        ErrorCode::InvalidPoolAccount
+    );
 
     // SOL price in floor units: (usdc_raw x 1e6) / lamports — same convention
     // as offer_claim_sol. usdc_in = needed lamports × sol_price / 1e6.
-    let sol_price = read_live_price(&ctx.accounts.sol_oracle.to_account_info())?;
+    let sol_price = if ctx.accounts.amm_state.cpmm_sol_usdc_pool != Pubkey::default() {
+        let clock = Clock::get()?;
+        super::raydium::read_cpmm_price_floor(
+            &ctx.accounts.sol_usdc_pool_state.to_account_info(),
+            &ctx.accounts.sol_usdc_observation.to_account_info(),
+            &ctx.accounts.sol_usdc_input_vault.to_account_info(),  // wSOL (base)
+            &ctx.accounts.sol_usdc_output_vault.to_account_info(), // USDC (quote)
+            &ctx.accounts.wrapped_sol_mint.key(),
+            &ctx.accounts.usdc_mint.key(),
+            clock.unix_timestamp as u64,
+        )
+        .ok_or(ErrorCode::InvalidOracle)?
+    } else {
+        super::offer_claim::read_live_price(&ctx.accounts.sol_oracle.to_account_info())?
+    };
     require!(sol_price > 0, ErrorCode::InvalidOracle);
     let usdc_in = ((needed as u128 * sol_price as u128) / 1_000_000u128) as u64;
     require!(usdc_in > 0, ErrorCode::ZeroAmount);
@@ -178,4 +213,6 @@ pub enum ErrorCode {
     ZeroAmount,
     #[msg("Buyback vault USDC balance is too low to top up the bounty")]
     InsufficientUsdc,
+    #[msg("CPMM pool account mismatch")]
+    InvalidPoolAccount,
 }

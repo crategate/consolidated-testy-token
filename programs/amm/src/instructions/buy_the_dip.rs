@@ -33,7 +33,6 @@ use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
 use super::dex_buyback::{execute_swap, ratchet_within_band, SwapInfos, MAX_SLIPPAGE_BPS};
-use super::offer_claim::read_live_price;
 
 // Spot ring: ~30s between samples, 32 slots of history, 5 samples before the
 // trigger arms (cold start = no dip buys).
@@ -244,13 +243,44 @@ pub fn handler(ctx: Context<BuyTheDip>) -> Result<()> {
         ErrorCode::UnauthorizedCaller
     );
 
+    // H1 re-pin: when the CPMM pool is pinned, the swap/pricing accounts must
+    // be the pool's own derived PDAs.
+    require!(
+        super::raydium::pinned_pool_accounts_valid(
+            amm_state.cpmm_pool_state != Pubkey::default(),
+            amm_state.cpmm_program,
+            amm_state.cpmm_pool_state,
+            amm_state.cpmm_amm_config,
+            ctx.accounts.afho_mint.key(),
+            ctx.accounts.usdc_mint.key(),
+            &ctx.accounts.cpmm_pool_state.to_account_info(),
+            &ctx.accounts.cpmm_amm_config.to_account_info(),
+            &ctx.accounts.cpmm_output_vault.to_account_info(),
+            &ctx.accounts.cpmm_input_vault.to_account_info(),
+            &ctx.accounts.cpmm_observation.to_account_info(),
+            &ctx.accounts.cpmm_authority.to_account_info(),
+        ),
+        ErrorCode::InvalidPoolAccount
+    );
+
     // MarketStatus layout: disc(8) + current_state(1) + timestamp(8) + trading_day_index(8)
     let market_data = ctx.accounts.market_status.try_borrow_data()?;
     require!(market_data.len() >= 25, ErrorCode::InvalidMarketStatus);
     let current_day = u64::from_le_bytes(market_data[17..25].try_into().unwrap());
 
     let clock = Clock::get()?;
-    let spot = read_live_price(&ctx.accounts.spot_oracle.to_account_info())?;
+    let spot = super::raydium::read_price(
+        amm_state.cpmm_pool_state != Pubkey::default(),
+        &ctx.accounts.cpmm_pool_state.to_account_info(),
+        &ctx.accounts.cpmm_observation.to_account_info(),
+        &ctx.accounts.cpmm_output_vault.to_account_info(), // AFHO (base) vault
+        &ctx.accounts.cpmm_input_vault.to_account_info(),  // USDC (quote) vault
+        &ctx.accounts.spot_oracle.to_account_info(),
+        &ctx.accounts.afho_mint.key(),
+        &ctx.accounts.usdc_mint.key(),
+        clock.unix_timestamp as u64,
+    )
+    .ok_or(ErrorCode::InvalidOracle)?;
     require!(spot > 0, ErrorCode::InvalidOracle);
 
     let metrics = &mut ctx.accounts.metrics;
@@ -354,4 +384,6 @@ pub enum ErrorCode {
     InvalidMarketStatus,
     #[msg("Invalid price oracle")]
     InvalidOracle,
+    #[msg("CPMM pool account mismatch")]
+    InvalidPoolAccount,
 }

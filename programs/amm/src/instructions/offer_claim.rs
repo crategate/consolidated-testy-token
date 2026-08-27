@@ -57,12 +57,23 @@ pub struct OfferClaim<'info> {
     #[account(address = amm_state.usdc_mint)]
     pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
 
-    /// Absolute-price oracle. Address is pinned at init — an attacker cannot
-    /// substitute a fake price account. (Raw-u64 mock PDA on devnet; real
-    /// price source adapter at mainnet.)
+    /// Absolute-price oracle (mock fallback). Address is pinned at init — an
+    /// attacker cannot substitute a fake price account. Used only when the
+    /// CPMM pool is NOT pinned (localnet tests / pre-mainnet devnet).
     /// CHECK: address-verified against amm_state.spot_oracle
     #[account(address = amm_state.spot_oracle)]
     pub spot_oracle: UncheckedAccount<'info>,
+
+    // Raydium CPMM AFHO/USDC pool — live price source when the pool is pinned
+    // in state (set_cpmm_pool). Option so mock-mode tests can omit them.
+    /// CHECK: pool state, pinned to amm_state.cpmm_pool_state in the handler
+    pub cpmm_pool_state: Option<AccountInfo<'info>>,
+    /// CHECK: pool observation (TWAP ring)
+    pub cpmm_observation: Option<AccountInfo<'info>>,
+    /// CHECK: pool USDC vault (quote leg)
+    pub cpmm_input_vault: Option<AccountInfo<'info>>,
+    /// CHECK: pool AFHO vault (base leg)
+    pub cpmm_output_vault: Option<AccountInfo<'info>>,
 
     /// Market status PDA — gates claims to after-hours/closed and provides
     /// the trading day for sheet freshness.
@@ -131,12 +142,41 @@ pub struct OfferClaim<'info> {
 }
 
 pub fn handler(ctx: Context<OfferClaim>, tier: u8, units: u8, index: u64) -> Result<()> {
+    let clock = Clock::get()?;
+    let amm_state = &ctx.accounts.amm_state;
+    let pinned = amm_state.cpmm_pool_state != Pubkey::default();
+    require_pinned_pricing_accounts(
+        pinned,
+        amm_state.cpmm_program,
+        amm_state.cpmm_pool_state,
+        &ctx.accounts.afho_mint.key(),
+        &ctx.accounts.usdc_mint.key(),
+        ctx.accounts.cpmm_pool_state.as_ref(),
+        ctx.accounts.cpmm_observation.as_ref(),
+        ctx.accounts.cpmm_output_vault.as_ref(),
+        ctx.accounts.cpmm_input_vault.as_ref(),
+    )?;
+    let live_price = if pinned {
+        super::raydium::read_cpmm_price_floor(
+            ctx.accounts.cpmm_pool_state.as_ref().unwrap(),
+            ctx.accounts.cpmm_observation.as_ref().unwrap(),
+            ctx.accounts.cpmm_output_vault.as_ref().unwrap(),
+            ctx.accounts.cpmm_input_vault.as_ref().unwrap(),
+            &ctx.accounts.afho_mint.key(),
+            &ctx.accounts.usdc_mint.key(),
+            clock.unix_timestamp as u64,
+        )
+        .ok_or(ErrorCode::InvalidOracle)?
+    } else {
+        read_live_price(&ctx.accounts.spot_oracle.to_account_info())?
+    };
+
     let q = quote_claim(
         &ctx.accounts.market_status,
         &ctx.accounts.offer_list,
         &ctx.accounts.amm_state,
         ctx.accounts.afho_mint.decimals,
-        &ctx.accounts.spot_oracle,
+        live_price,
         tier,
         units,
     )?;
@@ -249,11 +289,21 @@ pub struct OfferClaimSol<'info> {
     /// CHECK: address-verified against amm_state.spot_oracle
     #[account(address = amm_state.spot_oracle)]
     pub spot_oracle: UncheckedAccount<'info>,
-    /// SOL/USD price oracle — raw u64, same units convention as spot_oracle:
-    /// (usdc_raw x 1e6) / lamports. Address pinned at init.
+    /// SOL/USD price oracle — mock fallback (raw u64, same units convention).
+    /// Used only when the SOL/USDC pool is NOT pinned.
     /// CHECK: address-verified against amm_state.sol_oracle
     #[account(address = amm_state.sol_oracle)]
     pub sol_oracle: UncheckedAccount<'info>,
+
+    // Raydium CPMM AFHO/USDC pool — live spot-price source when pinned.
+    /// CHECK: pool state, pinned to amm_state.cpmm_pool_state in the handler
+    pub cpmm_pool_state: Option<AccountInfo<'info>>,
+    /// CHECK: pool observation (TWAP ring)
+    pub cpmm_observation: Option<AccountInfo<'info>>,
+    /// CHECK: pool USDC vault (quote leg)
+    pub cpmm_input_vault: Option<AccountInfo<'info>>,
+    /// CHECK: pool AFHO vault (base leg)
+    pub cpmm_output_vault: Option<AccountInfo<'info>>,
 
     /// Market status PDA — same gate as the USDC path.
     /// CHECK: seeds-verified against the crank program stored at init
@@ -339,12 +389,66 @@ pub struct OfferClaimSol<'info> {
 }
 
 pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u8, index: u64) -> Result<()> {
+    let clock = Clock::get()?;
+    let (cpmm_pool_state, cpmm_program, cpmm_sol_usdc_pool) = {
+        let a = &ctx.accounts.amm_state;
+        (a.cpmm_pool_state, a.cpmm_program, a.cpmm_sol_usdc_pool)
+    };
+    let pinned = cpmm_pool_state != Pubkey::default();
+    let sol_pinned = cpmm_sol_usdc_pool != Pubkey::default();
+
+    // AFHO/USDC spot-price accounts (pinned when configured).
+    require_pinned_pricing_accounts(
+        pinned,
+        cpmm_program,
+        cpmm_pool_state,
+        &ctx.accounts.afho_mint.key(),
+        &ctx.accounts.usdc_mint.key(),
+        ctx.accounts.cpmm_pool_state.as_ref(),
+        ctx.accounts.cpmm_observation.as_ref(),
+        ctx.accounts.cpmm_output_vault.as_ref(),
+        ctx.accounts.cpmm_input_vault.as_ref(),
+    )?;
+    // SOL/USDC swap accounts (pinned when the pool is configured).
+    require!(
+        super::raydium::pinned_sol_usdc_accounts_valid(
+            sol_pinned,
+            cpmm_program,
+            cpmm_sol_usdc_pool,
+            ctx.accounts.amm_state.cpmm_sol_usdc_config,
+            ctx.accounts.wrapped_sol_mint.key(),
+            ctx.accounts.usdc_mint.key(),
+            &ctx.accounts.sol_usdc_pool_state.to_account_info(),
+            &ctx.accounts.sol_usdc_amm_config.to_account_info(),
+            &ctx.accounts.sol_usdc_input_vault.to_account_info(),
+            &ctx.accounts.sol_usdc_output_vault.to_account_info(),
+            &ctx.accounts.sol_usdc_observation.to_account_info(),
+            &ctx.accounts.sol_usdc_authority.to_account_info(),
+        ),
+        ErrorCode::InvalidPoolAccount
+    );
+
+    let live_price = if pinned {
+        super::raydium::read_cpmm_price_floor(
+            ctx.accounts.cpmm_pool_state.as_ref().unwrap(),
+            ctx.accounts.cpmm_observation.as_ref().unwrap(),
+            ctx.accounts.cpmm_output_vault.as_ref().unwrap(),
+            ctx.accounts.cpmm_input_vault.as_ref().unwrap(),
+            &ctx.accounts.afho_mint.key(),
+            &ctx.accounts.usdc_mint.key(),
+            clock.unix_timestamp as u64,
+        )
+        .ok_or(ErrorCode::InvalidOracle)?
+    } else {
+        read_live_price(&ctx.accounts.spot_oracle.to_account_info())?
+    };
+
     let q = quote_claim(
         &ctx.accounts.market_status,
         &ctx.accounts.offer_list,
         &ctx.accounts.amm_state,
         ctx.accounts.afho_mint.decimals,
-        &ctx.accounts.spot_oracle,
+        live_price,
         tier,
         units,
     )?;
@@ -355,7 +459,20 @@ pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u8, index: u64)
     // fee on the input leg, so the buyer is charged 25bps on top — the pool
     // then nets the protocol the full USDC cost (min-out below guards the
     // residual slippage/drift).
-    let sol_price = read_live_price(&ctx.accounts.sol_oracle.to_account_info())?;
+    let sol_price = if sol_pinned {
+        super::raydium::read_cpmm_price_floor(
+            &ctx.accounts.sol_usdc_pool_state.to_account_info(),
+            &ctx.accounts.sol_usdc_observation.to_account_info(),
+            &ctx.accounts.sol_usdc_input_vault.to_account_info(),  // wSOL (base)
+            &ctx.accounts.sol_usdc_output_vault.to_account_info(), // USDC (quote)
+            &ctx.accounts.wrapped_sol_mint.key(),
+            &ctx.accounts.usdc_mint.key(),
+            clock.unix_timestamp as u64,
+        )
+        .ok_or(ErrorCode::InvalidOracle)?
+    } else {
+        read_live_price(&ctx.accounts.sol_oracle.to_account_info())?
+    };
     require!(sol_price > 0, ErrorCode::InvalidOracle);
     let lamports = (q.cost_usdc as u128)
         .checked_mul(1_000_000u128)
@@ -546,7 +663,7 @@ fn quote_claim(
     offer_list: &Account<OfferList>,
     amm_state: &Account<AmmState>,
     afho_decimals: u8,
-    spot_oracle: &AccountInfo,
+    live_price: u64,
     tier: u8,
     units: u8,
 ) -> Result<ClaimQuote> {
@@ -582,7 +699,7 @@ fn quote_claim(
 
     // ── Price: live absolute price minus the tier discount ──
     // discount_bps is stored in tenths of a percent (115 = 11.5%) → ×10 = bps.
-    let live_price = read_live_price(spot_oracle)?;
+    require!(live_price > 0, ErrorCode::InvalidOracle);
     let discount_bps = discount_stored as u64 * 10;
     let discounted = live_price.saturating_sub(live_price.saturating_mul(discount_bps) / 10_000);
 
@@ -701,6 +818,50 @@ pub(crate) fn read_live_price(oracle: &AccountInfo) -> Result<u64> {
     Ok(u64::from_le_bytes(data[0..8].try_into().unwrap()))
 }
 
+/// When the AFHO/USDC CPMM pool is pinned, verify the four pricing accounts
+/// (pool state, observation, USDC vault, AFHO vault) are the pool's own
+/// derived PDAs. No-op in mock/localnet mode.
+#[allow(clippy::too_many_arguments)]
+fn require_pinned_pricing_accounts(
+    pinned: bool,
+    cpmm_program: Pubkey,
+    expected_pool_state: Pubkey,
+    afho_mint: &Pubkey,
+    usdc_mint: &Pubkey,
+    acct_pool_state: Option<&AccountInfo>,
+    acct_observation: Option<&AccountInfo>,
+    acct_base_vault: Option<&AccountInfo>,
+    acct_quote_vault: Option<&AccountInfo>,
+) -> Result<()> {
+    if !pinned {
+        return Ok(());
+    }
+    let pool_state = acct_pool_state.ok_or(ErrorCode::InvalidPoolAccount)?;
+    let observation = acct_observation.ok_or(ErrorCode::InvalidPoolAccount)?;
+    let base_vault = acct_base_vault.ok_or(ErrorCode::InvalidPoolAccount)?;
+    let quote_vault = acct_quote_vault.ok_or(ErrorCode::InvalidPoolAccount)?;
+    require!(
+        pool_state.key() == expected_pool_state,
+        ErrorCode::InvalidPoolAccount
+    );
+    require!(
+        observation.key()
+            == crate::instructions::raydium::observation_pda(&cpmm_program, expected_pool_state).0,
+        ErrorCode::InvalidPoolAccount
+    );
+    require!(
+        quote_vault.key()
+            == crate::instructions::raydium::pool_vault_pda(&cpmm_program, expected_pool_state, *usdc_mint).0,
+        ErrorCode::InvalidPoolAccount
+    );
+    require!(
+        base_vault.key()
+            == crate::instructions::raydium::pool_vault_pda(&cpmm_program, expected_pool_state, *afho_mint).0,
+        ErrorCode::InvalidPoolAccount
+    );
+    Ok(())
+}
+
 #[error_code]
 pub enum ErrorCode {
     #[msg("Invalid tier")]
@@ -721,4 +882,6 @@ pub enum ErrorCode {
     InvalidUserIndex,
     #[msg("Math overflow")]
     MathOverflow,
+    #[msg("CPMM pool account mismatch")]
+    InvalidPoolAccount,
 }

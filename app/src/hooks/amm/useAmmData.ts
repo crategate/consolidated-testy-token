@@ -46,6 +46,12 @@ function big(v: unknown): bigint {
     return BigInt(v.toString());
 }
 
+// SPL/token-2022 token account `amount` (u64 LE at offset 64).
+function tokenAmount(data: Uint8Array | null): bigint | null {
+    if (!data || data.length < 72) return null;
+    return new DataView(data.buffer, data.byteOffset, data.byteLength).getBigUint64(64, true);
+}
+
 async function fetchConfig(): Promise<DeploymentConfig> {
     const res = await fetch(`/deployment.json?t=${Date.now()}`, { cache: 'no-store' });
     return res.ok ? await res.json() : {};
@@ -78,6 +84,10 @@ export interface ClaimAccounts {
     usdcDip: PublicKey;
     usdcRewards: PublicKey;
     ammAfhoVault: PublicKey;
+    cpmmPoolState: PublicKey;
+    cpmmObservation: PublicKey;
+    cpmmInputVault: PublicKey;
+    cpmmOutputVault: PublicKey;
 }
 
 export interface OfferDeskData {
@@ -184,9 +194,31 @@ export function useAmmData(): OfferDeskData {
                     stakingPool,
                 ]);
 
-            // spot oracle: raw-u64 mock price PDA, LE u64 at offset 0 (floor units)
+            // Live price (floor units). When the CPMM AFHO/USDC pool is pinned,
+            // use the pool's vault ratio (same fallback the on-chain TWAP uses
+            // while the ring warms); otherwise fall back to the mock PDA.
             let livePrice: bigint | null = null;
-            if (spotInfo && spotInfo.data.length >= 8) {
+            const cpmmPoolState = pub(ammState, 'cpmmPoolState', 'cpmm_pool_state');
+            const cpmmProgram = pub(ammState, 'cpmmProgram', 'cpmm_program');
+            const usdcMintKey = pub(ammState, 'usdcMint', 'usdc_mint');
+            if (cpmmPoolState && cpmmProgram && usdcMintKey) {
+                const [afhoVault] = PublicKey.findProgramAddressSync(
+                    [Buffer.from('pool_vault'), cpmmPoolState.toBuffer(), mint.toBuffer()],
+                    cpmmProgram
+                );
+                const [usdcVault] = PublicKey.findProgramAddressSync(
+                    [Buffer.from('pool_vault'), cpmmPoolState.toBuffer(), usdcMintKey.toBuffer()],
+                    cpmmProgram
+                );
+                const vaultInfos = await connection.getMultipleAccountsInfo([afhoVault, usdcVault]);
+                const baseRaw = tokenAmount(vaultInfos[0]?.data ?? null);
+                const quoteRaw = tokenAmount(vaultInfos[1]?.data ?? null);
+                if (baseRaw !== null && quoteRaw !== null && baseRaw > 0n) {
+                    // floor units: (usdc_raw × 1e6) / afho_raw
+                    livePrice = (quoteRaw * 1_000_000n) / baseRaw;
+                }
+            }
+            if (livePrice === null && spotInfo && spotInfo.data.length >= 8) {
                 livePrice = new DataView(spotInfo.data.buffer, spotInfo.data.byteOffset).getBigUint64(0, true);
             }
 
@@ -225,8 +257,26 @@ export function useAmmData(): OfferDeskData {
             const usdcDip = pub(ammState, 'usdcDip', 'usdc_dip');
             const usdcRewards = pub(ammState, 'usdcRewards', 'usdc_rewards');
             const afhoVault = pub(ammState, 'afhoVault', 'afho_vault');
+
+            // CPMM AFHO/USDC pool accounts for the claim's live-price read.
+            let cpmmObservation: PublicKey | null = null;
+            let cpmmInputVault: PublicKey | null = null;
+            let cpmmOutputVault: PublicKey | null = null;
+            if (cpmmPoolState && cpmmProgram && usdcMint) {
+                [cpmmObservation] = PublicKey.findProgramAddressSync(
+                    [Buffer.from('observation'), cpmmPoolState.toBuffer()], cpmmProgram
+                );
+                [cpmmInputVault] = PublicKey.findProgramAddressSync(
+                    [Buffer.from('pool_vault'), cpmmPoolState.toBuffer(), usdcMint.toBuffer()], cpmmProgram
+                );
+                [cpmmOutputVault] = PublicKey.findProgramAddressSync(
+                    [Buffer.from('pool_vault'), cpmmPoolState.toBuffer(), mint.toBuffer()], cpmmProgram
+                );
+            }
+
             const accounts: ClaimAccounts | null =
-                usdcMint && usdcVault && usdcDip && usdcRewards && afhoVault && stakingVault
+                usdcMint && usdcVault && usdcDip && usdcRewards && afhoVault && stakingVault &&
+                cpmmPoolState && cpmmObservation && cpmmInputVault && cpmmOutputVault
                     ? {
                         ammState: ammStatePda,
                         offerList: offerListPda,
@@ -240,6 +290,10 @@ export function useAmmData(): OfferDeskData {
                         usdcDip,
                         usdcRewards,
                         ammAfhoVault: afhoVault,
+                        cpmmPoolState,
+                        cpmmObservation,
+                        cpmmInputVault,
+                        cpmmOutputVault,
                     }
                     : null;
 
