@@ -8,3 +8,5 @@ test-ledger
 .env
 **/*.env
 repomix-output.xml
+.aider*
+.codewhale*

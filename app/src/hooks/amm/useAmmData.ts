@@ -25,14 +25,31 @@ function decode(coder: BorshAccountsCoder, name: string, data: Uint8Array) {
     catch { return null; }
 }
 
-function pub(obj: Record<string, unknown> | null, name: string): PublicKey | null {
-    const v = obj?.[name];
+function pub(obj: Record<string, unknown> | null, ...names: string[]): PublicKey | null {
+    const v = field(obj, ...names);
     return v instanceof PublicKey ? v : null;
+}
+
+// Anchor 0.31 `anchor build` emits snake_case IDL field names, while
+// Program-based accessors (and older coders) use camelCase — accept both so
+// the desk works regardless of which IDL naming the build produced.
+function field<T>(obj: Record<string, unknown> | null | undefined, ...names: string[]): T | undefined {
+    for (const n of names) {
+        const v = obj?.[n];
+        if (v !== undefined && v !== null) return v as T;
+    }
+    return undefined;
 }
 
 function big(v: unknown): bigint {
     if (v === undefined || v === null) return 0n;
     return BigInt(v.toString());
+}
+
+// SPL/token-2022 token account `amount` (u64 LE at offset 64).
+function tokenAmount(data: Uint8Array | null): bigint | null {
+    if (!data || data.length < 72) return null;
+    return new DataView(data.buffer, data.byteOffset, data.byteLength).getBigUint64(64, true);
 }
 
 async function fetchConfig(): Promise<DeploymentConfig> {
@@ -67,6 +84,10 @@ export interface ClaimAccounts {
     usdcDip: PublicKey;
     usdcRewards: PublicKey;
     ammAfhoVault: PublicKey;
+    cpmmPoolState: PublicKey;
+    cpmmObservation: PublicKey;
+    cpmmInputVault: PublicKey;
+    cpmmOutputVault: PublicKey;
 }
 
 export interface OfferDeskData {
@@ -112,17 +133,17 @@ const INITIAL: Omit<OfferDeskData, 'refresh'> = {
 
 function parseTier(key: 'sml' | 'med' | 'big', tier: number, label: string, raw: unknown): OfferTierData {
     const o = (raw ?? {}) as Record<string, unknown>;
-    const lotTier = Number(o.lotSize ?? 0);
+    const lotTier = Number(field(o, 'lotSize', 'lot_size') ?? 0);
     return {
         key,
         tier,
         label,
         lotTier,
         lotTokens: lotTokens(lotTier),
-        vestingDays: Number(o.vestingDays ?? 0),
-        discountBps: Number(o.discountBps ?? 0),
-        remaining: Number(o.remaining ?? 0),
-        totalOffered: Number(o.totalOffered ?? 0),
+        vestingDays: Number(field(o, 'vestingDays', 'vesting_days') ?? 0),
+        discountBps: Number(field(o, 'discountBps', 'discount_bps') ?? 0),
+        remaining: Number(field(o, 'remaining') ?? 0),
+        totalOffered: Number(field(o, 'totalOffered', 'total_offered') ?? 0),
     };
 }
 
@@ -153,9 +174,9 @@ export function useAmmData(): OfferDeskData {
             if (!ammState) throw new Error('Failed to decode AmmState');
             const offerList = sheetInfo ? decode(ammCoder, 'OfferList', sheetInfo.data) : null;
 
-            const spotOracle = pub(ammState, 'spotOracle');
-            const crankProgram = pub(ammState, 'crankProgram');
-            const stakingPool = pub(ammState, 'stakingPool');
+            const spotOracle = pub(ammState, 'spotOracle', 'spot_oracle');
+            const crankProgram = pub(ammState, 'crankProgram', 'crank_program');
+            const stakingPool = pub(ammState, 'stakingPool', 'staking_pool');
             if (!spotOracle || !crankProgram || !stakingPool) {
                 throw new Error('AmmState missing oracle/crank/staking addresses');
             }
@@ -169,13 +190,35 @@ export function useAmmData(): OfferDeskData {
                     spotOracle,
                     marketStatusPda,
                     mint,
-                    pub(ammState, 'usdcMint') ?? PublicKey.default,
+                    pub(ammState, 'usdcMint', 'usdc_mint') ?? PublicKey.default,
                     stakingPool,
                 ]);
 
-            // spot oracle: raw-u64 mock price PDA, LE u64 at offset 0 (floor units)
+            // Live price (floor units). When the CPMM AFHO/USDC pool is pinned,
+            // use the pool's vault ratio (same fallback the on-chain TWAP uses
+            // while the ring warms); otherwise fall back to the mock PDA.
             let livePrice: bigint | null = null;
-            if (spotInfo && spotInfo.data.length >= 8) {
+            const cpmmPoolState = pub(ammState, 'cpmmPoolState', 'cpmm_pool_state');
+            const cpmmProgram = pub(ammState, 'cpmmProgram', 'cpmm_program');
+            const usdcMintKey = pub(ammState, 'usdcMint', 'usdc_mint');
+            if (cpmmPoolState && cpmmProgram && usdcMintKey) {
+                const [afhoVault] = PublicKey.findProgramAddressSync(
+                    [Buffer.from('pool_vault'), cpmmPoolState.toBuffer(), mint.toBuffer()],
+                    cpmmProgram
+                );
+                const [usdcVault] = PublicKey.findProgramAddressSync(
+                    [Buffer.from('pool_vault'), cpmmPoolState.toBuffer(), usdcMintKey.toBuffer()],
+                    cpmmProgram
+                );
+                const vaultInfos = await connection.getMultipleAccountsInfo([afhoVault, usdcVault]);
+                const baseRaw = tokenAmount(vaultInfos[0]?.data ?? null);
+                const quoteRaw = tokenAmount(vaultInfos[1]?.data ?? null);
+                if (baseRaw !== null && quoteRaw !== null && baseRaw > 0n) {
+                    // floor units: (usdc_raw × 1e6) / afho_raw
+                    livePrice = (quoteRaw * 1_000_000n) / baseRaw;
+                }
+            }
+            if (livePrice === null && spotInfo && spotInfo.data.length >= 8) {
                 livePrice = new DataView(spotInfo.data.buffer, spotInfo.data.byteOffset).getBigUint64(0, true);
             }
 
@@ -197,25 +240,43 @@ export function useAmmData(): OfferDeskData {
 
             const tiers = offerList
                 ? [
-                    parseTier('big', 2, 'Bulk lot', offerList.bigOffer),
-                    parseTier('med', 1, 'Medium lot', offerList.medOffer),
-                    parseTier('sml', 0, 'Small lot', offerList.smlOffer),
+                    parseTier('big', 2, 'Bulk lot', field(offerList, 'bigOffer', 'big_offer')),
+                    parseTier('med', 1, 'Medium lot', field(offerList, 'medOffer', 'med_offer')),
+                    parseTier('sml', 0, 'Small lot', field(offerList, 'smlOffer', 'sml_offer')),
                 ]
                 : [];
 
-            const sheetDay = offerList ? Number(big(offerList.dayIndex)) : null;
+            const sheetDay = offerList ? Number(big(field(offerList, 'dayIndex', 'day_index'))) : null;
             const offersLive = tiers.some((t) => t.remaining > 0);
             const nightGate = marketState === 1 || marketState === 2;
             const sheetStale = sheetDay !== null && tradingDay !== null && sheetDay !== tradingDay;
             const deskOpen = nightGate && offersLive && !sheetStale;
 
-            const usdcMint = pub(ammState, 'usdcMint');
-            const usdcVault = pub(ammState, 'usdcVault');
-            const usdcDip = pub(ammState, 'usdcDip');
-            const usdcRewards = pub(ammState, 'usdcRewards');
-            const afhoVault = pub(ammState, 'afhoVault');
+            const usdcMint = pub(ammState, 'usdcMint', 'usdc_mint');
+            const usdcVault = pub(ammState, 'usdcVault', 'usdc_vault');
+            const usdcDip = pub(ammState, 'usdcDip', 'usdc_dip');
+            const usdcRewards = pub(ammState, 'usdcRewards', 'usdc_rewards');
+            const afhoVault = pub(ammState, 'afhoVault', 'afho_vault');
+
+            // CPMM AFHO/USDC pool accounts for the claim's live-price read.
+            let cpmmObservation: PublicKey | null = null;
+            let cpmmInputVault: PublicKey | null = null;
+            let cpmmOutputVault: PublicKey | null = null;
+            if (cpmmPoolState && cpmmProgram && usdcMint) {
+                [cpmmObservation] = PublicKey.findProgramAddressSync(
+                    [Buffer.from('observation'), cpmmPoolState.toBuffer()], cpmmProgram
+                );
+                [cpmmInputVault] = PublicKey.findProgramAddressSync(
+                    [Buffer.from('pool_vault'), cpmmPoolState.toBuffer(), usdcMint.toBuffer()], cpmmProgram
+                );
+                [cpmmOutputVault] = PublicKey.findProgramAddressSync(
+                    [Buffer.from('pool_vault'), cpmmPoolState.toBuffer(), mint.toBuffer()], cpmmProgram
+                );
+            }
+
             const accounts: ClaimAccounts | null =
-                usdcMint && usdcVault && usdcDip && usdcRewards && afhoVault && stakingVault
+                usdcMint && usdcVault && usdcDip && usdcRewards && afhoVault && stakingVault &&
+                cpmmPoolState && cpmmObservation && cpmmInputVault && cpmmOutputVault
                     ? {
                         ammState: ammStatePda,
                         offerList: offerListPda,
@@ -229,13 +290,17 @@ export function useAmmData(): OfferDeskData {
                         usdcDip,
                         usdcRewards,
                         ammAfhoVault: afhoVault,
+                        cpmmPoolState,
+                        cpmmObservation,
+                        cpmmInputVault,
+                        cpmmOutputVault,
                     }
                     : null;
 
             setData({
                 tiers,
                 livePrice,
-                floorBasis: big(ammState.highestBuybackBasis),
+                floorBasis: big(field(ammState, 'highestBuybackBasis', 'highest_buyback_basis')),
                 afhoDecimals,
                 usdcDecimals,
                 marketState,
@@ -259,11 +324,69 @@ export function useAmmData(): OfferDeskData {
     }, [connection]);
 
     useEffect(() => {
-        // Deferred to a microtask so no setState runs synchronously inside the effect
-        void Promise.resolve().then(load);
-        const timer = setInterval(load, 30_000);
-        return () => clearInterval(timer);
-    }, [load]);
+        let cancelled = false;
+        const subscriptions: number[] = [];
+
+        async function setup() {
+            if (!connection) return;
+            const config = await fetchConfig();
+            if (cancelled) return;
+            const mint = pk(config.mint);
+            const ammProgram = pk(config.ammProgram) ?? AMM_PROGRAM_ID;
+            const crankProgram = pk(config.crankProgram);
+            if (!mint) return;
+
+            const [ammStatePda] = PublicKey.findProgramAddressSync(
+                [Buffer.from('amm_state'), mint.toBuffer()], ammProgram,
+            );
+            const [offerListPda] = PublicKey.findProgramAddressSync(
+                [Buffer.from('offer_list'), mint.toBuffer()], ammProgram,
+            );
+
+            const watch: PublicKey[] = [ammStatePda, offerListPda];
+            if (crankProgram) {
+                const [marketStatusPda] = PublicKey.findProgramAddressSync(
+                    [Buffer.from('market_status')], crankProgram,
+                );
+                watch.push(marketStatusPda);
+            }
+
+            // Live price source (mock spot-oracle PDA while the CPMM pool is
+            // unpinned) — resolve once so the desk also refreshes on price.
+            try {
+                const info = await connection.getAccountInfo(ammStatePda, 'confirmed');
+                const ammState = info ? decode(ammCoder, 'AmmState', info.data) : null;
+                const spotOracle = pub(ammState, 'spotOracle', 'spot_oracle');
+                if (spotOracle) watch.push(spotOracle);
+            } catch {
+                // amm_state not initialized yet — offerList/marketStatus watches
+                // still fire once the accounts come into existence.
+            }
+
+            for (const key of watch) {
+                subscriptions.push(
+                    connection.onAccountChange(
+                        key,
+                        () => {
+                            void load();
+                        },
+                        'confirmed',
+                    ),
+                );
+            }
+
+            void load();
+        }
+
+        void setup();
+
+        return () => {
+            cancelled = true;
+            for (const id of subscriptions) {
+                void connection.removeAccountChangeListener(id);
+            }
+        };
+    }, [connection, load]);
 
     return { ...data, refresh: load };
 }

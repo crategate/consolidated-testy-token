@@ -8,6 +8,9 @@ export interface StakePoolData {
     totalStaked: { toString(): string };
     maxMultiplierBps: number;
     posrTaxBps: number;
+    afterHoursPenaltyBps: number;
+    closedPenaltyBps: number;
+    haltedPenaltyBps: number;
     accruedRewardPerShare: { toString(): string };
     [key: string]: unknown;
 }
@@ -46,7 +49,25 @@ export function usePool(mint: PublicKey | null) {
     useEffect(() => {
         // Deferred to a microtask so no setState runs synchronously inside the effect
         void Promise.resolve().then(fetchPool);
-    }, [fetchPool]);
+
+        if (!connection || !mint) return;
+
+        const [poolPda] = PublicKey.findProgramAddressSync(
+            [Buffer.from('pool'), mint.toBuffer()],
+            STAKING_PROGRAM_ID,
+        );
+        const subscriptionId = connection.onAccountChange(
+            poolPda,
+            () => {
+                void fetchPool();
+            },
+            'confirmed',
+        );
+
+        return () => {
+            void connection.removeAccountChangeListener(subscriptionId);
+        };
+    }, [connection, mint, fetchPool]);
 
     return { pool, loading, refresh: fetchPool };
 }

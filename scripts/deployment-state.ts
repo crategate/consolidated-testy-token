@@ -22,8 +22,12 @@ type DeploymentState = {
     posrVault?: string;
     marketStatus?: string;
     marketStatusFeedId?: string;
-    priceFeedId?: string;
     oracleQuoteAccount?: string;
+    raydiumPool?: string;
+    raydiumAmmConfig?: string;
+    raydiumProgram?: string;
+    raydiumSolUsdcPool?: string;
+    raydiumSolUsdcConfig?: string;
 };
 
 const deploymentPath = path.join(process.cwd(), "app", "public", "deployment.json");

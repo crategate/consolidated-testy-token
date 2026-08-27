@@ -24,7 +24,7 @@ const argv = yargs(process.argv)
             type: "string",
             required: false,
             default: DEFAULT_FEED_ID,
-            description: "The hexadecimal ID of the price feed (get from Switchboard Explorer)",
+            description: "The hexadecimal ID of the market-status feed (get from Switchboard Explorer)",
         },
     })
     .parseSync();

@@ -8,6 +8,7 @@ import * as path from "path";
 import { PublicKey } from "@solana/web3.js";
 import {
     getAssociatedTokenAddressSync,
+    ASSOCIATED_TOKEN_PROGRAM_ID,
     TOKEN_PROGRAM_ID,
     TOKEN_2022_PROGRAM_ID,
 } from "@solana/spl-token";
@@ -46,12 +47,11 @@ async function main() {
         fs.readFileSync(path.join(process.cwd(), "app", "public", "deployment.json"), "utf-8")
     );
     const statusFeedId = deployment.marketStatusFeedId ?? process.env.FEED_ID!;
-    const priceFeedId = deployment.priceFeedId;
-    // Order pinned with feed-deploy: [0] = market status, [1] = price change
-    const feedIds = priceFeedId ? [statusFeedId, priceFeedId] : [statusFeedId];
+    // Status-only quote: the price feed is gone (momentum is a self-sampled
+    // close→close change computed on-chain from the spot oracle), so the
+    // quote covers [market_status] alone.
+    const feedIds = [statusFeedId];
     const [quoteAccount] = OracleQuote.getCanonicalPubkey(queue.pubkey, feedIds);
-    // Single-feed quote used when the price feed can't resolve yet (devnet / pre-indexing)
-    const [statusQuoteAccount] = OracleQuote.getCanonicalPubkey(queue.pubkey, [statusFeedId]);
 
     // AMM program client for firing make_offers at end of trading day
     const ammIdl = JSON.parse(
@@ -59,6 +59,7 @@ async function main() {
     );
     const ammProgram = new anchor.Program(ammIdl as anchor.Idl, provider);
     const afhoMint = new PublicKey(deployment.mint);
+    const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
     const ammPda = (seed: string) =>
         anchor.web3.PublicKey.findProgramAddressSync(
             [Buffer.from(seed), afhoMint.toBuffer()],
@@ -68,6 +69,87 @@ async function main() {
     const offerListPda = ammPda("offer_list");
     const metricsPda = ammPda("metrics");
     const acceptedOffersPda = ammPda("accepted_offers");
+
+    // Raydium CPMM accounts for the swap adapter. When the pool is pinned in
+    // state (set_cpmm_pool), derive the real CPMM PDAs; otherwise fall back to
+    // the mock pool so the required accounts still resolve.
+    function cpmmAccountsFor(
+        ammState: any,
+        usdcMint: PublicKey,
+        mockPool: PublicKey
+    ) {
+        if (!ammState.cpmmPoolState || !ammState.cpmmProgram) {
+            return {
+                cpmmPoolState: mockPool,
+                cpmmAmmConfig: mockPool,
+                cpmmInputVault: mockPool,
+                cpmmOutputVault: mockPool,
+                cpmmObservation: mockPool,
+                cpmmAuthority: mockPool,
+            };
+        }
+        const program = new PublicKey(ammState.cpmmProgram);
+        const pool = new PublicKey(ammState.cpmmPoolState);
+        const [authority] = PublicKey.findProgramAddressSync(
+            [Buffer.from("vault_and_lp_mint_auth_seed")],
+            program
+        );
+        const [observation] = PublicKey.findProgramAddressSync(
+            [Buffer.from("observation"), pool.toBuffer()],
+            program
+        );
+        const [inputVault] = PublicKey.findProgramAddressSync(
+            [Buffer.from("pool_vault"), pool.toBuffer(), usdcMint.toBuffer()],
+            program
+        );
+        const [outputVault] = PublicKey.findProgramAddressSync(
+            [Buffer.from("pool_vault"), pool.toBuffer(), afhoMint.toBuffer()],
+            program
+        );
+        return {
+            cpmmPoolState: pool,
+            cpmmAmmConfig: new PublicKey(ammState.cpmmAmmConfig),
+            cpmmInputVault: inputVault,
+            cpmmOutputVault: outputVault,
+            cpmmObservation: observation,
+            cpmmAuthority: authority,
+        };
+    }
+
+    // Raydium SOL/USDC CPMM accounts for bounty_top_up / offer_claim_sol.
+    // Returns null when the pool isn't pinned in state.
+    function solUsdcAccountsFor(ammState: any) {
+        if (!ammState.cpmmSolUsdcPool || !ammState.cpmmProgram) {
+            return null;
+        }
+        const program = new PublicKey(ammState.cpmmProgram);
+        const pool = new PublicKey(ammState.cpmmSolUsdcPool);
+        const usdcMint = new PublicKey(ammState.usdcMint);
+        const [authority] = PublicKey.findProgramAddressSync(
+            [Buffer.from("vault_and_lp_mint_auth_seed")],
+            program
+        );
+        const [observation] = PublicKey.findProgramAddressSync(
+            [Buffer.from("observation"), pool.toBuffer()],
+            program
+        );
+        const [inputVault] = PublicKey.findProgramAddressSync(
+            [Buffer.from("pool_vault"), pool.toBuffer(), WSOL_MINT.toBuffer()],
+            program
+        );
+        const [outputVault] = PublicKey.findProgramAddressSync(
+            [Buffer.from("pool_vault"), pool.toBuffer(), usdcMint.toBuffer()],
+            program
+        );
+        return {
+            solUsdcPoolState: pool,
+            solUsdcAmmConfig: new PublicKey(ammState.cpmmSolUsdcConfig),
+            solUsdcInputVault: inputVault,
+            solUsdcOutputVault: outputVault,
+            solUsdcObservation: observation,
+            solUsdcAuthority: authority,
+        };
+    }
 
     console.log("🔍 Keeper started");
     console.log("Program ID:", programId.toBase58());
@@ -96,13 +178,7 @@ async function main() {
         try {
             const marketStatus = await program.account.marketStatus.fetch(marketStatusPda);
             const bountyConfig = await program.account.bountyConfig.fetch(bountyConfigPda);
-            // Prefer the combined [status, price] quote; fall back to the status-only one
-            let activeQuote = quoteAccount;
             let quoteAccountInfo = await connection.getAccountInfo(quoteAccount);
-            if (!quoteAccountInfo && feedIds.length > 1) {
-                activeQuote = statusQuoteAccount;
-                quoteAccountInfo = await connection.getAccountInfo(statusQuoteAccount);
-            }
 
             if (!quoteAccountInfo) {
                 console.log("Quote account not found, sleeping...");
@@ -119,29 +195,14 @@ async function main() {
                 const overrides = {
                     MASSIVE_API_KEY: process.env.MASSIVE_API_KEY!,
                     EARNINGSAPI_KEY: process.env.EARNINGSAPI_KEY!,
-                    JUP_API_KEY: process.env.JUP_API_KEY!,
                 };
-                let ixs;
-                let crankQuote = activeQuote;
-                try {
-                    ixs = await queue.fetchManagedUpdateIxs(crossbar, feedIds, {
-                        variableOverrides: overrides,
-                        payer: keypair.publicKey,
-                    });
-                    crankQuote = quoteAccount;
-                } catch (e) {
-                    // Price feed won't resolve until Jupiter indexes the mint (always on devnet).
-                    // Fall back to status-only so the market status crank never stalls.
-                    if (feedIds.length < 2) throw e;
-                    console.warn("⚠️ Combined update failed, falling back to status-only:", (e as Error).message);
-                    ixs = await queue.fetchManagedUpdateIxs(crossbar, [statusFeedId], {
-                        variableOverrides: overrides,
-                        payer: keypair.publicKey,
-                    });
-                    crankQuote = statusQuoteAccount;
-                }
+                const ixs = await queue.fetchManagedUpdateIxs(crossbar, feedIds, {
+                    variableOverrides: overrides,
+                    payer: keypair.publicKey,
+                });
+                const crankQuote = quoteAccount;
 
-                const crankIx = await program.methods.permissionlessCrank().accountsStrict({
+                const crankAccounts: any = {
                     cranker: keypair.publicKey,
                     bountyConfig: bountyConfigPda,
                     bountyVault: bountyVaultPda,
@@ -149,7 +210,27 @@ async function main() {
                     clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
                     marketStatus: marketStatusPda,
                     systemProgram: anchor.web3.SystemProgram.programId,
-                }).instruction();
+                };
+                if (
+                    bountyConfig.solUsdcPool &&
+                    !new PublicKey(bountyConfig.solUsdcPool).equals(PublicKey.default)
+                ) {
+                    const cpmmProgram = new PublicKey(bountyConfig.cpmmProgram);
+                    const pool = new PublicKey(bountyConfig.solUsdcPool);
+                    const usdcMint = new PublicKey(bountyConfig.usdcMint);
+                    const [wsolVault] = PublicKey.findProgramAddressSync(
+                        [Buffer.from("pool_vault"), pool.toBuffer(), WSOL_MINT.toBuffer()],
+                        cpmmProgram
+                    );
+                    const [usdcVault] = PublicKey.findProgramAddressSync(
+                        [Buffer.from("pool_vault"), pool.toBuffer(), usdcMint.toBuffer()],
+                        cpmmProgram
+                    );
+                    crankAccounts.solUsdcWsolVault = wsolVault;
+                    crankAccounts.solUsdcUsdcVault = usdcVault;
+                }
+
+                const crankIx = await program.methods.permissionlessCrank().accountsStrict(crankAccounts).instruction();
 
                 ixs.push(crankIx);
 
@@ -184,6 +265,12 @@ async function main() {
                     console.log(`📈 Day ended (${prevState} → ${newStatus.currentState}). Firing update_tradeday_stats + make_offers...`);
                     try {
                         const ammStateForStats = await (ammProgram.account as any).ammState.fetch(ammStatePda);
+                        const statsUsdcMint = new PublicKey(ammStateForStats.usdcMint);
+                        const statsMockPool = PublicKey.findProgramAddressSync(
+                            [Buffer.from("mock_pool"), afhoMint.toBuffer()],
+                            new PublicKey(ammStateForStats.dexProgram)
+                        )[0];
+                        const statsCpmm = cpmmAccountsFor(ammStateForStats, statsUsdcMint, statsMockPool);
                         const statsIx = await ammProgram.methods
                             .updateTradedayStats()
                             .accountsStrict({
@@ -191,7 +278,11 @@ async function main() {
                                 ammState: ammStatePda,
                                 marketMetrics: metricsPda,
                                 marketStatus: marketStatusPda,
-                                priceOracle: quoteAccount,
+                                spotOracle: ammStateForStats.spotOracle,
+                                cpmmPoolState: statsCpmm.cpmmPoolState,
+                                cpmmObservation: statsCpmm.cpmmObservation,
+                                cpmmInputVault: statsCpmm.cpmmInputVault,
+                                cpmmOutputVault: statsCpmm.cpmmOutputVault,
                                 stakingPool: ammStateForStats.stakingPool,
                                 afhoMint,
                             })
@@ -256,10 +347,17 @@ async function main() {
                         // configured dex_program (devnet stub; MAINNET: the real
                         // absolute-price account in highest_buyback_basis units).
                         const ammStateForCalc = await (ammProgram.account as any).ammState.fetch(ammStatePda);
+                        const calcUsdcMint = new PublicKey(ammStateForCalc.usdcMint);
+                        const calcDexProgramId = new PublicKey(ammStateForCalc.dexProgram);
+                        const [calcMockPool] = PublicKey.findProgramAddressSync(
+                            [Buffer.from("mock_pool"), afhoMint.toBuffer()],
+                            calcDexProgramId
+                        );
                         const [mockPricePda] = PublicKey.findProgramAddressSync(
                             [Buffer.from("mock_price"), afhoMint.toBuffer()],
-                            new PublicKey(ammStateForCalc.dexProgram)
+                            calcDexProgramId
                         );
+                        const calcCpmm = cpmmAccountsFor(ammStateForCalc, calcUsdcMint, calcMockPool);
                         const calcIx = await ammProgram.methods
                             .calcCompletedOffers()
                             .accountsStrict({
@@ -269,6 +367,10 @@ async function main() {
                                 marketStatus: marketStatusPda,
                                 acceptedOffers: acceptedOffersPda,
                                 priceOracle: mockPricePda,
+                                cpmmPoolState: calcCpmm.cpmmPoolState,
+                                cpmmObservation: calcCpmm.cpmmObservation,
+                                cpmmInputVault: calcCpmm.cpmmInputVault,
+                                cpmmOutputVault: calcCpmm.cpmmOutputVault,
                             })
                             .instruction();
                         const calcTx = await sb.asV0Tx({
@@ -319,13 +421,16 @@ async function main() {
                                 usdcRewards: ammStateForDist.usdcRewards,
                                 solRewards: ammStateForDist.solRewards,
                                 solOracle: ammStateForDist.solOracle,
+                                spotOracle: ammStateForDist.spotOracle,
                                 afhoVault: ammStateForDist.afhoVault,
                                 afhoMint,
+                                usdcMint,
                                 poolState,
                                 poolAfho,
                                 poolUsdc,
                                 poolSol: poolState,
                                 dexProgram: dexProgramId,
+                                ...cpmmAccountsFor(ammStateForDist, usdcMint, poolState),
                                 stakingProgram: stakingProgramId,
                                 stakingPool: stakingPoolPda,
                                 stakingRewardVault,
@@ -383,12 +488,15 @@ async function main() {
                             afhoVault: ammState.afhoVault,
                             solVault: ammState.solVault,
                             solOracle: ammState.solOracle,
+                            spotOracle: ammState.spotOracle,
                             afhoMint,
+                            usdcMint,
                             poolState,
                             poolAfho,
                             poolUsdc,
                             poolSol: poolState,
                             dexProgram: dexProgramId,
+                            ...cpmmAccountsFor(ammState, usdcMint, poolState),
                             tokenProgram: TOKEN_PROGRAM_ID,
                             token2022Program: TOKEN_2022_PROGRAM_ID,
                             systemProgram: anchor.web3.SystemProgram.programId,
@@ -443,11 +551,13 @@ async function main() {
                         solDip: ammState.solDip,
                         afhoVault: ammState.afhoVault,
                         afhoMint,
+                        usdcMint,
                         poolState,
                         poolAfho,
                         poolUsdc,
                         poolSol: poolState,
                         dexProgram: dexProgramId,
+                        ...cpmmAccountsFor(ammState, usdcMint, poolState),
                         tokenProgram: TOKEN_PROGRAM_ID,
                         token2022Program: TOKEN_2022_PROGRAM_ID,
                         systemProgram: anchor.web3.SystemProgram.programId,
@@ -465,11 +575,71 @@ async function main() {
                 } else {
                     const dipSig = await connection.sendTransaction(dipTx);
                     await connection.confirmTransaction(dipSig, "confirmed");
-                    console.log(`✅ buy_the_dip slice fired! ${dipSig}`);
+                    // NB: a successful tx is usually a no-op (ring sampling / no dip
+                    // / pacing) — the on-chain trigger decides whether a slice is spent.
+                    console.log(`✅ buy_the_dip called (slice only on a real ≥3% dip): ${dipSig}`);
                 }
             } catch (e) {
                 // Never let a dip attempt kill the crank loop
                 console.error("❌ buy_the_dip attempt failed:", (e as Error).message);
+            }
+
+            // bounty_top_up: attempt every loop — permissionless, and the
+            // on-chain low-water check turns healthy vaults into a cheap no-op.
+            try {
+                const ammState = await (ammProgram.account as any).ammState.fetch(ammStatePda);
+                const solUsdc = solUsdcAccountsFor(ammState);
+                const afhoUsdc = cpmmAccountsFor(
+                    ammState,
+                    new PublicKey(ammState.usdcMint),
+                    PublicKey.default
+                );
+                if (solUsdc && ammState.cpmmPoolState && !new PublicKey(ammState.cpmmPoolState).equals(PublicKey.default)) {
+                    const usdcMint = new PublicKey(ammState.usdcMint);
+                    const afhoMint = new PublicKey(ammState.afhoMint);
+                    const wsolVault = getAssociatedTokenAddressSync(WSOL_MINT, ammStatePda, true);
+                    const topupIx = await ammProgram.methods
+                        .bountyTopUp()
+                        .accountsStrict({
+                            cranker: keypair.publicKey,
+                            ammState: ammStatePda,
+                            bountyVault: bountyVaultPda,
+                            afhoVault: ammState.afhoVault,
+                            usdcVault: ammState.usdcVault,
+                            afhoMint,
+                            usdcMint,
+                            wsolVault,
+                            wrappedSolMint: WSOL_MINT,
+                            cpmmPoolState: afhoUsdc.cpmmPoolState,
+                            cpmmAmmConfig: afhoUsdc.cpmmAmmConfig,
+                            cpmmInputVault: afhoUsdc.cpmmInputVault,
+                            cpmmOutputVault: afhoUsdc.cpmmOutputVault,
+                            cpmmObservation: afhoUsdc.cpmmObservation,
+                            cpmmAuthority: afhoUsdc.cpmmAuthority,
+                            ...solUsdc,
+                            associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+                            tokenProgram: TOKEN_PROGRAM_ID,
+                            token2022Program: TOKEN_2022_PROGRAM_ID,
+                            systemProgram: anchor.web3.SystemProgram.programId,
+                        })
+                        .instruction();
+                    const topupTx = await sb.asV0Tx({
+                        connection,
+                        ixs: [topupIx],
+                        signers: [keypair],
+                        computeUnitPrice: 20_000,
+                    });
+                    const topupSim = await connection.simulateTransaction(topupTx);
+                    if (topupSim.value.err) {
+                        console.log("bounty_top_up skipped (healthy / no USDC / already topped).");
+                    } else {
+                        const topupSig = await connection.sendTransaction(topupTx);
+                        await connection.confirmTransaction(topupSig, "confirmed");
+                        console.log(`✅ bounty_top_up fired: ${topupSig}`);
+                    }
+                }
+            } catch (e) {
+                console.error("❌ bounty_top_up attempt failed:", (e as Error).message);
             }
         } catch (e) {
             console.error("❌ Crank attempt failed:", e);

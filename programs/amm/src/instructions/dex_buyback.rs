@@ -3,8 +3,6 @@ use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 use mock_dex_pool::cpi::accounts::SendAfho;
 
-use super::offer_claim::read_live_price;
-
 // Minimum slots between slices (~1 min) — pacing so one crank burst can't
 // drain the day's budget in a single block.
 const MIN_SLICE_SLOTS: u64 = 150;
@@ -13,6 +11,12 @@ const MIN_SLICE_SLOTS: u64 = 150;
 // lands in the first hour on average; the 5% tail spends the rest by close.
 const FIRST_HOUR_WEIGHT_BPS: u64 = 190;
 const TAIL_WEIGHT_BPS: u64 = 500;
+
+// M3 — per-fill sanity band vs the spot oracle: a fill whose exec price
+// overpays the oracle by more than this reverts the whole tx (the swap rolls
+// back with it), and the floor ratchets only inside the band — a price spike
+// into a fill can't pin the offer-desk floor above market.
+pub(crate) const MAX_SLIPPAGE_BPS: u64 = 500; // 5%
 
 #[derive(Accounts)]
 pub struct DexBuyback<'info> {
@@ -45,7 +49,14 @@ pub struct DexBuyback<'info> {
     /// devnet; real SOL/USD feed at mainnet)
     #[account(address = amm_state.sol_oracle)]
     pub sol_oracle: UncheckedAccount<'info>,
+    /// CHECK: live absolute spot price — the M3 slippage band for every fill
+    /// is measured against this (raw-u64 mock PDA on devnet; real price
+    /// source at mainnet). Address pinned at init.
+    #[account(address = amm_state.spot_oracle)]
+    pub spot_oracle: UncheckedAccount<'info>,
     pub afho_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(address = amm_state.usdc_mint)]
+    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
 
     // --- swap adapter accounts (mock-dex-pool today; real DEX at launch) ---
     /// CHECK: pool state PDA, verified against the configured dex_program
@@ -56,13 +67,27 @@ pub struct DexBuyback<'info> {
         bump
     )]
     pub pool_state: UncheckedAccount<'info>,
-    #[account(mut, constraint = pool_afho.mint == amm_state.afho_mint)]
+    // H1 — the swap accounts are pinned to the pool's own topology so a
+    // compromised keeper can't point the in-leg at itself and pocket the
+    // day's spend: pool token accounts are the pool PDA's ATAs (AFHO on
+    // Token-2022, USDC on classic SPL), pool_sol is the pool PDA itself.
+    #[account(
+        mut,
+        associated_token::mint = afho_mint,
+        associated_token::authority = pool_state,
+        associated_token::token_program = token_2022_program,
+    )]
     pub pool_afho: Box<InterfaceAccount<'info, TokenAccount>>,
-    #[account(mut, constraint = pool_usdc.mint == amm_state.usdc_mint)]
+    #[account(
+        mut,
+        associated_token::mint = usdc_mint,
+        associated_token::authority = pool_state,
+        associated_token::token_program = token_program,
+    )]
     pub pool_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
-    /// CHECK: lamport destination for the SOL leg (any system account; the
-    /// mock ignores it, a real pool would constrain this)
-    #[account(mut)]
+    /// CHECK: lamport destination for the SOL leg — the pool PDA itself
+    /// (mock topology; the real-DEX adapter re-pins this)
+    #[account(mut, address = pool_state.key())]
     pub pool_sol: AccountInfo<'info>,
     /// CHECK: configured swap target program
     #[account(address = amm_state.dex_program)]
@@ -73,6 +98,24 @@ pub struct DexBuyback<'info> {
     /// Token-2022 (AFHO out-leg via the pool)
     pub token_2022_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
+
+    // --- Raydium CPMM accounts (None while the mock adapter is active) ---
+    /// CHECK: CPMM pool state PDA (pinned in state via set_cpmm_pool)
+    #[account(mut)]
+    pub cpmm_pool_state: UncheckedAccount<'info>,
+    /// CHECK: CPMM amm_config (pinned in state via set_cpmm_pool)
+    pub cpmm_amm_config: UncheckedAccount<'info>,
+    /// CHECK: pool's input (USDC) vault
+    #[account(mut)]
+    pub cpmm_input_vault: UncheckedAccount<'info>,
+    /// CHECK: pool's output (AFHO) vault
+    #[account(mut)]
+    pub cpmm_output_vault: UncheckedAccount<'info>,
+    /// CHECK: pool's observation (TWAP) account
+    #[account(mut)]
+    pub cpmm_observation: UncheckedAccount<'info>,
+    /// CHECK: pool authority PDA (signs vault/LP-mint transfers)
+    pub cpmm_authority: UncheckedAccount<'info>,
 }
 
 // AccountInfo clones handed to the swap adapter, collected before amm_state
@@ -90,10 +133,18 @@ pub(crate) struct SwapInfos<'info> {
     pub pool_usdc: AccountInfo<'info>,
     pub pool_sol: AccountInfo<'info>,
     pub afho_mint: AccountInfo<'info>,
+    pub usdc_mint: AccountInfo<'info>,
     pub dex_program: AccountInfo<'info>,
     pub token_program: AccountInfo<'info>,
     pub token_2022_program: AccountInfo<'info>,
     pub system_program: AccountInfo<'info>,
+    // Raydium CPMM accounts (None while the mock adapter is active).
+    pub cpmm_pool_state: AccountInfo<'info>,
+    pub cpmm_amm_config: AccountInfo<'info>,
+    pub cpmm_input_vault: AccountInfo<'info>,
+    pub cpmm_output_vault: AccountInfo<'info>,
+    pub cpmm_observation: AccountInfo<'info>,
+    pub cpmm_authority: AccountInfo<'info>,
 }
 
 pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
@@ -107,10 +158,17 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
         pool_usdc: ctx.accounts.pool_usdc.to_account_info(),
         pool_sol: ctx.accounts.pool_sol.to_account_info(),
         afho_mint: ctx.accounts.afho_mint.to_account_info(),
+        usdc_mint: ctx.accounts.usdc_mint.to_account_info(),
         dex_program: ctx.accounts.dex_program.to_account_info(),
         token_program: ctx.accounts.token_program.to_account_info(),
         token_2022_program: ctx.accounts.token_2022_program.to_account_info(),
         system_program: ctx.accounts.system_program.to_account_info(),
+        cpmm_pool_state: ctx.accounts.cpmm_pool_state.to_account_info(),
+        cpmm_amm_config: ctx.accounts.cpmm_amm_config.to_account_info(),
+        cpmm_input_vault: ctx.accounts.cpmm_input_vault.to_account_info(),
+        cpmm_output_vault: ctx.accounts.cpmm_output_vault.to_account_info(),
+        cpmm_observation: ctx.accounts.cpmm_observation.to_account_info(),
+        cpmm_authority: ctx.accounts.cpmm_authority.to_account_info(),
     };
 
     let amm_state = &mut ctx.accounts.amm_state;
@@ -118,6 +176,26 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
     require!(
         caller == amm_state.authority || caller == amm_state.keeper,
         ErrorCode::UnauthorizedCaller
+    );
+
+    // H1 re-pin: once the CPMM pool is pinned in state, the swap/pricing
+    // accounts must be the pool's own derived PDAs.
+    require!(
+        super::raydium::pinned_pool_accounts_valid(
+            amm_state.cpmm_pool_state != Pubkey::default(),
+            amm_state.cpmm_program,
+            amm_state.cpmm_pool_state,
+            amm_state.cpmm_amm_config,
+            ctx.accounts.afho_mint.key(),
+            ctx.accounts.usdc_mint.key(),
+            &ctx.accounts.cpmm_pool_state.to_account_info(),
+            &ctx.accounts.cpmm_amm_config.to_account_info(),
+            &ctx.accounts.cpmm_output_vault.to_account_info(),
+            &ctx.accounts.cpmm_input_vault.to_account_info(),
+            &ctx.accounts.cpmm_observation.to_account_info(),
+            &ctx.accounts.cpmm_authority.to_account_info(),
+        ),
+        ErrorCode::InvalidPoolAccount
     );
 
     // MarketStatus layout: disc(8) + current_state(1) + timestamp(8) + trading_day_index(8)
@@ -137,30 +215,15 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
     require!(had_fills, ErrorCode::NoFillsToBuyBack);
 
     let clock = Clock::get()?;
-    // Rent floor for the space-0 system PDA sol_vault — never buy back with
-    // the lamports that keep the account alive.
-    let sol_floor = Rent::get()?.minimum_balance(0);
 
-    // New trading day: snapshot the vault balances as today's budget. Unspent
-    // budget simply stays in the vaults — rollover needs no bookkeeping.
+    // New trading day: snapshot the USDC vault balance as today's budget.
+    // Unspent budget stays in the vault — rollover needs no bookkeeping.
     if amm_state.bb_day_index != current_day {
         amm_state.bb_day_index = current_day;
         amm_state.bb_budget_usdc = ctx.accounts.usdc_vault.amount;
         amm_state.bb_spent_usdc = 0;
-        amm_state.bb_budget_sol = ctx
-            .accounts
-            .sol_vault
-            .lamports()
-            .saturating_sub(sol_floor);
-        amm_state.bb_spent_sol = 0;
         amm_state.bb_slice_count = 0;
         amm_state.bb_last_slot = 0;
-        msg!(
-            "buyback day {} budget: {} usdc raw, {} sol lamports",
-            current_day,
-            amm_state.bb_budget_usdc,
-            amm_state.bb_budget_sol,
-        );
     }
 
     // Pacing: at most one slice per MIN_SLICE_SLOTS.
@@ -172,12 +235,8 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
         .bb_budget_usdc
         .saturating_sub(amm_state.bb_spent_usdc)
         .min(ctx.accounts.usdc_vault.amount);
-    let remaining_sol = amm_state
-        .bb_budget_sol
-        .saturating_sub(amm_state.bb_spent_sol)
-        .min(ctx.accounts.sol_vault.lamports().saturating_sub(sol_floor));
-    if remaining_usdc == 0 && remaining_sol == 0 {
-        return Ok(()); // day's budget exhausted; leftovers (rounding) roll over
+    if remaining_usdc == 0 {
+        return Ok(());
     }
 
     // Slice size: front-loaded weight × pseudo-random factor 0.5x–1.5x derived
@@ -194,70 +253,64 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
 
     let mint_key = amm_state.afho_mint;
     let state_bump = amm_state.bump;
-    let sol_vault_bump = amm_state.sol_vault_bump;
 
-    // ---- USDC leg ----
+    // USDC leg.
     let slice_usdc = ((remaining_usdc as u128 * weight_bps as u128 * factor_bps as u128)
         / 100_000_000u128) as u64;
     let slice_usdc = slice_usdc.min(remaining_usdc);
     if slice_usdc > 0 {
+        // Live AFHO/USDC price in floor units: pool TWAP (vault-ratio
+        // fallback) when the CPMM pool is pinned, else the mock oracle PDA.
+        let spot = super::raydium::read_price(
+            amm_state.cpmm_pool_state != Pubkey::default(),
+            &ctx.accounts.cpmm_pool_state.to_account_info(),
+            &ctx.accounts.cpmm_observation.to_account_info(),
+            &ctx.accounts.cpmm_output_vault.to_account_info(), // AFHO (base) vault
+            &ctx.accounts.cpmm_input_vault.to_account_info(),  // USDC (quote) vault
+            &ctx.accounts.spot_oracle.to_account_info(),
+            &ctx.accounts.afho_mint.key(),
+            &ctx.accounts.usdc_mint.key(),
+            clock.unix_timestamp as u64,
+        )
+        .ok_or(ErrorCode::InvalidOracle)?;
+        // min-out for the CPMM swap: bound the realized price inside the same
+        // M3 band used post-swap.
+        let min_out = if spot > 0 {
+            (slice_usdc as u128 * 1_000_000u128 * 10_000u128
+                / (spot as u128 * (10_000 + MAX_SLIPPAGE_BPS) as u128)) as u64
+        } else {
+            0
+        };
         let before = ctx.accounts.afho_vault.amount;
         execute_swap(
             &swap,
             mint_key,
             state_bump,
-            b"amm_sol_vault",
-            sol_vault_bump,
             slice_usdc,
-            false,
+            min_out,
+            amm_state.cpmm_program,
+            amm_state.cpmm_pool_state != Pubkey::default(),
         )?;
         ctx.accounts.afho_vault.reload()?;
         let out = ctx.accounts.afho_vault.amount.saturating_sub(before);
         if out > 0 {
-            ratchet_buyback_basis(amm_state, (slice_usdc as u128 * 1_000_000 / out as u128) as u64);
+            ratchet_within_band(
+                amm_state,
+                (slice_usdc as u128 * 1_000_000 / out as u128) as u64,
+                spot,
+            )?;
         }
         amm_state.bb_spent_usdc += slice_usdc;
-    }
-
-    // ---- SOL leg ----
-    let slice_sol = ((remaining_sol as u128 * weight_bps as u128 * factor_bps as u128)
-        / 100_000_000u128) as u64;
-    let slice_sol = slice_sol.min(remaining_sol);
-    if slice_sol > 0 {
-        let before = ctx.accounts.afho_vault.amount;
-        execute_swap(
-            &swap,
-            mint_key,
-            state_bump,
-            b"amm_sol_vault",
-            sol_vault_bump,
-            slice_sol,
-            true,
-        )?;
-        ctx.accounts.afho_vault.reload()?;
-        let out = ctx.accounts.afho_vault.amount.saturating_sub(before);
-        if out > 0 {
-            // Ratchet in USDC units: lamports × sol_price / out equals
-            // (usdc_raw × 1e6) / afho_raw — same units as the USDC leg.
-            let sol_price = read_live_price(&ctx.accounts.sol_oracle.to_account_info())?;
-            require!(sol_price > 0, ErrorCode::InvalidOracle);
-            let px = (slice_sol as u128).saturating_mul(sol_price as u128) / out as u128;
-            ratchet_buyback_basis(amm_state, u64::try_from(px).unwrap_or(u64::MAX));
-        }
-        amm_state.bb_spent_sol += slice_sol;
     }
 
     amm_state.bb_slice_count += 1;
     amm_state.bb_last_slot = clock.slot;
     msg!(
-        "buyback slice {}: {} usdc, {} sol (spent {}/{} usdc, {}/{} sol)",
+        "buyback slice {}: {} usdc (spent {}/{})",
         amm_state.bb_slice_count,
         slice_usdc,
-        slice_sol,
         amm_state.bb_spent_usdc,
         amm_state.bb_budget_usdc,
-        amm_state.bb_spent_sol,
-        amm_state.bb_budget_sol,
     );
     Ok(())
 }
@@ -273,41 +326,71 @@ pub(crate) fn execute_swap(
     swap: &SwapInfos,
     mint_key: Pubkey,
     state_bump: u8,
-    sol_vault_seed: &[u8],
-    sol_vault_bump: u8,
     amount_in: u64,
-    sol_in: bool,
+    min_amount_out: u64,
+    cpmm_program: Pubkey,
+    cpmm_active: bool,
 ) -> Result<()> {
-    if sol_in {
-        let seeds: &[&[u8]] = &[sol_vault_seed, mint_key.as_ref(), &[sol_vault_bump]];
-        anchor_lang::solana_program::program::invoke_signed(
-            &anchor_lang::solana_program::system_instruction::transfer(
-                &swap.sol_vault.key(),
-                &swap.pool_sol.key(),
-                amount_in,
-            ),
-            &[
-                swap.sol_vault.to_account_info(),
-                swap.pool_sol.to_account_info(),
-                swap.system_program.to_account_info(),
-            ],
-            &[seeds],
-        )?;
-    } else {
-        let seeds: &[&[u8]] = &[b"amm_state", mint_key.as_ref(), &[state_bump]];
-        anchor_spl::token_interface::transfer(
-            CpiContext::new_with_signer(
-                swap.token_program.to_account_info(),
-                anchor_spl::token_interface::Transfer {
-                    from: swap.usdc_vault.to_account_info(),
-                    to: swap.pool_usdc.to_account_info(),
-                    authority: swap.amm_state.to_account_info(),
-                },
-                &[seeds],
-            ),
+    // Raydium CPMM path (USDC → AFHO). When the CPMM pool is pinned, route
+    // through swap_base_input instead of the mock.
+    if cpmm_active {
+        let pool_state = &swap.cpmm_pool_state;
+        let amm_config = &swap.cpmm_amm_config;
+        let input_vault = &swap.cpmm_input_vault;
+        let output_vault = &swap.cpmm_output_vault;
+        let observation = &swap.cpmm_observation;
+        let authority = &swap.cpmm_authority;
+        let ix = crate::instructions::raydium::cpmm_swap_base_input_ix(
+            cpmm_program,
+            swap.amm_state.key(),          // payer (PDA signs)
+            authority.key(),
+            amm_config.key(),
+            pool_state.key(),
+            swap.usdc_vault.key(),         // input_token_account
+            swap.afho_vault.key(),         // output_token_account
+            input_vault.key(),
+            output_vault.key(),
+            swap.token_program.key(),      // input token program (USDC)
+            swap.token_2022_program.key(), // output token program (AFHO)
+            swap.usdc_mint.key(),          // input token mint
+            swap.afho_mint.key(),          // output token mint
+            observation.key(),
             amount_in,
-        )?;
+            min_amount_out,
+        );
+        let seeds: &[&[u8]] = &[b"amm_state", mint_key.as_ref(), &[state_bump]];
+        let infos = vec![
+            swap.amm_state.clone(),
+            authority.clone(),
+            amm_config.clone(),
+            pool_state.clone(),
+            swap.usdc_vault.clone(),
+            swap.afho_vault.clone(),
+            input_vault.clone(),
+            output_vault.clone(),
+            swap.token_program.to_account_info(),
+            swap.token_2022_program.to_account_info(),
+            swap.usdc_mint.clone(),
+            swap.afho_mint.clone(),
+            observation.clone(),
+        ];
+        anchor_lang::solana_program::program::invoke_signed(&ix, &infos, &[seeds])?;
+        return Ok(());
     }
+
+    let seeds: &[&[u8]] = &[b"amm_state", mint_key.as_ref(), &[state_bump]];
+    anchor_spl::token_interface::transfer(
+        CpiContext::new_with_signer(
+            swap.token_program.to_account_info(),
+            anchor_spl::token_interface::Transfer {
+                from: swap.usdc_vault.to_account_info(),
+                to: swap.pool_usdc.to_account_info(),
+                authority: swap.amm_state.to_account_info(),
+            },
+            &[seeds],
+        ),
+        amount_in,
+    )?;
     mock_dex_pool::cpi::send_afho(
         CpiContext::new(
             swap.dex_program.to_account_info(),
@@ -320,7 +403,7 @@ pub(crate) fn execute_swap(
             },
         ),
         amount_in,
-        sol_in,
+        false,
     )?;
     Ok(())
 }
@@ -338,6 +421,24 @@ pub(crate) fn ratchet_buyback_basis(amm_state: &mut AmmState, executed_price: u6
     }
 }
 
+// M3 — gate a fill's ratchet on the spot-oracle band (MAX_SLIPPAGE_BPS).
+// Overpaying fills are a hard error, reverting the whole tx — the in-leg
+// transfer and the out-leg CPI roll back with it. In-band fills ratchet;
+// underpaying fills (exec below oracle) ratchet too — they can only move the
+// floor up BELOW market, never pin it above. Missing/unreadable/zero oracle
+// fails closed (read_live_price / the oracle_price check).
+pub(crate) fn ratchet_within_band(
+    amm_state: &mut AmmState,
+    exec_price: u64,
+    oracle_price: u64,
+) -> Result<()> {
+    require!(oracle_price > 0, ErrorCode::InvalidOracle);
+    let cap = (oracle_price as u128 * (10_000 + MAX_SLIPPAGE_BPS) as u128 / 10_000) as u64;
+    require!(exec_price <= cap, ErrorCode::SlippageExceeded);
+    ratchet_buyback_basis(amm_state, exec_price);
+    Ok(())
+}
+
 #[error_code]
 pub enum ErrorCode {
     #[msg("Unauthorized caller")]
@@ -348,6 +449,10 @@ pub enum ErrorCode {
     InvalidMarketState,
     #[msg("No offers were taken last night — nothing to buy back")]
     NoFillsToBuyBack,
+    #[msg("Fill exec price overpays the spot oracle beyond MAX_SLIPPAGE_BPS")]
+    SlippageExceeded,
     #[msg("Invalid SOL price oracle")]
     InvalidOracle,
+    #[msg("CPMM pool account mismatch")]
+    InvalidPoolAccount,
 }

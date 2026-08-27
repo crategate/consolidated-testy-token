@@ -14,7 +14,7 @@ import AmmPage from './pages/AmmPage';
 
 const queryClient = new QueryClient({
     defaultOptions: {
-        queries: { refetchInterval: 30000, staleTime: 15000, retry: 2 },
+        queries: { staleTime: 15000, retry: 2 },
     },
 });
 

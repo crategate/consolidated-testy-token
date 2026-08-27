@@ -14,14 +14,14 @@ pub struct UpdateTradedayStats<'info> {
     #[account(mut)]
     pub cranker: Signer<'info>,
     #[account(seeds = [b"amm_state", amm_state.afho_mint.as_ref()], bump = amm_state.bump,)]
-    pub amm_state: Account<'info, AmmState>,
+    pub amm_state: Box<Account<'info, AmmState>>,
 
     #[account(
         mut,
         seeds = [b"metrics", amm_state.afho_mint.as_ref()],
         bump
     )]
-    pub market_metrics: Account<'info, MarketMetrics>,
+    pub market_metrics: Box<Account<'info, MarketMetrics>>,
     /// CHECK: market status PDA
     #[account(
         seeds = [b"market_status"],
@@ -29,9 +29,20 @@ pub struct UpdateTradedayStats<'info> {
         bump
     )]
     pub market_status: UncheckedAccount<'info>,
-    /// live price oracle — canonical Switchboard quote [market_status, price]
-    #[account(address = amm_state.price_oracle)]
-    pub price_oracle: Box<Account<'info, switchboard_on_demand::SwitchboardQuote>>,
+    /// CHECK: absolute-price oracle (raw u64, floor units) — mock fallback;
+    /// used only when the CPMM pool is NOT pinned. Address pinned at init.
+    #[account(address = amm_state.spot_oracle)]
+    pub spot_oracle: UncheckedAccount<'info>,
+
+    // Raydium CPMM AFHO/USDC pool — live price source when pinned.
+    /// CHECK: pool state, pinned to amm_state.cpmm_pool_state in the handler
+    pub cpmm_pool_state: Option<AccountInfo<'info>>,
+    /// CHECK: pool observation (TWAP ring)
+    pub cpmm_observation: Option<AccountInfo<'info>>,
+    /// CHECK: pool USDC vault (quote leg)
+    pub cpmm_input_vault: Option<AccountInfo<'info>>,
+    /// CHECK: pool AFHO vault (base leg)
+    pub cpmm_output_vault: Option<AccountInfo<'info>>,
 
     /// Staking pool — the source of truth for total_staked (stake-health
     /// metric). Typed account: owner + discriminator checked automatically.
@@ -71,12 +82,53 @@ pub fn handler(ctx: Context<UpdateTradedayStats>) -> Result<()> {
     ctx.accounts.market_metrics.total_staked = ctx.accounts.staking_pool.total_staked;
     ctx.accounts.market_metrics.total_supply = ctx.accounts.afho_mint.supply;
 
-    // End-of-day metric writes (helpers_make_offers.rs)
-    record_price_change(
-        &mut ctx.accounts.market_metrics,
-        &ctx.accounts.price_oracle,
-        Clock::get()?.slot,
-    );
+    // End-of-day metric writes (helpers_make_offers.rs). The momentum input is
+    // a close→close change computed from the live AFHO/USDC price (pool TWAP
+    // when pinned, mock oracle otherwise): record today's close against the
+    // previous day's.
+    let spot = {
+        let amm_state = &ctx.accounts.amm_state;
+        let pinned = amm_state.cpmm_pool_state != Pubkey::default();
+        if pinned {
+            let clock = Clock::get()?;
+            let pool_state = ctx.accounts.cpmm_pool_state.as_ref().ok_or(ErrorCode::InvalidPoolAccount)?;
+            let observation = ctx.accounts.cpmm_observation.as_ref().ok_or(ErrorCode::InvalidPoolAccount)?;
+            let base_vault = ctx.accounts.cpmm_output_vault.as_ref().ok_or(ErrorCode::InvalidPoolAccount)?;
+            let quote_vault = ctx.accounts.cpmm_input_vault.as_ref().ok_or(ErrorCode::InvalidPoolAccount)?;
+            require!(
+                pool_state.key() == amm_state.cpmm_pool_state,
+                ErrorCode::InvalidPoolAccount
+            );
+            require!(
+                observation.key()
+                    == crate::instructions::raydium::observation_pda(&amm_state.cpmm_program, amm_state.cpmm_pool_state).0,
+                ErrorCode::InvalidPoolAccount
+            );
+            require!(
+                quote_vault.key()
+                    == crate::instructions::raydium::pool_vault_pda(&amm_state.cpmm_program, amm_state.cpmm_pool_state, amm_state.usdc_mint).0,
+                ErrorCode::InvalidPoolAccount
+            );
+            require!(
+                base_vault.key()
+                    == crate::instructions::raydium::pool_vault_pda(&amm_state.cpmm_program, amm_state.cpmm_pool_state, amm_state.afho_mint).0,
+                ErrorCode::InvalidPoolAccount
+            );
+            super::raydium::read_cpmm_price_floor(
+                pool_state,
+                observation,
+                base_vault,
+                quote_vault,
+                &amm_state.afho_mint,
+                &amm_state.usdc_mint,
+                clock.unix_timestamp as u64,
+            )
+            .ok_or(ErrorCode::InvalidOracle)?
+        } else {
+            super::offer_claim::read_live_price(&ctx.accounts.spot_oracle.to_account_info())?
+        }
+    };
+    record_price_change(&mut ctx.accounts.market_metrics, spot);
     record_stake_ratio(&mut ctx.accounts.market_metrics);
 
     Ok(())
@@ -94,4 +146,6 @@ pub enum ErrorCode {
     AlreadyConstructed,
     #[msg("Invalid price oracle")]
     InvalidOracle,
+    #[msg("CPMM pool account mismatch")]
+    InvalidPoolAccount,
 }

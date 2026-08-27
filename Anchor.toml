@@ -6,14 +6,14 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-amm = "7L32KRgZAttvuiY7LgtLTUwTAYL54JfyELVd7CUxVKgy"
-crank_oracle = "ENJn9r8uCBLZXJ4unADAJfgNScWZuEm3rHD2LoBDpAki"
-staking = "Fzqz7EK6CZp2v2Co7MBDdHkdk2Vx1HnbbmsfkoXWSjwG"
-mock_dex_pool = "3fgSPE55km8DrbFPmyi7x3YRLmpQ8BYZHUUr85Miwbod"
+amm = "AU19M8ELLh7h4GMpmj9ZKjF4NNXmYK6aiVoLs9yvnuRi"
+crank_oracle = "HkA18DxZU3RSg2cJfC1vZEkkRmDnSWuXjHim2NXbao7U"
+mock_dex_pool = "CAmYEL8zb8rtV2F9r68P7NLeYNdB3cXXCrahDCBRL27S"
+staking = "AR1Wyj3CLhcxB5jAiqFn5xHFamcjdNiiYv9gQLCVvTZp"
 
 [programs.localnet]
-testy_token = "Eb7SiNnSwCoKobhG8dDarPQxErqmnzK7kJ1SRW9vEpdS"
 mock_dex_pool = "3fgSPE55km8DrbFPmyi7x3YRLmpQ8BYZHUUr85Miwbod"
+testy_token = "Eb7SiNnSwCoKobhG8dDarPQxErqmnzK7kJ1SRW9vEpdS"
 
 [registry]
 url = "https://api.apr.dev"
@@ -23,25 +23,28 @@ cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-feed-deploy = "npx ts-node ./scripts/oracle/feed-deploy.ts"
-
-mint = "npx ts-node scripts/mint-launch.ts"
-pool = "npx ts-node ./scripts/pool-init.ts"
-
-
-init = "npx ts-node ./scripts/initialize.ts && npx ts-node ./scripts/init-bounty.ts"
-init-o = "npx ts-node ./scripts/initialize.ts"
-
+# current flow after feed is set:
+# anchor run mint → anchor run amm-init → anchor run set-cpmm-pool → anchor run set-sol-usdc-pool -> anchor run init → anchor run bount
 
 amm-init = "npx ts-node ./scripts/amm-init.ts"
 amm-test-data = "npx ts-node ./scripts/amm-test-data.ts"
 
 bount = "npx ts-node ./scripts/oracle/mev-keeper.ts"
-fund-bount="npx ts-node ./scripts/fund-bounty.ts"
 crank = "npx ts-node ./scripts/oracle/managedUpdate.ts --feedId 0xaf3a39b12f5c052d81eb8c62bb86f4691fce2c2e0c88b39f83801978b6f203c3"
+feed-deploy = "npx ts-node ./scripts/oracle/feed-deploy.ts"
+fund-bount = "npx ts-node ./scripts/fund-bounty.ts"
 
+init = "npx ts-node ./scripts/initialize.ts && npx ts-node ./scripts/init-bounty.ts"
+init-o = "npx ts-node ./scripts/initialize.ts"
+
+mint = "npx ts-node scripts/mint-launch.ts"
+pool = "npx ts-node ./scripts/pool-init.ts"
+pool-status = "npx ts-node ./scripts/raydium-pool-status.ts"
+
+set-cpmm-pool = "npx ts-node ./scripts/set-cpmm-pool.ts"
 set-oracle = "npx ts-node ./scripts/oracle/set-oracle-state.ts"
-
+set-sol-usdc-pool = "npx ts-node ./scripts/set-sol-usdc-pool.ts"
+twitter = "npx ts-node ./scripts/twitter-announcer.ts"
 
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
 test-staking = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/staking.test.ts"

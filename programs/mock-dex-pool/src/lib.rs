@@ -8,7 +8,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{transfer, Mint, TokenAccount, TokenInterface, Transfer};
 
-declare_id!("3fgSPE55km8DrbFPmyi7x3YRLmpQ8BYZHUUr85Miwbod");
+declare_id!("CAmYEL8zb8rtV2F9r68P7NLeYNdB3cXXCrahDCBRL27S");
 
 // raw AFHO (9 dec) dispensed per raw USDC (6 dec): 1 USDC -> 100 AFHO (0.01 USDC/AFHO)
 pub const AFHO_PER_USDC_RAW: u64 = 100_000;

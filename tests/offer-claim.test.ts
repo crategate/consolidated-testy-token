@@ -4,17 +4,20 @@ import { Amm } from "../target/types/amm";
 import { CrankOracle } from "../target/types/crank_oracle";
 import { MockDexPool } from "../target/types/mock_dex_pool";
 import { Staking } from "../target/types/staking";
-import { PublicKey, Keypair, Transaction } from "@solana/web3.js";
+import { PublicKey, Keypair, SystemProgram, Transaction } from "@solana/web3.js";
 import {
     createMint,
     mintTo,
     createAssociatedTokenAccount,
     getAssociatedTokenAddressSync,
     createAssociatedTokenAccountIdempotentInstruction,
+    ASSOCIATED_TOKEN_PROGRAM_ID,
     TOKEN_PROGRAM_ID,
     TOKEN_2022_PROGRAM_ID,
 } from "@solana/spl-token";
 import { assert } from "chai";
+
+const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
 
 // End-to-end offer_claim: buyer pays USDC for a discounted vesting lot,
 // payment splits 80/10/10, AFHO lands directly in a locked StakePosition;
@@ -139,6 +142,10 @@ describe("offer_claim + distribute_staker_rewards", () => {
                 stakePosition: positionPda,
                 ammAfhoVault: afhoVault,
                 stakingVault: stakingVaultPda,
+                cpmmPoolState: amm.programId,
+                cpmmObservation: amm.programId,
+                cpmmInputVault: amm.programId,
+                cpmmOutputVault: amm.programId,
                 tokenProgram: TOKEN_PROGRAM_ID,
                 token2022Program: TOKEN_2022_PROGRAM_ID,
             })
@@ -166,19 +173,38 @@ describe("offer_claim + distribute_staker_rewards", () => {
                 ammState: ammStatePda,
                 offerList: offerListPda,
                 afhoMint,
+                usdcMint,
                 spotOracle: mockPricePda,
                 solOracle: solOraclePda,
+                cpmmPoolState: amm.programId,
+                cpmmObservation: amm.programId,
+                cpmmInputVault: amm.programId,
+                cpmmOutputVault: amm.programId,
                 marketStatus: marketStatusPda,
-                solVault,
-                solDip,
-                solRewards: solRewardsPda,
+                usdcVault,
+                usdcDip,
+                usdcRewards,
+                wsolVault: getAssociatedTokenAddressSync(WSOL_MINT, ammStatePda, true, TOKEN_PROGRAM_ID),
+                wrappedSolMint: WSOL_MINT,
+                // NOTE: offer_claim_sol unconditionally CPIs the wSOL→USDC swap,
+                // so these SOL/USDC CPMM accounts must be the real pinned pool
+                // (set via set_sol_usdc_pool). Leave uninvoked until §7 lands.
+                solUsdcPoolState: PublicKey.default,
+                solUsdcAmmConfig: PublicKey.default,
+                solUsdcInputVault: PublicKey.default,
+                solUsdcOutputVault: PublicKey.default,
+                solUsdcObservation: PublicKey.default,
+                solUsdcAuthority: PublicKey.default,
                 stakingProgram: staking.programId,
                 stakingPool: poolPda,
                 userIndex: userIndexPda,
                 stakePosition: positionPda,
                 ammAfhoVault: afhoVault,
                 stakingVault: stakingVaultPda,
+                associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+                tokenProgram: TOKEN_PROGRAM_ID,
                 token2022Program: TOKEN_2022_PROGRAM_ID,
+                systemProgram: SystemProgram.programId,
             })
             .signers([buyer])
             .rpc();
@@ -302,6 +328,7 @@ describe("offer_claim + distribute_staker_rewards", () => {
                 smlAccepted: [0, 0, 0, 0, 0],
                 buybackBasis: new anchor.BN(0),
                 untakenDays: 0,
+                offerDayIndex: new anchor.BN(0), // claims require the sheet to be today's
                 bigOffered: 0, bigRemaining: 0,
                 medOffered: 0, medRemaining: 0,
                 smlOffered: 10, smlRemaining: 10,
@@ -352,44 +379,6 @@ describe("offer_claim + distribute_staker_rewards", () => {
         assert.equal(sheet.totalComplete, 20);
     });
 
-    it("claims with SOL payment: lamports split 80/10/10 into the SOL vaults", async () => {
-        // SOL at $200 → sol_price = (200e6 usdc-raw × 1e6) / 1e9 lamports = 200_000
-        await setSolPrice(200_000);
-
-        // 1 lot = 10 AFHO at effective price 9 → cost 90_000 raw USDC
-        //   → lamports = 90_000 × 1e6 / 200_000 = 450_000
-        const expectedLamports = 450_000;
-        const rent = await provider.connection.getMinimumBalanceForRentExemption(0);
-        const vaultBefore = await provider.connection.getBalance(solVault);
-        const dipBefore = await provider.connection.getBalance(solDip);
-        const rewBefore = await provider.connection.getBalance(solRewardsPda);
-        assert.equal(vaultBefore, rent, "sol vault starts at rent floor");
-
-        await claimSolTx(0, 1, 1);
-
-        const vaultAfter = await provider.connection.getBalance(solVault);
-        const dipAfter = await provider.connection.getBalance(solDip);
-        const rewAfter = await provider.connection.getBalance(solRewardsPda);
-        assert.equal(vaultAfter - vaultBefore, expectedLamports * 0.8, "80% to SOL buyback vault");
-        assert.equal(dipAfter - dipBefore, expectedLamports * 0.1, "10% to SOL dip vault");
-        assert.equal(rewAfter - rewBefore, expectedLamports * 0.1, "10% to SOL rewards holding");
-
-        // position created at index 1: 10 AFHO, 5-day vest
-        const [positionPda] = PublicKey.findProgramAddressSync(
-            [Buffer.from("position"), poolPda.toBuffer(), buyer.publicKey.toBuffer(), new anchor.BN(1).toArrayLike(Buffer, "le", 8)],
-            staking.programId
-        );
-        const pos = await staking.account.stakePosition.fetch(positionPda);
-        assert.equal(pos.amount.toNumber(), 10 * AFHO_UNIT);
-        assert.equal(pos.daysToUnlock, 5);
-
-        const state = await amm.account.ammState.fetch(ammStatePda);
-        assert.equal(state.totalSolProceeds.toNumber(), expectedLamports, "SOL proceeds tracked in lamports");
-
-        const sheet = await amm.account.offerList.fetch(offerListPda);
-        assert.equal(sheet.smlOffer.remaining, 7);
-        assert.equal(sheet.totalComplete, 30);
-    });
 
     it("rejects claims while the market is open", async () => {
         await setMarket(0, 1, now());
@@ -417,13 +406,21 @@ describe("offer_claim + distribute_staker_rewards", () => {
                 usdcRewards,
                 solRewards: solRewardsPda,
                 solOracle: solOraclePda,
+                spotOracle: mockPricePda,
                 afhoVault,
                 afhoMint,
+                usdcMint,
                 poolState,
                 poolAfho,
                 poolUsdc,
                 poolSol: poolState,
                 dexProgram: mock.programId,
+                cpmmPoolState: poolState,
+                cpmmAmmConfig: poolState,
+                cpmmInputVault: poolState,
+                cpmmOutputVault: poolState,
+                cpmmObservation: poolState,
+                cpmmAuthority: poolState,
                 stakingProgram: staking.programId,
                 stakingPool: poolPda,
                 stakingRewardVault: rewardVaultPda,
@@ -435,15 +432,10 @@ describe("offer_claim + distribute_staker_rewards", () => {
         const rewAfter = await provider.connection.getTokenAccountBalance(usdcRewards);
         assert.equal(Number(rewAfter.value.amount), 0, "USDC holding vault drained");
 
-        // SOL leg fires too: 45_000 lamports (from the SOL claim test) at
-        // mock rate 10_000 AFHO/SOL → 4.5e8 raw; USDC leg 18_000 × 100_000
-        // → 1.8e9 raw. Combined deposit: 2.25e9 AFHO raw.
-        const solRent = await provider.connection.getMinimumBalanceForRentExemption(0);
-        const solRewBal = await provider.connection.getBalance(solRewardsPda);
-        assert.equal(solRewBal, solRent, "SOL holding vault drained to rent floor");
-
+        // USDC-only distribution: 18_000 × 100_000 → 1.8e9 AFHO raw. (The SOL
+        // leg is retired — rewards are USDC-denominated now.)
         const rewardVault = await provider.connection.getTokenAccountBalance(rewardVaultPda);
-        assert.equal(Number(rewardVault.value.amount), 2_250_000_000, "AFHO deposited to reward vault (both legs)");
+        assert.equal(Number(rewardVault.value.amount), 1_800_000_000, "AFHO deposited to reward vault");
 
         const pool = await staking.account.stakePool.fetch(poolPda);
         assert.isAbove(pool.accruedRewardPerShare.toNumber(), 0, "MasterChef index bumped");
@@ -459,13 +451,21 @@ describe("offer_claim + distribute_staker_rewards", () => {
                     usdcRewards,
                     solRewards: solRewardsPda,
                     solOracle: solOraclePda,
+                    spotOracle: mockPricePda,
                     afhoVault,
                     afhoMint,
+                    usdcMint,
                     poolState,
                     poolAfho,
                     poolUsdc,
                     poolSol: poolState,
                     dexProgram: mock.programId,
+                    cpmmPoolState: poolState,
+                    cpmmAmmConfig: poolState,
+                    cpmmInputVault: poolState,
+                    cpmmOutputVault: poolState,
+                    cpmmObservation: poolState,
+                    cpmmAuthority: poolState,
                     stakingProgram: staking.programId,
                     stakingPool: poolPda,
                     stakingRewardVault: rewardVaultPda,

@@ -71,7 +71,7 @@ pub use amm_stake::*;
 //   → Alice's next claim includes her share of Bob's penalty
 // =============================================================================
 
-declare_id!("Fzqz7EK6CZp2v2Co7MBDdHkdk2Vx1HnbbmsfkoXWSjwG");
+declare_id!("AR1Wyj3CLhcxB5jAiqFn5xHFamcjdNiiYv9gQLCVvTZp");
 
 #[program]
 pub mod staking {
@@ -99,6 +99,13 @@ pub mod staking {
             expected_pda == ctx.accounts.market_status_pda.key(),
             StakeError::InvalidMarketStatus
         );
+
+        // SECURITY: bps values above 10_000 would let penalty/tax legs charge
+        // more than 100% and drain the shared vaults.
+        require!(posr_tax_bps <= 10_000, StakeError::InvalidBps);
+        require!(after_hours_penalty_bps <= 10_000, StakeError::InvalidBps);
+        require!(closed_penalty_bps <= 10_000, StakeError::InvalidBps);
+        require!(halted_penalty_bps <= 10_000, StakeError::InvalidBps);
 
         let pool = &mut ctx.accounts.pool;
         pool.authority = ctx.accounts.authority.key();
@@ -234,6 +241,13 @@ pub mod staking {
     pub fn stake(ctx: Context<Stake>, amount: u64, index: u64, days: u8) -> Result<()> {
         require!(amount > 0, StakeError::ZeroAmount);
         require!(amount >= 100, StakeError::MinStake);
+        // Positions are only created sequentially at the next free index —
+        // an arbitrary index can collide with a future PDA or overflow the
+        // next_index increment (index = u64::MAX panics).
+        require!(
+            index == ctx.accounts.user_index.next_index,
+            StakeError::InvalidIndex
+        );
 
         let pool = &mut ctx.accounts.pool;
         let position = &mut ctx.accounts.position;
@@ -646,7 +660,7 @@ pub struct UserStakeIndex {
 pub struct InitializePool<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
-    pub mint: InterfaceAccount<'info, Mint>,
+    pub mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(
         init,
         payer = authority,
@@ -663,7 +677,7 @@ pub struct InitializePool<'info> {
         token::mint = mint,
         token::authority = pool,
     )]
-    pub vault: InterfaceAccount<'info, TokenAccount>,
+    pub vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(
         init,
         payer = authority,
@@ -672,7 +686,7 @@ pub struct InitializePool<'info> {
         token::mint = mint,
         token::authority = pool,
     )]
-    pub reward_vault: InterfaceAccount<'info, TokenAccount>,
+    pub reward_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(
         init,
         payer = authority,
@@ -681,7 +695,7 @@ pub struct InitializePool<'info> {
         token::mint = mint,
         token::authority = pool,
     )]
-    pub penalty_vault: InterfaceAccount<'info, TokenAccount>,
+    pub penalty_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(
         init,
         payer = authority,
@@ -690,7 +704,7 @@ pub struct InitializePool<'info> {
         token::mint = mint,
         token::authority = pool,
     )]
-    pub afho_vault: InterfaceAccount<'info, TokenAccount>,
+    pub afho_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     /// CHECK: Verified in instruction via find_program_address
     pub market_status_pda: UncheckedAccount<'info>,
     pub token_program: Interface<'info, TokenInterface>,
@@ -827,4 +841,8 @@ pub enum StakeError {
     ClaimsClosed,
     #[msg("No stakers to distribute to")]
     NoStakers,
+    #[msg("Position index must equal the next free index for this user")]
+    InvalidIndex,
+    #[msg("bps value exceeds 10_000 (100%)")]
+    InvalidBps,
 }

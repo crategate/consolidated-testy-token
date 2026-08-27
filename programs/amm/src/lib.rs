@@ -10,7 +10,7 @@ pub use constants::*;
 pub use instructions::*;
 pub use state::*;
 
-declare_id!("7L32KRgZAttvuiY7LgtLTUwTAYL54JfyELVd7CUxVKgy");
+declare_id!("AU19M8ELLh7h4GMpmj9ZKjF4NNXmYK6aiVoLs9yvnuRi");
 
 #[program]
 pub mod amm {
@@ -39,6 +39,30 @@ pub mod amm {
 
     pub fn set_keeper(ctx: Context<SetKeeper>, new_keeper: Pubkey) -> Result<()> {
         set_keeper::handler(ctx, new_keeper)
+    }
+
+    // Pin the Raydium CPMM pool for the swap adapter (authority || keeper).
+    pub fn set_cpmm_pool(
+        ctx: Context<SetCpmmPool>,
+        cpmm_program: Pubkey,
+        pool_state: Pubkey,
+        amm_config: Pubkey,
+    ) -> Result<()> {
+        set_cpmm_pool::handler(ctx, cpmm_program, pool_state, amm_config)
+    }
+
+    // Pin the SOL/USDC pool for All-USDC claim conversion (authority || keeper).
+    pub fn set_sol_usdc_pool(
+        ctx: Context<SetSolUsdcPool>,
+        pool_state: Pubkey,
+        amm_config: Pubkey,
+    ) -> Result<()> {
+        set_sol_usdc_pool::handler(ctx, pool_state, amm_config)
+    }
+
+    // Bounty auto-top-up: swap USDC → SOL and fund the crank bounty vault.
+    pub fn bounty_top_up(ctx: Context<BountyTopUp>) -> Result<()> {
+        bounty_top_up::handler(ctx)
     }
 
     // DEVNET/TEST ONLY — remove before mainnet
