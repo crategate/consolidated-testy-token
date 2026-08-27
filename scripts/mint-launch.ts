@@ -81,10 +81,10 @@ async function main() {
     // 4. Token Metadata Configuration
     const metadata: TokenMetadata = {
         mint: mint.publicKey,
-        name: 'LFG then',
+        name: 'MinTrans',
         symbol: '8-27',
         uri: 'https://copper-quick-koi-488.mypinata.cloud/ipfs/bafkreiblskodz5bwtelz4id437rnhsndtq3rfh7jjsgaj72wb55cgnbbea',
-        additionalMetadata: [['description', 'combining concepts and learning the basics']],
+        additionalMetadata: [['description', 'a token bound by the hours of Wall Street']],
     };
     const metadataLen = pack(metadata).length + TYPE_SIZE + LENGTH_SIZE;
     const mintLen = getMintLen([ExtensionType.MetadataPointer]);
