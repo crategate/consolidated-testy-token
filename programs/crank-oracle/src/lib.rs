@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use switchboard_on_demand::prelude::rust_decimal::prelude::ToPrimitive;
 use switchboard_on_demand::{default_queue, SwitchboardQuote, SwitchboardQuoteExt};
 
-declare_id!("ENJn9r8uCBLZXJ4unADAJfgNScWZuEm3rHD2LoBDpAki");
+declare_id!("HkA18DxZU3RSg2cJfC1vZEkkRmDnSWuXjHim2NXbao7U");
 
 const WSOL_MINT: Pubkey = pubkey!("So11111111111111111111111111111111111111112");
 const POOL_VAULT_SEED: &[u8] = b"pool_vault";

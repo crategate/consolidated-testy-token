@@ -107,7 +107,6 @@ dependencies = [
  "bytemuck",
  "mock-dex-pool",
  "staking",
- "switchboard-on-demand",
 ]
 
 [[package]]

@@ -73,7 +73,7 @@ Everything required to go from the current devnet build to a mainnet launch, in 
 - [x] **Devnet end-to-end rig** — `anchor run mint` (fresh mint + AFHO/USDC CPMM pool) → `anchor run amm-init` (now also initializes the **staking pool**) → `anchor run set-cpmm-pool` (pins program+pool+config) → `anchor run set-sol-usdc-pool` (pins/creates the SOL/USDC pool) → `anchor run bount` (keeper derives CPMM accounts). USDC legs live; SOL claim leg live on devnet pending a runtime claim test. (`scripts/pool-init.ts` still exists as a standalone staking backfill.)
 - [ ] `amm-init` with real mint/pool/oracle addresses; verify `deployment.json` consumed by app.
 - [ ] External audit pass on the final diff (§1 fixes + §4 adapter + §5 LP).
-- [ ] Doc cleanup: staking header describes removed claim penalties; stale comment in `dex_buyback.rs:332-334`.
+- [ ] Doc cleanup: staking header describes removed claim penalties; stale comment in `dex_buyback.rs:332-334`; `docs/DEX-INTEGRATION.md` still prescribes the typed `raydium_cpi` CPI — the implementation moved to raw `invoke_signed` (anchor 1.0 pin incompatibility), so that doc is now stale.
 
 ## 8. Token / program trust posture
 
@@ -104,6 +104,21 @@ Everything required to go from the current devnet build to a mainnet launch, in 
 - [x] Position card tint by market state (after-hours `#f7dec0`, closed/halted `#ddd6ff`).
 - [x] Exit button shows per-state principal-penalty % (incl. 0% open).
 - [ ] UI smoke test on devnet for claim/unstake + the new penalty label.
+
+## 12. Deploy cost & program size — 🚧 the 718 KB `amm` is the whole ballgame
+
+- [ ] **Never delete `target/deploy/*-keypair.json`.** Those keypairs *are* the program addresses. `rm -rf target` regenerates 4 new IDs, so `anchor deploy` pays full rent for 4 fresh program accounts (~11.5 SOL for the current 1.66 MB total). Iterate with `anchor upgrade <program>` against the same keypairs — an upgrade pays only the *delta* rent plus a transient buffer you close.
+- [ ] **Recover stranded devnet rent.** The pre-rotation program IDs (see `git diff` on the four `declare_id!`s) still hold ~11.5 SOL of rent-exempt lamports. If truly orphaned, close them (`solana program close <OLD_ID> --bypass-warning`, devnet only, requires upgrade authority).
+- [ ] **Cut `amm`'s switchboard type dependency.** `make_offers` still types `price_oracle` as `Box<Account<SwitchboardQuote>>` but never reads the value in the handler (momentum now comes from `MarketMetrics.price_changes`). Re-type to `UncheckedAccount` (or drop the account + `AmmState.price_oracle`) → removes `switchboard-on-demand` from `amm` and shrinks the `.so`.
+- [ ] **Program-size budget.** Current sizes: `amm` 718 KB / `staking` 411 KB / `crank_oracle` 299 KB / `mock_dex_pool` 228 KB (rent ≈ 6,960 lamports/byte). `amm` is large because it compiles in `staking` (CPI), `mock-dex-pool` (CPI), and `switchboard-on-demand`. §2's mock removal + the `price_oracle` de-type above are the cheap wins; record a target size per program before mainnet.
+
+## 13. Framework decision (Quasar) — 🚧 audit done, recommendation: not pre-mainnet
+
+- [x] **Quasar audit (2026-08-27).** Quasar (`blueshift-gg/quasar`) is a `no_std`, zero-copy, zero-allocation Solana framework (`quasar-lang` + `quasar-derive` + `quasar-spl` + `quasar-profile` + CLI). Near-hand-written CU/size, Anchor-like macros, `QuasarSvm` in-process tests. **Beta and explicitly unaudited — "APIs may change, use at your own risk."**
+- [ ] **Decision recorded: do not gate mainnet on a Quasar rewrite.** `amm` + `staking` would have to move together (`amm` CPIs into `staking`; otherwise that CPI becomes raw `invoke`); `crank-oracle` is **not** convertible without reimplementing Switchboard On-Demand parsing (Anchor-only crate); `mock-dex-pool` is pointless (§2 removes it). The switchboard coupling in `amm` is only the dead `price_oracle` (§12).
+- [ ] **Revisit post-launch**, gated on (a) a stable/audited Quasar release, (b) measured CU of the current Anchor hot paths (`offer_claim`, `dex_buyback`, `buy_the_dip`, `stake`/`unstake`/`claim`) via `quasar-profile` or a CU profiler, and (c) the fee-schedule SGPs actually landing. The hot-path fee argument is real; the *deploy-rent* argument is not — rent is one-time and solved by §12, not by a framework swap.
+- [ ] **Fee-schedule risk (3 SGPs).** Track the in-flight governance proposals that raise fees disproportionately for high-CU (unoptimized Anchor) transactions; they make CU-budgeting the user-facing paths a launch-readiness item even if Quasar is deferred. (SGP numbers not yet pinned to sources — verify before citing in public docs.)
+
 
 ## DEX strategy note
 
