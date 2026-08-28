@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import { BorshAccountsCoder, type Idl } from '@coral-xyz/anchor';
+import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import ammIdl from '../../../../target/idl/amm.json';
 import stakingIdl from '../../../../target/idl/staking.json';
 import type { DeploymentConfig } from '../../config';
@@ -90,9 +91,25 @@ export interface ClaimAccounts {
     cpmmOutputVault: PublicKey;
 }
 
+// SOL-payment path (offer_claim_sol) — only resolvable while the Raydium
+// SOL/USDC pool is pinned (set-sol-usdc-pool): the claim unconditionally CPIs
+// the wSOL→USDC swap, so the pool accounts must be the real pinned PDAs.
+export interface SolClaimAccounts {
+    solOracle: PublicKey;
+    wsolVault: PublicKey;        // wSOL ATA owned by amm_state
+    wrappedSolMint: PublicKey;
+    solUsdcPoolState: PublicKey;
+    solUsdcAmmConfig: PublicKey;
+    solUsdcInputVault: PublicKey;  // pool wSOL vault
+    solUsdcOutputVault: PublicKey; // pool USDC vault
+    solUsdcObservation: PublicKey;
+    solUsdcAuthority: PublicKey;
+}
+
 export interface OfferDeskData {
     tiers: OfferTierData[];
     livePrice: bigint | null;    // raw u64 floor units from the spot oracle
+    solPrice: bigint | null;     // SOL/USD in the same floor units (usdc_raw × 1e6 / lamports)
     floorBasis: bigint;          // highest_buyback_basis ratchet floor
     afhoDecimals: number;
     usdcDecimals: number;
@@ -103,6 +120,7 @@ export interface OfferDeskData {
     sheetStale: boolean;
     offersLive: boolean;         // any tier with remaining > 0
     accounts: ClaimAccounts | null;
+    solAccounts: SolClaimAccounts | null;
     loading: boolean;
     error: string | null;
     updatedAt: string | null;
@@ -113,9 +131,13 @@ const AMM_PROGRAM_ID = idlProgramId(ammIdl);
 const ammCoder = new BorshAccountsCoder(ammIdl as Idl);
 const stakingCoder = new BorshAccountsCoder(stakingIdl as Idl);
 
+// Native wSOL mint — the SOL payment path wraps buyer lamports into this.
+const WSOL_MINT = new PublicKey('So11111111111111111111111111111111111111112');
+
 const INITIAL: Omit<OfferDeskData, 'refresh'> = {
     tiers: [],
     livePrice: null,
+    solPrice: null,
     floorBasis: 0n,
     afhoDecimals: 9,
     usdcDecimals: 6,
@@ -126,6 +148,7 @@ const INITIAL: Omit<OfferDeskData, 'refresh'> = {
     sheetStale: false,
     offersLive: false,
     accounts: null,
+    solAccounts: null,
     loading: true,
     error: null,
     updatedAt: null,
@@ -150,9 +173,11 @@ function parseTier(key: 'sml' | 'med' | 'big', tier: number, label: string, raw:
 export function useAmmData(): OfferDeskData {
     const { connection } = useConnection();
     const [data, setData] = useState<Omit<OfferDeskData, 'refresh'>>(INITIAL);
+    const inflight = useRef(false);
 
     const load = useCallback(async () => {
-        if (!connection) return;
+        if (!connection || inflight.current) return;
+        inflight.current = true;
         try {
             const config = await fetchConfig();
             const mint = pk(config.mint);
@@ -185,13 +210,15 @@ export function useAmmData(): OfferDeskData {
             );
 
             // dependent accounts: price oracle, market status, mints, staking pool
-            const [spotInfo, statusInfo, afhoInfo, usdcInfo, poolInfo] =
+            const solOracle = pub(ammState, 'solOracle', 'sol_oracle');
+            const [spotInfo, statusInfo, afhoInfo, usdcInfo, poolInfo, solInfo] =
                 await connection.getMultipleAccountsInfo([
                     spotOracle,
                     marketStatusPda,
                     mint,
                     pub(ammState, 'usdcMint', 'usdc_mint') ?? PublicKey.default,
                     stakingPool,
+                    solOracle ?? PublicKey.default,
                 ]);
 
             // Live price (floor units). When the CPMM AFHO/USDC pool is pinned,
@@ -220,6 +247,50 @@ export function useAmmData(): OfferDeskData {
             }
             if (livePrice === null && spotInfo && spotInfo.data.length >= 8) {
                 livePrice = new DataView(spotInfo.data.buffer, spotInfo.data.byteOffset).getBigUint64(0, true);
+            }
+
+            // ── SOL payment path (offer_claim_sol) ──
+            // SOL/USD floor units ((usdc_raw × 1e6) / wSOL_raw). Pinned pool →
+            // its wSOL/USDC vault ratio (the same fallback the on-chain TWAP
+            // uses while the observation ring warms); otherwise the raw-u64
+            // mock sol_oracle. solAccounts only exist while the pool is pinned
+            // because the claim unconditionally CPIs the wSOL→USDC swap.
+            const cpmmSolUsdcPool = pub(ammState, 'cpmmSolUsdcPool', 'cpmm_sol_usdc_pool');
+            const cpmmSolUsdcConfig = pub(ammState, 'cpmmSolUsdcConfig', 'cpmm_sol_usdc_config');
+            let solPrice: bigint | null = null;
+            let solAccounts: SolClaimAccounts | null = null;
+            if (cpmmSolUsdcPool && cpmmSolUsdcConfig && cpmmProgram && usdcMintKey) {
+                const [solUsdcInputVault] = PublicKey.findProgramAddressSync(
+                    [Buffer.from('pool_vault'), cpmmSolUsdcPool.toBuffer(), WSOL_MINT.toBuffer()], cpmmProgram
+                );
+                const [solUsdcOutputVault] = PublicKey.findProgramAddressSync(
+                    [Buffer.from('pool_vault'), cpmmSolUsdcPool.toBuffer(), usdcMintKey.toBuffer()], cpmmProgram
+                );
+                const vaultInfos = await connection.getMultipleAccountsInfo([solUsdcInputVault, solUsdcOutputVault]);
+                const baseRaw = tokenAmount(vaultInfos[0]?.data ?? null);   // wSOL (9 dp)
+                const quoteRaw = tokenAmount(vaultInfos[1]?.data ?? null);  // USDC (6 dp)
+                if (baseRaw !== null && quoteRaw !== null && baseRaw > 0n) {
+                    solPrice = (quoteRaw * 1_000_000n) / baseRaw;
+                }
+                const [solUsdcObservation] = PublicKey.findProgramAddressSync(
+                    [Buffer.from('observation'), cpmmSolUsdcPool.toBuffer()], cpmmProgram
+                );
+                const [solUsdcAuthority] = PublicKey.findProgramAddressSync(
+                    [Buffer.from('vault_and_lp_mint_auth_seed')], cpmmProgram
+                );
+                solAccounts = {
+                    solOracle: solOracle ?? PublicKey.default,
+                    wsolVault: getAssociatedTokenAddressSync(WSOL_MINT, ammStatePda, true, TOKEN_PROGRAM_ID),
+                    wrappedSolMint: WSOL_MINT,
+                    solUsdcPoolState: cpmmSolUsdcPool,
+                    solUsdcAmmConfig: cpmmSolUsdcConfig,
+                    solUsdcInputVault,
+                    solUsdcOutputVault,
+                    solUsdcObservation,
+                    solUsdcAuthority,
+                };
+            } else if (solInfo && solInfo.data.length >= 8) {
+                solPrice = new DataView(solInfo.data.buffer, solInfo.data.byteOffset).getBigUint64(0, true);
             }
 
             // MarketStatus layout: disc(8) + state(1) + timestamp(8) + day(8)
@@ -300,6 +371,7 @@ export function useAmmData(): OfferDeskData {
             setData({
                 tiers,
                 livePrice,
+                solPrice,
                 floorBasis: big(field(ammState, 'highestBuybackBasis', 'highest_buyback_basis')),
                 afhoDecimals,
                 usdcDecimals,
@@ -310,6 +382,7 @@ export function useAmmData(): OfferDeskData {
                 sheetStale,
                 offersLive,
                 accounts,
+                solAccounts,
                 loading: false,
                 error: null,
                 updatedAt: new Date().toISOString(),
@@ -320,6 +393,8 @@ export function useAmmData(): OfferDeskData {
                 loading: false,
                 error: err instanceof Error ? err.message : 'RPC fetch failed',
             }));
+        } finally {
+            inflight.current = false;
         }
     }, [connection]);
 
@@ -358,6 +433,8 @@ export function useAmmData(): OfferDeskData {
                 const ammState = info ? decode(ammCoder, 'AmmState', info.data) : null;
                 const spotOracle = pub(ammState, 'spotOracle', 'spot_oracle');
                 if (spotOracle) watch.push(spotOracle);
+                const solOracle = pub(ammState, 'solOracle', 'sol_oracle');
+                if (solOracle) watch.push(solOracle);
             } catch {
                 // amm_state not initialized yet — offerList/marketStatus watches
                 // still fire once the accounts come into existence.
@@ -380,8 +457,20 @@ export function useAmmData(): OfferDeskData {
 
         void setup();
 
+        // Live-price tick: the CPMM pool vaults (the real price source) aren't
+        // in the watch set, so poll every 4s to keep per-lot prices and the
+        // order total tracking the live pool. load() is idempotent and
+        // in-flight-guarded; the account-change listeners above still fire for
+        // instant sheet/state updates. Skipped while the tab is hidden to
+        // spare the (rate-limited) devnet RPC.
+        const interval = window.setInterval(() => {
+            if (document.hidden) return;
+            void load();
+        }, 4000);
+
         return () => {
             cancelled = true;
+            window.clearInterval(interval);
             for (const id of subscriptions) {
                 void connection.removeAccountChangeListener(id);
             }

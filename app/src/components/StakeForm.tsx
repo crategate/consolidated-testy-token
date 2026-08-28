@@ -12,7 +12,7 @@ interface StakeFormProps {
 
 export function StakeForm({ mint, marketStatusPda, onStakeSuccess }: StakeFormProps) {
     const { stake } = useStake(mint, marketStatusPda);
-    const { publicKey } = useWallet();
+    const { connected, publicKey } = useWallet();
     const { balance, refresh: refreshBalance } = useTokenBalance(mint, publicKey, 9);
     const [amount, setAmount] = useState('');
     const [loading, setLoading] = useState(false);
@@ -34,7 +34,7 @@ export function StakeForm({ mint, marketStatusPda, onStakeSuccess }: StakeFormPr
     };
 
     return (
-        <div className="stake-form stake-card">
+        <div className={`stake-form stake-card rainbow-glow ${connected ? 'connected' : ''}`}>
             <h3>Stake AFHO</h3>
             <div className="mint-display">
                 Mint: <br /><code>{mint.toBase58().slice(0, 8)}…{mint.toBase58().slice(-8)}</code>
@@ -57,6 +57,6 @@ export function StakeForm({ mint, marketStatusPda, onStakeSuccess }: StakeFormPr
             <button onClick={handleStake} disabled={loading || !amount || (balance !== null && Number(amount) > balance)}>
                 {loading ? 'Staking…' : 'Stake'}
             </button>
-        </div >
+        </div>
     );
 };

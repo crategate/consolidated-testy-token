@@ -7,9 +7,10 @@
 //! with the CURRENT market-status trading day, so the sheet is claimable
 //! tonight — exactly like a sheet produced by `make_offers`.
 //!
-//! The tier terms (lot tier / discount / vesting) are representative,
-//! mid-range values — a plausible "tonight's sheet" (the same values the
-//! existing devnet seed scripts already use). The ratchet floor is anchored to the LIVE devnet pool price (CPMM when pinned,
+//! The tier terms (lot tier / discount / vesting) are the average sheet the
+//! combinator emits in a flat, healthy market (momentum ~5000, stake_health
+//! ~40, moderate demand) — the "chop/flat" row of sim/mc_sweep.py. The
+//! ratchet floor is anchored to the LIVE devnet pool price (CPMM when pinned,
 //! mock spot oracle otherwise): floor = 80% of live, which sits below the
 //! deepest listed discount so every seeded discount executes in full.
 //!
@@ -23,34 +24,35 @@ use crate::state::offersState::{AmmState, Offer, OfferList};
 use super::offer_claim::{read_live_price, require_pinned_pricing_accounts};
 use super::raydium::read_cpmm_price_floor;
 
-// Representative, mid-range tier terms — a plausible "tonight's sheet" (the
-// same values the devnet seed scripts already use). `discount_bps` is tenths
-// of a percent (115 = 11.5%); `lot_size` is an index into `lot_sizer`
-// (5 = 250, 10 = 5,000, 15 = 50,000).
+// Average tier terms for a flat, healthy market (momentum ~5000,
+// stake_health ~40, moderate demand — the "chop/flat" sheet the combinator
+// actually emits; see sim/mc_sweep.py). `discount_bps` is tenths of a percent
+// (90 = 9.0%); `lot_size` is an index into `lot_sizer`
+// (2 = 25, 4 = 100, 6 = 500).
 const SML_OFFER: Offer = Offer {
-    lot_size: 5,
-    vesting_days: 10,
-    discount_bps: 75, // 7.5%
+    lot_size: 2,
+    vesting_days: 5,
+    discount_bps: 60, // 6.0%
     remaining: 10,
     total_offered: 10,
 };
 const MED_OFFER: Offer = Offer {
-    lot_size: 10,
-    vesting_days: 20,
-    discount_bps: 90, // 9.0%
+    lot_size: 4,
+    vesting_days: 9,
+    discount_bps: 75, // 7.5%
     remaining: 5,
     total_offered: 5,
 };
 const BIG_OFFER: Offer = Offer {
-    lot_size: 15,
-    vesting_days: 30,
-    discount_bps: 115, // 11.5%
+    lot_size: 6,
+    vesting_days: 18,
+    discount_bps: 90, // 9.0%
     remaining: 3,
     total_offered: 3,
 };
 
 // Ratchet floor as a fraction of the live pool price. 80% is comfortably
-// below the deepest seeded discount (big = 88.5% of live), so the floor never
+// below the deepest seeded discount (big = 91.0% of live), so the floor never
 // clamps a listed discount while still showing a realistic prior buyback basis.
 const FLOOR_LIVE_PERCENT: u64 = 80;
 

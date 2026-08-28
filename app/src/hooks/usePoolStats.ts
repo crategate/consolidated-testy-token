@@ -4,9 +4,22 @@ import { PublicKey, type ParsedAccountData } from '@solana/web3.js';
 import { useReadOnlyStakingProgram } from './useReadOnlyProgram';
 import { STAKING_PROGRAM_ID } from '../anchor/setup';
 import type { StakePoolData } from './stake/usePool';
+
+function pub(obj: Record<string, unknown> | null, ...names: string[]): PublicKey | null {
+    for (const n of names) {
+        const v = obj?.[n];
+        if (v instanceof PublicKey) return v;
+        if (typeof v === 'string') {
+            try { return new PublicKey(v); } catch { /* ignore */ }
+        }
+    }
+    return null;
+}
+
 export interface PoolStats {
     totalStaked: number;
     totalSupply: number;
+    vaultBalance: number;
     userCount: number;
     decimals: number;
 }

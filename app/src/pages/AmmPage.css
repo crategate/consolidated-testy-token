@@ -241,6 +241,127 @@
     color: #fff;
 }
 
+.order-total-line {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 4px;
+}
+
+.currency-picker {
+    position: relative;
+    display: inline-flex;
+}
+
+.currency-select {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: #1a2130;
+    border: 1px solid #2e3a4f;
+    border-radius: 8px;
+    color: #d7dde8;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 7px 11px;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+.currency-select:hover {
+    border-color: #4a5872;
+}
+
+.currency-caret {
+    font-size: 10px;
+    color: #7a8494;
+}
+
+.currency-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    min-width: 170px;
+    background: #161d2a;
+    border: 1px solid #2e3a4f;
+    border-radius: 10px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    overflow: hidden;
+    z-index: 30;
+}
+
+.currency-option {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 12px;
+    background: none;
+    border: none;
+    color: #d7dde8;
+    font-size: 14px;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+}
+
+.currency-option:hover:not(:disabled) {
+    background: #1f2937;
+}
+
+.currency-option:disabled {
+    color: #5b6472;
+    cursor: default;
+}
+
+.currency-option .hint {
+    font-size: 11px;
+    color: #7a8494;
+    font-weight: 400;
+}
+
+.pct-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.pct-btn {
+    background: none;
+    border: 1px solid #2e3a4f;
+    border-radius: 6px;
+    color: #9aa5b8;
+    font-size: 11px;
+    line-height: 1;
+    padding: 5px 11px;
+    cursor: pointer;
+}
+
+.pct-btn:hover:not(:disabled) {
+    color: #d7dde8;
+    border-color: #4a5872;
+}
+
+.pct-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.order-balance {
+    margin-left: 4px;
+    font-size: 11px;
+    color: #7a8494;
+}
+
+.order-live-price {
+    display: block;
+    margin-top: 4px;
+    font-size: 11px;
+    color: #7a8494;
+}
+
 .order-total-sub {
     display: block;
     font-size: 12px;

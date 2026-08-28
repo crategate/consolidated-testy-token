@@ -9,40 +9,41 @@
     padding: 1.5rem;
     transition: background 1.2s ease, color 0.6s ease;
     overflow: hidden;
-    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    font-family: var(--font-sans);
+    border-radius: var(--radius-lg);
 }
 
 /* ── State Themes ── */
 .market-status-bg[data-market-state="0"] {
-    background: radial-gradient(ellipse at 50% 0%, #064e3b 0%, #020202 100%);
-    --accent: #4ade80;
-    --dot: #22c55e;
+    background: radial-gradient(ellipse at 50% 0%, rgba(6, 78, 59, 0.35) 0%, rgba(8, 8, 10, 0.95) 100%);
+    --accent: var(--neon-green);
+    --dot: var(--neon-green);
     color: #ecfdf5;
 }
 
 .market-status-bg[data-market-state="1"] {
-    background: radial-gradient(ellipse at 50% 0%, #451a03 0%, #020202 100%);
-    --accent: #fbbf24;
-    --dot: #f59e0b;
+    background: radial-gradient(ellipse at 50% 0%, rgba(251, 191, 36, 0.15) 0%, rgba(8, 8, 10, 0.95) 100%);
+    --accent: var(--neon-amber);
+    --dot: var(--neon-amber);
     color: #fffbeb;
 }
 
 .market-status-bg[data-market-state="2"] {
-    background: radial-gradient(ellipse at 50% 0%, #0f172a 0%, #020202 100%);
+    background: radial-gradient(ellipse at 50% 0%, rgba(148, 163, 184, 0.12) 0%, rgba(8, 8, 10, 0.95) 100%);
     --accent: #94a3b8;
     --dot: #64748b;
     color: #f1f5f9;
 }
 
 .market-status-bg[data-market-state="3"] {
-    background: radial-gradient(ellipse at 50% 0%, #450a0a 0%, #020202 100%);
-    --accent: #f87171;
-    --dot: #ef4444;
+    background: radial-gradient(ellipse at 50% 0%, rgba(248, 113, 113, 0.18) 0%, rgba(8, 8, 10, 0.95) 100%);
+    --accent: var(--neon-red);
+    --dot: var(--neon-red);
     color: #fef2f2;
 }
 
 .market-status-bg[data-market-state="99"] {
-    background: #0a0a0a;
+    background: var(--bg-card);
     --accent: #666;
     --dot: #444;
     color: #a3a3a3;
@@ -111,20 +112,6 @@
     animation: pulse 2.4s ease-in-out infinite;
 }
 
-@keyframes pulse {
-
-    0%,
-    100% {
-        opacity: 1;
-        transform: scale(1);
-    }
-
-    50% {
-        opacity: 0.4;
-        transform: scale(0.7);
-    }
-}
-
 .status-pill.stale {
     border-color: #ef4444;
     color: #fca5a5;
@@ -170,10 +157,59 @@
     color: #ef4444;
 }
 
+/* ── Hero variant (landing page) ── */
+.market-status-hero {
+    min-height: 240px;
+    border: 1px solid var(--border-subtle);
+    padding: 2rem 1.5rem;
+}
+
+.market-status-hero .status-pill {
+    margin-bottom: 1rem;
+}
+
+.market-status-hero .status-title {
+    font-size: clamp(2rem, 8vw, 4rem);
+    margin-bottom: 0.5rem;
+}
+
+.market-status-hero .status-detail {
+    font-size: clamp(0.9rem, 2.5vw, 1.1rem);
+    margin-bottom: 1rem;
+}
+
+/* ── Compact variant ── */
+.market-status-compact {
+    min-height: auto;
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius-md);
+}
+
+.market-status-compact .status-pill {
+    margin-bottom: 0.5rem;
+    font-size: 0.75rem;
+    padding: 0.25rem 0.75rem;
+}
+
+.market-status-compact .status-title {
+    font-size: 1.25rem;
+    margin-bottom: 0.25rem;
+}
+
+.market-status-compact .status-detail {
+    font-size: 0.85rem;
+    margin-bottom: 0.5rem;
+}
+
 /* ── Mobile Tweaks ── */
 @media (max-width: 480px) {
     .market-status-bg {
         padding: 1rem;
+    }
+
+    .market-status-hero {
+        padding: 1.5rem 1rem;
+        min-height: 200px;
     }
 
     .status-pill {

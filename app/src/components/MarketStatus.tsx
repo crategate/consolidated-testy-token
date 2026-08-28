@@ -18,9 +18,10 @@ const STATE_SUBTITLES: Record<number, string> = {
 
 interface MarketStatusProps {
     marketStatusPda?: PublicKey;
+    variant?: 'full' | 'hero' | 'compact';
 }
 
-export function MarketStatus({ marketStatusPda }: MarketStatusProps) {
+export function MarketStatus({ marketStatusPda, variant = 'full' }: MarketStatusProps) {
     const { data, loading, error, stale } = useMarketStatus(marketStatusPda);
 
     const state = data?.state ?? 99;
@@ -28,7 +29,11 @@ export function MarketStatus({ marketStatusPda }: MarketStatusProps) {
     const subtitle = STATE_SUBTITLES[state] ?? 'Waiting for oracle…';
 
     return (
-        <div className="market-status-bg" data-market-state={state} aria-live="polite">
+        <div
+            className={`market-status-bg market-status-${variant}`}
+            data-market-state={state}
+            aria-live="polite"
+        >
             <div className="market-status-grid" aria-hidden="true" />
 
             <header className="market-status-header">

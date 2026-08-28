@@ -5,6 +5,8 @@
     font-family: 'Segoe UI', system-ui, sans-serif;
     padding: 16px 24px;
     box-sizing: border-box;
+    max-width: 1200px;
+    margin: 0 auto;
 }
 
 .dash-topbar {

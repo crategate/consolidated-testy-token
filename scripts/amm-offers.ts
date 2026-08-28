@@ -96,9 +96,9 @@ async function main() {
     const sig = await ammProgram.methods.loadOffers().accounts(accounts).rpc();
 
     console.log("✅ Offer sheet loaded:", sig);
-    console.log("   big 3 lots @ tier 15 (50,000 AFHO) · 11.5% off · 30-day vest");
-    console.log("   med 5 lots @ tier 10 ( 5,000 AFHO) ·  9.0% off · 20-day vest");
-    console.log("   sml 10 lots @ tier 5 (    250 AFHO) ·  7.5% off · 10-day vest");
+    console.log("   big 3 lots @ tier 6 (500 AFHO) · 9.0% off · 18-day vest");
+    console.log("   med 5 lots @ tier 4 (100 AFHO) · 7.5% off ·  9-day vest");
+    console.log("   sml 10 lots @ tier 2 ( 25 AFHO) · 6.0% off ·  5-day vest");
     console.log("   day_index stamped to today → claimable tonight via offer_claim");
 }
 

@@ -285,15 +285,17 @@ pub struct OfferClaimSol<'info> {
     #[account(address = amm_state.usdc_mint)]
     pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
 
-    /// AFHO absolute-price oracle (same as the USDC path)
-    /// CHECK: address-verified against amm_state.spot_oracle
+    /// AFHO absolute-price oracle — fallback when the AFHO/USDC CPMM pool is
+    /// NOT pinned. Optional so the pinned path can omit it (the SOL claim
+    /// instruction is at the transaction-size limit; 2 fewer accounts matter).
+    /// CHECK: address-verified against amm_state.spot_oracle when present.
     #[account(address = amm_state.spot_oracle)]
-    pub spot_oracle: UncheckedAccount<'info>,
-    /// SOL/USD price oracle — mock fallback (raw u64, same units convention).
-    /// Used only when the SOL/USDC pool is NOT pinned.
-    /// CHECK: address-verified against amm_state.sol_oracle
+    pub spot_oracle: Option<AccountInfo<'info>>,
+    /// SOL/USD price oracle — fallback when the SOL/USDC pool is NOT pinned.
+    /// Optional for the same transaction-size reason.
+    /// CHECK: address-verified against amm_state.sol_oracle when present.
     #[account(address = amm_state.sol_oracle)]
-    pub sol_oracle: UncheckedAccount<'info>,
+    pub sol_oracle: Option<AccountInfo<'info>>,
 
     // Raydium CPMM AFHO/USDC pool — live spot-price source when pinned.
     /// CHECK: pool state, pinned to amm_state.cpmm_pool_state in the handler
@@ -440,7 +442,7 @@ pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u8, index: u64)
         )
         .ok_or(ErrorCode::InvalidOracle)?
     } else {
-        read_live_price(&ctx.accounts.spot_oracle.to_account_info())?
+        read_live_price(ctx.accounts.spot_oracle.as_ref().ok_or(ErrorCode::InvalidOracle)?)?
     };
 
     let q = quote_claim(
@@ -471,7 +473,7 @@ pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u8, index: u64)
         )
         .ok_or(ErrorCode::InvalidOracle)?
     } else {
-        read_live_price(&ctx.accounts.sol_oracle.to_account_info())?
+        read_live_price(ctx.accounts.sol_oracle.as_ref().ok_or(ErrorCode::InvalidOracle)?)?
     };
     require!(sol_price > 0, ErrorCode::InvalidOracle);
     let lamports = (q.cost_usdc as u128)

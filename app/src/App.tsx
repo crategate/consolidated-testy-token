@@ -1,15 +1,15 @@
 import { useWallet } from '@solana/wallet-adapter-react';
-import { MarketStatus } from './components/MarketStatus';
-import { PoolStats } from './components/PoolStats';
-import { WalletDashboard } from './components/WalletDashboard';
 import { useDeployment } from './hooks/useDeployment';
-import { UnderConstruction } from './components/UnderConstruction.tsx';
+import { useMarketStatus } from './hooks/useMarketStatus';
+import LandingPage from './pages/LandingPage';
 
 function App() {
     const { connected } = useWallet();
     const { deployment, loading, error } = useDeployment();
+    const { data: marketData } = useMarketStatus(deployment?.marketStatusKey);
+
     if (loading) {
-        return <div className="app-shell">Loading deployment...</div>;
+        return <div className="app-shell">Loading deployment…</div>;
     }
 
     if (error || !deployment) {
@@ -17,34 +17,13 @@ function App() {
     }
 
     return (
-        <div className={`app-shell ${connected ? 'has-wallet' : ''}`}>
-            <UnderConstruction />
-            {
-                !connected && (
-                    <section className="dashboard-section neon-glitch">
-                        <WalletDashboard deployment={deployment} />
-                    </section>
-                )
-            }
-
-
-
-            {
-                connected && (
-                    <section className="dashboard-section neon-glitch">
-                        <WalletDashboard deployment={deployment} />
-                    </section>
-                )
-            }
-
-            <div className="market-status-wrapper neon-glitch">
-                <MarketStatus marketStatusPda={deployment.marketStatusKey} />
-            </div>
-
-            <section className="stats-section neon-glitch">
-                <PoolStats mint={deployment.mintKey} />
-            </section>
-        </div >
+        <div
+            className="app-shell"
+            data-connected={connected}
+            data-market-state={marketData?.state ?? 99}
+        >
+            <LandingPage deployment={deployment} />
+        </div>
     );
 }
 

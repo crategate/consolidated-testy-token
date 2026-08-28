@@ -25,7 +25,7 @@ Each dimension depends on the ones already decided (order ablated in E6):
   5. vesting      <- stake health: base {5,10,20} * (0.5 + health/100);
      CROSS-DEPENDENCY on step 4: minus VEST_COMP_K*(target - realized)/100
      days — a floor-crushed discount is compensated with shorter locks.
-     Clamped 3..30 whole days. (mode="vest_first"/"independent" drops the
+     Clamped 3..25 whole days (25 = big-tier cap). (mode="vest_first"/"independent" drops the
      compensation for the E6 ablation.)
 
 Hard constraints (all enforced here): dynamic tiers with sml < med < big at
@@ -104,7 +104,7 @@ VEST_BASE = {"sml": 5, "med": 10, "big": 20}
 VEST_COMP_K = 3          # days off per 100 bps of floor-cap compression
                            # (draft said k~2; 3 makes the compensation
                            #  visible in crushed-day fills — see E6)
-VEST_MIN, VEST_MAX = 3, 30
+VEST_MIN, VEST_MAX = 3, 25   # 25 = big-tier cap (sml/med saturate below: 8/15)
 
 MOM_X_LO, MOM_X_SPAN = 3_500, 6_500  # shared scale with v1 (NOT a gate here)
 

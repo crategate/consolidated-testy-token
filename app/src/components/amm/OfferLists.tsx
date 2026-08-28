@@ -1,9 +1,20 @@
-import { useEffect, useState } from 'react';
-import { useWallet } from '@solana/wallet-adapter-react';
-import { useAmmData } from '../../hooks/amm/useAmmData.ts';
-import { useOfferClaim } from '../../hooks/amm/useOfferClaim.ts';
-import { formatTokens, formatUsdc, quoteCostRaw, ratchetActive } from '../../hooks/amm/offerMath.ts';
+import { useEffect, useRef, useState } from 'react';
+import { useWallet, useConnection } from '@solana/wallet-adapter-react';
+import { getAccount, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { useAmmData, type OfferTierData } from '../../hooks/amm/useAmmData.ts';
+import { useOfferClaim, type ClaimCurrency } from '../../hooks/amm/useOfferClaim.ts';
+import {
+    formatSol,
+    formatTokens,
+    formatUsdc,
+    lamportsForCost,
+    pricePerToken,
+    quoteCostRaw,
+    ratchetActive,
+} from '../../hooks/amm/offerMath.ts';
 import SizedOffers from './SizedOffers.tsx';
+
+const PERCENT_STEPS = [25, 50, 75] as const;
 
 function deskMessage(state: number | null, sheetStale: boolean, offersLive: boolean): string {
     if (state === 0) return 'Desk opens after market close — check back at the end of the trading day.';
@@ -17,9 +28,18 @@ function deskMessage(state: number | null, sheetStale: boolean, offersLive: bool
 
 export default function OfferLists() {
     const data = useAmmData();
-    const { connected } = useWallet();
-    const { claim, status, txSig, error: claimError, reset } = useOfferClaim(data.accounts, data.usdcDecimals);
+    const { connected, publicKey } = useWallet();
+    const { connection } = useConnection();
+    const { claim, status, txSig, error: claimError, reset } = useOfferClaim(
+        data.accounts,
+        data.solAccounts,
+        data.usdcDecimals,
+    );
     const [quantities, setQuantities] = useState<Record<string, number>>({ big: 0, med: 0, sml: 0 });
+    const [currency, setCurrency] = useState<ClaimCurrency>('usdc');
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [balances, setBalances] = useState<{ usdc: bigint | null; sol: bigint | null }>({ usdc: null, sol: null });
+    const pickerRef = useRef<HTMLDivElement>(null);
 
     // Clamp quantities if the sheet refreshes with fewer remaining lots
     useEffect(() => {
@@ -31,6 +51,45 @@ export default function OfferLists() {
             return next;
         });
     }, [data.tiers]);
+
+    // Buyer's spendable balances for the % quick-fill buttons. Own 15s cadence
+    // (not tied to the 4s price tick) to spare the rate-limited devnet RPC.
+    useEffect(() => {
+        let cancelled = false;
+        const fetchBalances = async () => {
+            if (!publicKey || !data.accounts) {
+                setBalances({ usdc: null, sol: null });
+                return;
+            }
+            try {
+                const buyerUsdc = getAssociatedTokenAddressSync(data.accounts.usdcMint, publicKey, false, TOKEN_PROGRAM_ID);
+                const [lamports, usdc] = await Promise.all([
+                    connection.getBalance(publicKey),
+                    getAccount(connection, buyerUsdc, 'confirmed', TOKEN_PROGRAM_ID).catch(() => null),
+                ]);
+                if (!cancelled) {
+                    setBalances({ usdc: usdc ? usdc.amount : 0n, sol: BigInt(lamports) });
+                }
+            } catch {
+                if (!cancelled) setBalances({ usdc: null, sol: null });
+            }
+        };
+        void fetchBalances();
+        const interval = window.setInterval(() => {
+            if (!document.hidden) void fetchBalances();
+        }, 15000);
+        return () => { cancelled = true; window.clearInterval(interval); };
+    }, [connection, publicKey, data.accounts]);
+
+    // Close the currency menu on any outside click.
+    useEffect(() => {
+        if (!menuOpen) return;
+        const onDown = (e: MouseEvent) => {
+            if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) setMenuOpen(false);
+        };
+        document.addEventListener('mousedown', onDown);
+        return () => document.removeEventListener('mousedown', onDown);
+    }, [menuOpen]);
 
     const setQty = (tierKey: string, qty: number) => {
         if (status !== 'idle') reset();
@@ -54,12 +113,22 @@ export default function OfferLists() {
     );
 
     const priceKnown = data.livePrice !== null && data.livePrice > 0n;
+    const solPriceKnown = data.solPrice !== null && data.solPrice > 0n;
     const ratchet = priceKnown && data.tiers.some(
         (t) => (quantities[t.key] ?? 0) > 0 && ratchetActive(data.livePrice as bigint, t.discountBps, data.floorBasis)
     );
 
+    // Per-lot cost in the SELECTED currency (SOL estimates use the same
+    // lamports math the on-chain handler applies at claim time).
+    const costPerLot = (t: OfferTierData): bigint => {
+        const c = quoteCostRaw(data.livePrice ?? 0n, t.discountBps, data.floorBasis, t.lotTier, 1, data.afhoDecimals);
+        return currency === 'usdc' ? c : lamportsForCost(c, data.solPrice ?? 0n);
+    };
+
+    const solReady = data.solAccounts !== null && solPriceKnown;
+
     const canBuy = connected && data.deskOpen && totalLots > 0 && priceKnown &&
-        data.accounts !== null && status !== 'pending';
+        status !== 'pending' && (currency === 'usdc' ? data.accounts !== null : solReady);
 
     const buyLabel = !connected
         ? 'Connect wallet to buy'
@@ -70,12 +139,63 @@ export default function OfferLists() {
                 : 'Buy selected offers';
 
     const handleBuy = async () => {
-        const ok = await claim(selections, estCostRaw);
+        const ok = await claim(selections, estCostRaw, { currency, solPrice: data.solPrice });
         if (ok) setQuantities({ big: 0, med: 0, sml: 0 });
         setTimeout(data.refresh, 2000);
     };
 
+    const selectCurrency = (next: ClaimCurrency) => {
+        if (status !== 'idle') reset();
+        setCurrency(next);
+        setMenuOpen(false);
+    };
+
+    // Quick-fill: size the order to pct% of the buyer's balance in the
+    // selected currency. Keeps the user's current tier mix (scaled) when one
+    // exists; with an empty basket it fills smallest lots first so the total
+    // lands as close to the target as whole lots allow.
+    const applyPercent = (pct: number) => {
+        if (!priceKnown) return;
+        const bal = currency === 'usdc' ? balances.usdc : balances.sol;
+        if (bal === null || bal <= 0n) return;
+        const target = (bal * BigInt(pct)) / 100n;
+        const next: Record<string, number> = { big: 0, med: 0, sml: 0 };
+        const curCost = data.tiers.reduce(
+            (s, t) => s + costPerLot(t) * BigInt(quantities[t.key] ?? 0), 0n
+        );
+        if (curCost > 0n) {
+            const factor = Number(target) / Number(curCost);
+            for (const t of data.tiers) {
+                next[t.key] = Math.min(t.remaining, Math.floor((quantities[t.key] ?? 0) * factor));
+            }
+        } else {
+            let spent = 0n;
+            const asc = [...data.tiers].sort((a, b) => a.lotTokens - b.lotTokens);
+            for (const t of asc) {
+                const per = costPerLot(t);
+                if (per <= 0n) continue;
+                const can = Number((target - spent) / per);
+                next[t.key] = Math.min(t.remaining, Math.max(0, can));
+                spent += per * BigInt(next[t.key]);
+            }
+        }
+        if (status !== 'idle') reset();
+        setQuantities(next);
+    };
+
     const closedMessage = deskMessage(data.marketState, data.sheetStale, data.offersLive);
+
+    const displayCost = totalLots > 0 && priceKnown
+        ? currency === 'usdc'
+            ? `≈ ${formatUsdc(estCostRaw, data.usdcDecimals)}`
+            : solPriceKnown
+                ? `≈ ${formatSol(lamportsForCost(estCostRaw, data.solPrice as bigint))}`
+                : '—'
+        : '—';
+
+    const balanceLabel = currency === 'usdc'
+        ? balances.usdc !== null ? `Balance: ${formatUsdc(balances.usdc, data.usdcDecimals)} USDC` : ''
+        : balances.sol !== null ? `Balance: ${formatSol(balances.sol)} SOL` : '';
 
     return (
         <section className="offer-desk">
@@ -107,15 +227,77 @@ export default function OfferLists() {
             <div className="order-bar">
                 <div className="order-total">
                     <span className="order-total-label">Total order size (approx.)</span>
-                    <strong>
-                        {totalLots > 0 && priceKnown
-                            ? `≈ ${formatUsdc(estCostRaw, data.usdcDecimals)} USDC`
-                            : '—'}
-                    </strong>
+                    <div className="order-total-line">
+                        <strong>{displayCost}</strong>
+                        <div className="currency-picker" ref={pickerRef}>
+                            <button
+                                type="button"
+                                className="currency-select"
+                                onClick={() => setMenuOpen((o) => !o)}
+                                aria-haspopup="listbox"
+                                aria-expanded={menuOpen}
+                            >
+                                {currency === 'usdc' ? 'USDC' : 'SOL'}
+                                <span className="currency-caret">▾</span>
+                            </button>
+                            {menuOpen && (
+                                <div className="currency-menu" role="listbox">
+                                    <button
+                                        type="button"
+                                        className="currency-option"
+                                        role="option"
+                                        aria-selected={currency === 'usdc'}
+                                        onClick={() => selectCurrency('usdc')}
+                                    >
+                                        USDC
+                                        {currency === 'usdc' && <span className="hint">selected</span>}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="currency-option"
+                                        role="option"
+                                        aria-selected={currency === 'sol'}
+                                        disabled={!data.solAccounts}
+                                        title={data.solAccounts ? undefined : 'SOL payments need the SOL/USDC pool pinned (anchor run set-sol-usdc-pool)'}
+                                        onClick={() => selectCurrency('sol')}
+                                    >
+                                        SOL
+                                        {currency === 'sol'
+                                            ? <span className="hint">selected</span>
+                                            : !data.solAccounts && <span className="hint">pool not pinned</span>}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    <div className="pct-row">
+                        {PERCENT_STEPS.map((pct) => (
+                            <button
+                                key={pct}
+                                type="button"
+                                className="pct-btn"
+                                disabled={!priceKnown || (currency === 'usdc' ? balances.usdc === null || balances.usdc <= 0n : balances.sol === null || balances.sol <= 0n)}
+                                onClick={() => applyPercent(pct)}
+                            >
+                                {pct}%
+                            </button>
+                        ))}
+                        {balanceLabel && <span className="order-balance">{balanceLabel}</span>}
+                    </div>
                     {totalLots > 0 && (
                         <span className="order-total-sub">
                             {formatTokens(totalTokens)} AFHO · {totalLots} lot{totalLots !== 1 ? 's' : ''}
                             {ratchet && ' · buyback-floor ratchet active'}
+                        </span>
+                    )}
+                    {priceKnown && (
+                        <span className="order-live-price">
+                            Live AFHO ≈ ${(() => {
+                                const px = pricePerToken(data.livePrice as bigint, data.afhoDecimals, data.usdcDecimals);
+                                return px >= 1 ? px.toLocaleString('en-US', { maximumFractionDigits: 4 }) : px.toPrecision(4);
+                            })()}{' '}
+                            · source: {data.accounts ? 'pool (spot)' : 'oracle'}
+                            {data.updatedAt && ` · updated ${Math.max(0, Math.round((Date.now() - new Date(data.updatedAt).getTime()) / 1000))}s ago`}
                         </span>
                     )}
                 </div>
@@ -131,6 +313,7 @@ export default function OfferLists() {
             <p className="order-note">
                 Estimate only — the live oracle price at claim time sets the final cost.
                 Payment splits 80% buybacks / 10% dip reserve / 10% staker rewards.
+                {currency === 'sol' && ' SOL payments swap to USDC at claim (you cover the 0.25% pool fee).'}
             </p>
 
             {status === 'success' && txSig && (

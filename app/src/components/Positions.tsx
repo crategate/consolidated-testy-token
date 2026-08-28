@@ -56,6 +56,18 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
         }
     };
 
+    const handleExitAll = async () => {
+        for (const pos of positions) {
+            try {
+                await unstake(pos);
+            } catch (e) {
+                alert('Failed to exit a position: ' + (e as Error).message);
+                break;
+            }
+        }
+        refreshPositions();
+    };
+
     if (positionsLoading && !positions.length) return <div>Loading positions…</div>;
     if (positions.length === 0) return <div className="no-positions">No active stakes.</div>;
 
@@ -74,13 +86,20 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
         <div className="positions-list">
             <h3>Your Positions</h3>
 
-            <div className="claims-header">
+            <div className="claims-header neon-glitch">
                 <button
                     className="claim-collect"
                     onClick={handleClaimAll}
                     disabled={!claimsOpen || claimLoading || grandTotal <= 0}
                 >
                     {!claimsOpen ? 'Claim Available After Opening Bell' : claimLoading ? 'Collecting…' : 'Collect All Claims'}
+                </button>
+                <button
+                    className="exit-all-button"
+                    onClick={handleExitAll}
+                    disabled={positions.length === 0}
+                >
+                    Exit All Positions
                 </button>
                 <span className="grand-total">
                     Total available: <strong>{grandTotalDisplay} AFHO</strong>
@@ -89,7 +108,7 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
 
             <div className="pos-contain">
                 {displayPositions.map((pos) => (
-                    <div key={pos.index} className={`position-card market-state-${marketData?.state ?? 0}`}>
+                    <div key={pos.index} className="position-card neon-glitch">
                         <div className="position-row">
                             <span><strong>{(pos.amount / 1e9).toFixed(2)} </strong> AFHO</span>
                             {'multiplierDisplay' in pos && pos.multiplierDisplay !== '—' && (
@@ -133,6 +152,6 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
                     </div>
                 ))}
             </div>
-        </div >
+        </div>
     );
 };
