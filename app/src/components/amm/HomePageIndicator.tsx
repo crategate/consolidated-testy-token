@@ -10,16 +10,21 @@ export function HomePageIndicator() {
     const totalLots = tiers.reduce((n, t) => n + t.remaining, 0);
 
     return (
-        <Link to="/offer-desk" className="home-offer-indicator" aria-label="Active offers available">
-            <span className="indicator-pulse" aria-hidden="true" />
-            <div className="indicator-text">
-                <strong>Offers Are Live</strong>
-                <span>
-                    {totalLots > 0
-                        ? `${totalLots} lot${totalLots !== 1 ? 's' : ''} remaining · Bond Offer Desk →`
-                        : 'Bulk deals available now · Bond Offer Desk →'}
+        <>
+            <div className="home-offer-indicator-spacer" aria-hidden="true" />
+            <Link
+                to="/offer-desk"
+                className="home-offer-indicator"
+                aria-label={`Offers available now — ${totalLots} lots remaining`}
+            >
+                <span className="indicator-pulse" aria-hidden="true" />
+                <span className="indicator-text">
+                    <strong>Offers available now</strong>
+                    <span>
+                        · {totalLots} lot{totalLots !== 1 ? 's' : ''} remaining · View offers →
+                    </span>
                 </span>
-            </div>
-        </Link>
+            </Link>
+        </>
     );
 }
