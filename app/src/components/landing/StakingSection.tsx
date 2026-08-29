@@ -83,7 +83,7 @@ export function StakingSection({ mint, marketStatusPda }: StakingSectionProps) {
                 </div>
 
                 {!connected && (
-                    <div className="no-positions neon-glitch">
+                    <div className="no-positions neon-glitch glass-pane">
                         <p>Connect your wallet to view active staking positions.</p>
                         <div className="wallet-button-wrapper" style={{ marginTop: '1rem' }}>
                             <WalletMultiButton />
@@ -94,7 +94,7 @@ export function StakingSection({ mint, marketStatusPda }: StakingSectionProps) {
                 {connected && expanded && (
                     <div className="staking-content">
                         <div
-                            className="positions-shell neon-glitch neon-shadow glitch-double"
+                            className="positions-shell neon-glitch neon-shadow glitch-double glass-pane"
                             style={{ '--glitch-delay': '0.3s', '--shadow-delay': '0.8s' } as React.CSSProperties}
                         >
                             <Positions mint={mint} marketStatusPda={marketStatusPda} />
@@ -103,7 +103,7 @@ export function StakingSection({ mint, marketStatusPda }: StakingSectionProps) {
                 )}
 
                 {connected && !expanded && hasPositions && (
-                    <div className="no-positions">
+                    <div className="no-positions glass-pane">
                         {positions.length} position{positions.length !== 1 ? 's' : ''} hidden.
                     </div>
                 )}

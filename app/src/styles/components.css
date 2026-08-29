@@ -1,0 +1,873 @@
+/* ═══════════════════════════════════════════════════════════════════
+   Components — wallet, stake form, positions, stats, explainer,
+   split chart, built-with, wallet-adapter overrides. Geometry, color
+   and fallback backgrounds live here; effect layers (::before /
+   ::after glitches) live in fx-*.css; the tinted-glass treatment is
+   opt-in via the .glass-pane class in glass.css.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ─── Wallet Dashboard ─── */
+.wallet-dashboard {
+    max-width: 100%;
+}
+
+.dashboard-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    padding: 0.75rem 1rem;
+    background: var(--bg-elevated);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-subtle);
+    position: relative;
+    isolation: isolate;
+}
+
+.wallet-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--neon-green);
+    font-weight: 700;
+    font-family: var(--font-mono);
+}
+
+.wallet-pk {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: var(--radius-sm);
+    text-align: center;
+    border: 1px solid var(--border-subtle);
+    flex-grow: 1;
+    padding: 0.35rem 0.5rem;
+}
+
+.dashboard-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: 1fr;
+}
+
+@media (min-width: 768px) {
+    .dashboard-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 1.5rem;
+    }
+}
+
+/* ─── Connect Wallet Tile ─── */
+.connect-prompt {
+    text-align: center;
+    padding: 2rem 1.5rem;
+    background: var(--bg-card);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-subtle);
+    position: relative;
+    isolation: isolate;
+}
+
+.connect-prompt .glitch-border {
+    position: absolute;
+    inset: -1px;
+    border-radius: calc(var(--radius-lg) + 1px);
+    pointer-events: none;
+    animation: neonFlicker var(--fx-border-cycle) infinite;
+    animation-delay: var(--glitch-delay, 0s);
+    border: 1px solid transparent;
+    z-index: 2;
+}
+
+.app-shell[data-connected='true'] .connect-prompt .glitch-border {
+    animation-name: neonFlickerFast;
+}
+
+.connect-prompt h2 {
+    color: var(--text-primary);
+    font-size: 1.75rem;
+    margin-bottom: 0.5rem;
+    letter-spacing: -0.02em;
+}
+
+.connect-prompt p {
+    color: var(--text-secondary);
+    margin-bottom: 1.5rem;
+}
+
+/* ─── Stake Form ───
+   --fx-step climbs as the staking steps complete (data-step), so
+   the rainbow, border and text effects grow slightly more excited
+   while typing and once a valid amount is ready. */
+
+.stake-form {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border-radius: var(--radius-md);
+    padding: 1.5rem;
+    border: 1px solid var(--border-subtle);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    position: relative;
+    transition: border-color 0.6s ease;
+    --fx-step: 1;
+}
+
+.stake-form[data-step='typing'] {
+    --fx-step: 1.3;
+}
+
+.stake-form[data-step='ready'] {
+    --fx-step: 1.55;
+}
+
+.stake-form:hover {
+    border-color: rgba(0, 240, 255, 0.25);
+    box-shadow: 0 0 20px rgba(0, 240, 255, 0.08);
+}
+
+.stake-form h3 {
+    color: var(--text-primary);
+    margin: 0 0 1rem;
+    font-size: 1.1rem;
+    font-weight: 400;
+}
+
+.stake-form .balance-line {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 1.25rem;
+    font-family: var(--font-mono);
+}
+
+.stake-form .balance-line span {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    font-weight: 400;
+}
+
+.stake-form input {
+    width: 100%;
+    padding: 0.875rem 1rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-input);
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-family: var(--font-mono);
+    margin-bottom: 1rem;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    box-sizing: border-box;
+}
+
+.stake-form input:focus {
+    outline: none;
+    border-color: var(--neon-cyan);
+    box-shadow: 0 0 0 3px rgba(0, 240, 255, 0.1);
+}
+
+.stake-form input::placeholder {
+    color: var(--text-muted);
+}
+
+.stake-form button {
+    width: 100%;
+    padding: 0.875rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--neon-cyan);
+    background: transparent;
+    color: var(--neon-cyan);
+    font-weight: 600;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: all 1.2s;
+    position: relative;
+    overflow: hidden;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.stake-form button:hover:not(:disabled) {
+    background: rgba(0, 240, 255, 0.1);
+    box-shadow: 1px 0 20px rgba(0, 240, 255, 0.7);
+}
+
+.stake-form button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    border-color: var(--text-muted);
+    color: var(--text-muted);
+}
+
+/* Stake ladder: once an amount is typed, the submit button glows calmly */
+.stake-form[data-step='ready'] button:not(:disabled) {
+    border-color: rgba(0, 240, 255, 0.6);
+    animation: pillGlow 3.4s ease-in-out infinite;
+}
+
+.custodial-note {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin: 0 0 1rem;
+    line-height: 1.5;
+}
+
+.mint-display {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-bottom: 0.75rem;
+}
+
+.mint-display code {
+    background: rgba(0, 0, 0, 0.2);
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    color: var(--text-secondary);
+}
+
+/* ─── Positions ─── */
+.positions-shell {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border-radius: var(--radius-md);
+    padding: 1.5rem;
+    border: 1px solid var(--border-subtle);
+    position: relative;
+}
+
+.positions-shell h3 {
+    margin: 0 0 1rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.positions-list {
+    margin-top: 0;
+}
+
+.pos-contain {
+    max-height: 60vh;
+    overflow: auto;
+    padding-right: 0.25rem;
+}
+
+/* Claims header - control bar */
+.claims-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+    padding: 1rem 1.25rem;
+    background: var(--bg-elevated);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-subtle);
+    flex-wrap: wrap;
+    position: relative;
+    isolation: isolate;
+}
+
+.claim-collect,
+.exit-all-button {
+    padding: 0.625rem 1.25rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--neon-cyan);
+    background: transparent;
+    color: var(--neon-cyan);
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.4s;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.claim-collect:hover:not(:disabled),
+.exit-all-button:hover:not(:disabled) {
+    background: rgba(0, 240, 255, 0.1);
+    box-shadow: 0 0 15px rgba(0, 240, 255, 0.2);
+}
+
+.claim-collect:disabled,
+.exit-all-button:disabled {
+    opacity: 0.5;
+    color: #fff;
+    cursor: not-allowed;
+    border-color: red;
+}
+
+.exit-all-button {
+    border-color: var(--neon-pink);
+    color: var(--neon-pink);
+    animation: redPulse 3s ease-in-out infinite;
+}
+
+.exit-all-button:hover:not(:disabled) {
+    background: rgba(255, 42, 109, 0.1);
+    animation: redPulseFast 1.2s ease-in-out infinite;
+}
+
+.grand-total {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+}
+
+.grand-total strong {
+    color: var(--neon-green);
+    font-size: 1.1rem;
+}
+
+/* ─── Position Cards ─── */
+.position-card {
+    margin-bottom: 1rem;
+    text-align: left;
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    border-radius: var(--radius-md);
+    padding: 1.25rem;
+    border: 1px solid var(--border-subtle);
+    transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+    position: relative;
+    isolation: isolate;
+}
+
+/* Vesting / locked positions: slightly darker and amber-tinted so they
+   stand out from regular, liquid stakes. */
+.position-card.vesting {
+    background: linear-gradient(135deg, rgba(20, 18, 22, 0.95), rgba(30, 24, 16, 0.92));
+    border-color: rgba(255, 170, 0, 0.25);
+}
+
+.position-card.vesting:hover {
+    border-color: rgba(255, 170, 0, 0.5);
+    box-shadow: 0 0 18px rgba(255, 170, 0, 0.12);
+}
+
+.position-card:hover {
+    border-color: rgba(255, 42, 109, 0.4);
+    box-shadow: 0 0 15px rgba(255, 42, 109, 0.1);
+}
+
+.position-card .position-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.position-card strong {
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.position-card span:not(.multiplier-badge) {
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+}
+
+.multiplier-badge {
+    background: linear-gradient(135deg, rgba(0, 240, 255, 0.15), rgba(211, 0, 249, 0.15));
+    color: var(--neon-cyan);
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    border: 1px solid rgba(0, 240, 255, 0.3);
+}
+
+.position-badges {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.bond-badge {
+    background: linear-gradient(135deg, rgba(255, 170, 0, 0.15), rgba(255, 42, 109, 0.12));
+    color: var(--neon-amber);
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    border: 1px solid rgba(255, 170, 0, 0.35);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.vesting-countdown {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin: 0.5rem 0 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background: rgba(255, 170, 0, 0.08);
+    border: 1px solid rgba(255, 170, 0, 0.2);
+    border-radius: var(--radius-sm);
+}
+
+.countdown-number {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--neon-amber);
+    font-family: var(--font-mono);
+    line-height: 1;
+}
+
+.countdown-label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.position-card div {
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+}
+
+.reward-line {
+    color: var(--text-primary) !important;
+    font-weight: 600;
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border-subtle);
+}
+
+.penalty-warning {
+    color: #ff6b6b !important;
+    font-size: 0.8rem;
+    margin-top: 0.25rem;
+}
+
+.posr-line {
+    color: var(--text-secondary) !important;
+    font-size: 0.8rem;
+    margin-top: 0.25rem;
+}
+
+.position-card .unstake {
+    width: 100%;
+    margin-top: 1rem;
+    padding: 0.625rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--neon-pink);
+    background: transparent;
+    color: var(--neon-pink);
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    animation: redPulse 3s ease-in-out infinite;
+}
+
+.position-card .unstake:hover:not(:disabled) {
+    background: rgba(255, 42, 109, 0.1);
+    animation: redPulseFast 1.2s ease-in-out infinite;
+}
+
+.position-card .unstake:disabled {
+    opacity: 0.3;
+    border-color: var(--text-muted);
+    color: var(--text-muted);
+    cursor: not-allowed;
+    animation: none;
+}
+
+.no-positions {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    text-align: center;
+    padding: 2rem;
+    background: var(--bg-elevated);
+    border-radius: var(--radius-md);
+    border: 1px dashed var(--border-subtle);
+    position: relative;
+}
+
+/* ─── Staking toolbar buttons ─── */
+.staking-toggle {
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    transition: all 0.2s;
+}
+
+.staking-toggle:hover {
+    border-color: var(--neon-cyan);
+    color: var(--neon-cyan);
+}
+
+/* ─── Stats Section ─── */
+.pool-stats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+}
+
+@media (min-width: 640px) {
+    .pool-stats {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (min-width: 900px) {
+    .pool-stats {
+        grid-template-columns: repeat(5, 1fr);
+    }
+}
+
+.stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1.25rem 1rem;
+    background: var(--bg-card);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-subtle);
+    min-width: 120px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    position: relative;
+}
+
+.stat:hover {
+    border-color: rgba(0, 240, 255, 0.3);
+}
+
+.stat-value {
+    font-size: 1.75rem;
+    font-weight: 300;
+    color: var(--neon-cyan);
+    font-family: var(--font-mono);
+    text-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
+}
+
+.stat-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.pool-stats.loading {
+    color: var(--text-muted);
+    font-style: italic;
+    text-align: center;
+    padding: 2rem;
+}
+
+/* ─── Explainer Section ─── */
+.explainer-grid {
+    display: grid;
+    gap: 1rem;
+    margin-top: 47px;
+    grid-template-columns: 1fr;
+}
+
+@media (min-width: 640px) {
+    .explainer-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (min-width: 900px) {
+    .explainer-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+.explainer-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 1.5rem;
+    transition: border-color 0.2s;
+    position: relative;
+}
+
+.explainer-card:hover {
+    border-color: rgba(0, 240, 255, 0.3);
+}
+
+.explainer-icon {
+    width: 40px;
+    height: 40px;
+    margin: auto;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    margin-bottom: 1rem;
+    background: rgba(0, 240, 255, 0.08);
+    color: var(--neon-cyan);
+    border: 1px solid rgba(0, 240, 255, 0.15);
+}
+
+.explainer-card h4 {
+    margin: 0 0 0.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.explainer-card p {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+/* ─── Split Chart ─── */
+.split-chart {
+    margin-top: 2.5rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 1.5rem;
+    position: relative;
+}
+
+.split-title {
+    margin: 0 0 1.25rem;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.split-bars {
+    margin-top: 60px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-around;
+    gap: 1rem;
+    height: 160px;
+}
+
+.split-bar-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1;
+    max-width: 100px;
+}
+
+.split-bar-track {
+    width: 100%;
+    height: 120px;
+    background: var(--bg-elevated);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    position: relative;
+    border: 1px solid var(--border-subtle);
+}
+
+.split-bar-fill {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    transition: height 0.8s ease;
+    box-shadow: 0 0 12px currentColor;
+    background-image: linear-gradient(105deg, transparent 40%, rgba(255, 255, 255, 0.18) 50%, transparent 60%);
+    background-size: 250% 100%;
+    background-position: -200% 0;
+    background-repeat: no-repeat;
+}
+
+.split-value {
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.split-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-secondary);
+    text-align: center;
+}
+
+/* ─── Built With Section ─── */
+.built-with-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: 1fr;
+}
+
+.built-with-grid .built-with-tile:nth-child(3) img {
+    width: 75%;
+}
+
+@media (min-width: 640px) {
+    .built-with-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+.built-with-tile {
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 2rem 1.5rem;
+    text-align: center;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    position: relative;
+}
+
+.built-with-tile:hover {
+    border-color: rgba(0, 240, 255, 0.3);
+    box-shadow: 0 0 20px rgba(0, 240, 255, 0.08);
+}
+
+.built-with-logo {
+    max-width: 100%;
+    max-height: 56px;
+    height: auto;
+    object-fit: contain;
+    filter: grayscale(0.15) brightness(1.05) drop-shadow(0 0 6px rgba(0, 240, 255, 0.15));
+    transition: filter 0.2s;
+}
+
+.built-with-tile:hover .built-with-logo {
+    filter: grayscale(0) brightness(1.15) drop-shadow(0 0 14px rgba(0, 240, 255, 0.4));
+}
+
+/* ─── Wallet Button Overrides ─── */
+.wallet-button-wrapper {
+    display: inline-block;
+}
+
+.wallet-button-wrapper .wallet-adapter-button {
+    background: transparent !important;
+    color: var(--neon-cyan) !important;
+    font-family: var(--font-mono) !important;
+    font-size: 0.8rem !important;
+    padding: 0.5rem 1rem !important;
+    border-radius: var(--radius-sm) !important;
+    border: 1px solid var(--neon-cyan) !important;
+    cursor: pointer !important;
+    transition: all 1.2s !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+}
+
+.wallet-button-wrapper .wallet-adapter-button:hover {
+    animation: walletButtonGlitch 1.8s infinite !important;
+    background: rgba(0, 240, 255, 0.08) !important;
+}
+
+.wallet-button-wrapper .wallet-adapter-button-trigger {
+    background: transparent !important;
+}
+
+/* Modal styling */
+.wallet-adapter-modal-wrapper {
+    font-family: var(--font-sans);
+    background: var(--bg-primary);
+}
+
+.wallet-adapter-modal-button {
+    background: var(--bg-elevated) !important;
+    border: 1px solid var(--border-subtle) !important;
+    color: var(--text-primary) !important;
+}
+
+.wallet-adapter-modal-button:hover {
+    border-color: var(--neon-cyan) !important;
+}
+
+/* ─── Wallet Adapter Modal ─── */
+.wallet-adapter-modal-container {
+    background: var(--bg-primary) !important;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg) !important;
+    position: relative;
+    overflow: visible !important;
+}
+
+.wallet-adapter-modal-title {
+    color: var(--text-primary) !important;
+    font-family: var(--font-mono) !important;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+/* ─── Connecting text ─── */
+.connecting-text {
+    color: var(--neon-cyan);
+    font-size: 0.8rem;
+    font-family: var(--font-mono);
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.4;
+    }
+}
+
+/* ─── Scrollbar ─── */
+::-webkit-scrollbar {
+    width: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--bg-elevated);
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--neon-cyan);
+}
+
+/* ─── Selection ─── */
+::selection {
+    background: rgba(0, 240, 255, 0.2);
+    color: var(--text-primary);
+}
+
+/* ─── Misc utilities ─── */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}

@@ -1,7 +1,7 @@
 import { usePoolStats } from '../hooks/usePoolStats';
 import { PublicKey } from '@solana/web3.js';
 
-const SHADOW_VARIANTS = ['shadow-right', 'shadow-split', 'shadow-under', 'shadow-left', 'shadow-top'];
+const SHADOW_VARIANTS = ['shadow-right', 'shadow-corner-tl', 'shadow-under', 'shadow-left', 'shadow-corner-br'];
 
 interface PoolStatsProps {
     mint: PublicKey;
@@ -33,14 +33,19 @@ export function PoolStats({ mint }: PoolStatsProps) {
             {STAT_ITEMS.map((item, index) => (
                 <div
                     key={item.label}
-                    className={`stat neon-glitch neon-shadow ${SHADOW_VARIANTS[index % SHADOW_VARIANTS.length]}`}
+                    className={`stat neon-glitch neon-shadow glass-pane ${SHADOW_VARIANTS[index % SHADOW_VARIANTS.length]}`}
                     style={{
                         '--glitch-delay': `${(index * 0.5).toFixed(2)}s`,
                         '--shadow-delay': `${(index * 0.7 + 0.3).toFixed(2)}s`,
                     } as React.CSSProperties}
                 >
                     <span className="stat-value">{item.value}</span>
-                    <span className="stat-label">{item.label}</span>
+                    <span
+                        className="stat-label text-glitch-light"
+                        style={{ '--glitch-delay': `${(index * 0.9 + 0.2).toFixed(2)}s` } as React.CSSProperties}
+                    >
+                        {item.label}
+                    </span>
                 </div>
             ))}
         </div>

@@ -24,6 +24,7 @@ pub mod amm {
     ) -> Result<()> {
         initialize::handler(ctx, spot_oracle, staking_pool, sol_oracle)
     }
+
     pub fn make_offers(ctx: Context<MakeOffers>) -> Result<()> {
         make_offers::handler(ctx)
     }

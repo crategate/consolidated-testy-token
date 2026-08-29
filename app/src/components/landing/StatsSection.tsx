@@ -7,7 +7,7 @@ interface StatsSectionProps {
 
 export function StatsSection({ mint }: StatsSectionProps) {
     return (
-        <section className="stats-section">
+        <section className="stats-section section-hairline">
             <div className="landing-section-inner">
                 <PoolStats mint={mint} />
             </div>

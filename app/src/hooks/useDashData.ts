@@ -1,21 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { BorshAccountsCoder, type Idl } from '@coral-xyz/anchor';
-import stakingIdl from '../../../target/idl/staking.json';
+import { useQuery } from '@tanstack/react-query';
 import crankIdl from '../../../target/idl/crank_oracle.json';
 import ammIdl from '../../../target/idl/amm.json';
-import type { DeploymentConfig } from '../config';
-
-// deployment.json carries more than the app's DeploymentConfig type
-type DashConfig = DeploymentConfig & {
-    ammProgram?: string;
-    ammState?: string;
-    ammOfferList?: string;
-    ammSolVault?: string;
-    ammUsdcVault?: string;
-    ammAfhoVault?: string;
-};
+import { useChainData } from '../context/useChainData';
+import {
+    AMM_PROGRAM_ID,
+    CRANK_PROGRAM_ID,
+    field,
+    type AmmStateData,
+    type MarketStatusData,
+    type OfferListData,
+    type StakePoolData,
+} from '../context/chainDataHelpers';
+import type { ResolvedDeployment } from '../config';
 
 export type DashField = { label: string; value: string };
 
@@ -32,28 +32,8 @@ export type DashData = {
     updatedAt: string;
 };
 
-function idlProgramId(idl: unknown): PublicKey {
-    const meta = idl as { metadata?: { address?: string }; address?: string };
-    const address = meta.metadata?.address ?? meta.address;
-    if (!address) throw new Error('IDL missing program address');
-    return new PublicKey(address);
-}
-
-const AMM_PROGRAM_ID = idlProgramId(ammIdl);
-const CRANK_PROGRAM_ID = idlProgramId(crankIdl);
-
-const stakingCoder = new BorshAccountsCoder(stakingIdl as Idl);
 const crankCoder = new BorshAccountsCoder(crankIdl as Idl);
 const ammCoder = new BorshAccountsCoder(ammIdl as Idl);
-
-function pk(value?: string): PublicKey | null {
-    if (!value) return null;
-    try {
-        return new PublicKey(value);
-    } catch {
-        return null;
-    }
-}
 
 function u64At(data: Uint8Array, offset: number): bigint {
     return new DataView(data.buffer, data.byteOffset, data.byteLength).getBigUint64(offset, true);
@@ -63,7 +43,6 @@ function u32At(data: Uint8Array, offset: number): number {
     return new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(offset, true);
 }
 
-// SPL token account: amount u64 @ offset 64
 function tokenAmount(data: Uint8Array): bigint {
     return u64At(data, 64);
 }
@@ -83,142 +62,114 @@ function fmtTs(unix: unknown): string {
     return new Date(n * 1000).toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
 }
 
-type DecodedAccount = Record<string, unknown>;
-
-function decode(coder: BorshAccountsCoder, name: string, data: Uint8Array): DecodedAccount | null {
+function pk(value?: string): PublicKey | null {
+    if (!value) return null;
     try {
-        return coder.decode(name, Buffer.from(data)) as DecodedAccount;
+        return new PublicKey(value);
     } catch {
         return null;
     }
 }
 
-// Anchor 0.31 IDL coders return camelCase; handle snake_case too for safety.
-function field<T>(obj: DecodedAccount, ...names: string[]): T | undefined {
-    for (const n of names) {
-        if (obj[n] !== undefined && obj[n] !== null) return obj[n] as T;
-    }
-    return undefined;
+interface RemainingAccounts {
+    mintInfo: { data: Uint8Array; lamports: number } | null;
+    acceptedOffers: { data: Uint8Array; lamports: number } | null;
+    metrics: { data: Uint8Array; lamports: number } | null;
+    ammAfhoVault: { data: Uint8Array; lamports: number } | null;
+    ammUsdcVault: { data: Uint8Array; lamports: number } | null;
+    ammSolVault: { data: Uint8Array; lamports: number } | null;
+    stakeVault: { data: Uint8Array; lamports: number } | null;
+    rewardVault: { data: Uint8Array; lamports: number } | null;
+    penaltyVault: { data: Uint8Array; lamports: number } | null;
+    posrVault: { data: Uint8Array; lamports: number } | null;
+    bountyConfig: { data: Uint8Array; lamports: number } | null;
+    bountyVault: { data: Uint8Array; lamports: number } | null;
 }
 
-async function fetchConfig(): Promise<DashConfig> {
-    const res = await fetch(`${import.meta.env.BASE_URL}deployment.json?t=${Date.now()}`, { cache: 'no-store' });
-    return res.ok ? await res.json() : {};
-}
+async function fetchRemainingAccounts(
+    connection: Connection,
+    deployment: ResolvedDeployment,
+    ammProgram: PublicKey,
+    crankProgram: PublicKey,
+): Promise<RemainingAccounts> {
+    const mint = deployment.mintKey;
 
-// Every account the dashboard reads, keyed by display label. Shared by the
-// build step and the account-change subscriptions so both watch the same set.
-function dashKeys(config: DashConfig): Record<string, PublicKey | null> {
-    const mint = pk(config.mint);
-    const ammProgram = pk(config.ammProgram) ?? AMM_PROGRAM_ID;
-    const crankProgram = pk(config.crankProgram) ?? CRANK_PROGRAM_ID;
+    const [acceptedOffersPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from('accepted_offers'), mint.toBuffer()],
+        ammProgram,
+    );
+    const [metricsPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from('metrics'), mint.toBuffer()],
+        ammProgram,
+    );
+    const [bountyConfigPda] = PublicKey.findProgramAddressSync([Buffer.from('bounty_config')], crankProgram);
+    const [bountyVaultPda] = PublicKey.findProgramAddressSync([Buffer.from('bounty_vault')], crankProgram);
 
-    const [acceptedOffersPda] = mint
-        ? PublicKey.findProgramAddressSync([Buffer.from('accepted_offers'), mint.toBuffer()], ammProgram)
-        : [null];
-    const [metricsPda] = mint
-        ? PublicKey.findProgramAddressSync([Buffer.from('metrics'), mint.toBuffer()], ammProgram)
-        : [null];
-    const [bountyConfigPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from('bounty_config')],
-        crankProgram,
-    );
-    const [bountyVaultPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from('bounty_vault')],
-        crankProgram,
-    );
+    const keys = [
+        mint,
+        acceptedOffersPda,
+        metricsPda,
+        pk(deployment.ammAfhoVault),
+        pk(deployment.ammUsdcVault),
+        pk(deployment.ammSolVault),
+        pk(deployment.vault),
+        pk(deployment.rewardVault),
+        pk(deployment.penaltyVault),
+        pk(deployment.posrVault),
+        bountyConfigPda,
+        bountyVaultPda,
+    ].filter((k): k is PublicKey => k !== null);
+
+    const names = [
+        'mint',
+        'acceptedOffers',
+        'metrics',
+        'ammAfhoVault',
+        'ammUsdcVault',
+        'ammSolVault',
+        'stakeVault',
+        'rewardVault',
+        'penaltyVault',
+        'posrVault',
+        'bountyConfig',
+        'bountyVault',
+    ];
+
+    const infos = await connection.getMultipleAccountsInfo(keys);
+    const account = (name: string) => {
+        const idx = names.indexOf(name);
+        return infos[idx] ?? null;
+    };
 
     return {
-        mint,
-        pool: pk(config.pool),
-        stakeVault: pk(config.vault),
-        rewardVault: pk(config.rewardVault),
-        penaltyVault: pk(config.penaltyVault),
-        posrVault: pk(config.posrVault),
-        marketStatus: pk(config.marketStatus),
-        bountyConfig: bountyConfigPda,
-        bountyVault: bountyVaultPda,
-        ammState: pk(config.ammState),
-        offerList: pk(config.ammOfferList),
-        acceptedOffers: acceptedOffersPda,
-        metrics: metricsPda,
-        ammAfhoVault: pk(config.ammAfhoVault),
-        ammUsdcVault: pk(config.ammUsdcVault),
-        ammSolVault: pk(config.ammSolVault),
+        mintInfo: account('mint'),
+        acceptedOffers: account('acceptedOffers'),
+        metrics: account('metrics'),
+        ammAfhoVault: account('ammAfhoVault'),
+        ammUsdcVault: account('ammUsdcVault'),
+        ammSolVault: account('ammSolVault'),
+        stakeVault: account('stakeVault'),
+        rewardVault: account('rewardVault'),
+        penaltyVault: account('penaltyVault'),
+        posrVault: account('posrVault'),
+        bountyConfig: account('bountyConfig'),
+        bountyVault: account('bountyVault'),
     };
 }
 
-export function useDashData() {
-    const { connection } = useConnection();
-    const [data, setData] = useState<DashData | null>(null);
-    const [error, setError] = useState<string | null>(null);
-
-    useEffect(() => {
-        let cancelled = false;
-        const subscriptions: number[] = [];
-
-        async function load() {
-            try {
-                const config = await fetchConfig();
-                const dash = await buildDashData(connection, config);
-                if (!cancelled) {
-                    setData(dash);
-                    setError(null);
-                }
-            } catch (err) {
-                if (!cancelled) setError(err instanceof Error ? err.message : 'RPC fetch failed');
-            }
-        }
-
-        async function setup() {
-            const config = await fetchConfig();
-            if (cancelled) return;
-            const watch = Object.values(dashKeys(config)).filter(
-                (k): k is PublicKey => k !== null,
-            );
-            for (const key of watch) {
-                subscriptions.push(
-                    connection.onAccountChange(
-                        key,
-                        () => {
-                            void load();
-                        },
-                        'confirmed',
-                    ),
-                );
-            }
-            void load();
-        }
-
-        void setup();
-
-        return () => {
-            cancelled = true;
-            for (const id of subscriptions) {
-                void connection.removeAccountChangeListener(id);
-            }
-        };
-    }, [connection]);
-
-    return { data, error };
-}
-
-async function buildDashData(
-    connection: Connection,
-    config: DashConfig,
-): Promise<DashData> {
+function buildDashData(
+    deployment: ResolvedDeployment,
+    marketStatus: MarketStatusData | null,
+    pool: StakePoolData | null,
+    ammState: AmmStateData | null,
+    offerList: OfferListData | null,
+    remaining: RemainingAccounts,
+    ammProgram: PublicKey,
+    crankProgram: PublicKey,
+): DashData {
     const missing: string[] = [];
 
-    const keys = dashKeys(config);
-
-    const names = Object.keys(keys);
-    const infos = await connection.getMultipleAccountsInfo(
-        names.map((n) => keys[n] ?? PublicKey.default),
-    );
-    const account = (name: string) => (keys[name] ? infos[names.indexOf(name)] : null);
-
-    // ---- Mint (needed for decimals everywhere else) ----
-    const mintInfo = account('mint');
+    const mintInfo = remaining.mintInfo;
     let decimals = 9;
     let mintSupply = 0n;
     let mintAuthRenounced = false;
@@ -229,18 +180,11 @@ async function buildDashData(
     }
     if (!mintInfo) missing.push('mint');
 
-    const token = (name: string): bigint | null => {
-        const info = account(name);
+    const token = (info: { data: Uint8Array } | null): bigint | null => {
         return info && info.data.length >= 72 ? tokenAmount(info.data) : null;
     };
 
     // ---- Offer sheet ----
-    const offerListInfo = account('offerList');
-    const offerList = offerListInfo ? decode(ammCoder, 'OfferList', offerListInfo.data) : null;
-    const metricsInfo = account('metrics');
-    const metrics = metricsInfo ? decode(ammCoder, 'MarketMetrics', metricsInfo.data) : null;
-    const acceptedInfo = account('acceptedOffers');
-
     const offerFields: DashField[] = [];
     if (offerList) {
         for (const [label, key] of [
@@ -248,7 +192,7 @@ async function buildDashData(
             ['Med', 'med'],
             ['Sml', 'sml'],
         ] as const) {
-            const o = field<DecodedAccount>(offerList, `${key}Offer`, `${key}_offer`);
+            const o = field<Record<string, unknown>>(offerList, `${key}Offer`, `${key}_offer`);
             if (o) {
                 offerFields.push({
                     label: `${label} offer`,
@@ -261,6 +205,11 @@ async function buildDashData(
             value: `${field(offerList, 'totalComplete', 'total_complete')} AFHO`,
         });
     }
+
+    const metricsInfo = remaining.metrics;
+    const metrics = metricsInfo
+        ? (ammCoder.decode('MarketMetrics', Buffer.from(metricsInfo.data)) as Record<string, unknown> | null)
+        : null;
     if (metrics) {
         const trail = field<number[]>(metrics, 'trailingStakeHealth', 'trailing_stake_health') ?? [];
         offerFields.push(
@@ -272,16 +221,14 @@ async function buildDashData(
             { label: 'Stake trend (5d)', value: trail.join(' → ') || '—' },
         );
     }
+
+    const acceptedInfo = remaining.acceptedOffers;
     if (acceptedInfo) {
-        // Legacy layout (no day_index): 8 disc + 15 bytes. Current: +8 byte day_index.
         const hasDay = acceptedInfo.data.length >= 31;
         const base = hasDay ? 16 : 8;
         const read5 = (off: number) => Array.from(acceptedInfo.data.slice(base + off, base + off + 5));
         offerFields.push(
-            {
-                label: 'Last recorded day',
-                value: hasDay ? `${u64At(acceptedInfo.data, 8)}` : 'legacy acct',
-            },
+            { label: 'Last recorded day', value: hasDay ? `${u64At(acceptedInfo.data, 8)}` : 'legacy acct' },
             { label: 'Big accepted (5d)', value: read5(0).join(' → ') },
             { label: 'Med accepted (5d)', value: read5(5).join(' → ') },
             { label: 'Sml accepted (5d)', value: read5(10).join(' → ') },
@@ -292,8 +239,6 @@ async function buildDashData(
     if (!metrics) missing.push('metrics PDA');
 
     // ---- AMM ----
-    const ammStateInfo = account('ammState');
-    const ammState = ammStateInfo ? decode(ammCoder, 'AmmState', ammStateInfo.data) : null;
     const ammFields: DashField[] = [];
     if (ammState) {
         ammFields.push(
@@ -307,17 +252,15 @@ async function buildDashData(
             },
         );
     }
-    const ammAfho = token('ammAfhoVault');
-    const ammUsdc = token('ammUsdcVault');
-    const ammSol = account('ammSolVault');
+    const ammAfho = token(remaining.ammAfhoVault);
+    const ammUsdc = token(remaining.ammUsdcVault);
+    const ammSol = remaining.ammSolVault;
     if (ammAfho !== null) ammFields.push({ label: 'AFHO vault', value: fmtToken(ammAfho, decimals) });
     if (ammUsdc !== null) ammFields.push({ label: 'USDC vault', value: fmtToken(ammUsdc, 6) });
     if (ammSol) ammFields.push({ label: 'SOL vault', value: fmtSol(ammSol.lamports) });
     if (!ammState) missing.push('amm_state');
 
     // ---- Staking ----
-    const poolInfo = account('pool');
-    const pool = poolInfo ? decode(stakingCoder, 'StakePool', poolInfo.data) : null;
     const stakeFields: DashField[] = [];
     if (pool) {
         stakeFields.push(
@@ -334,26 +277,24 @@ async function buildDashData(
         ['Penalty vault', 'penaltyVault'],
         ['POSR vault', 'posrVault'],
     ] as const) {
-        const amount = token(key);
+        const amount = token(remaining[key as keyof RemainingAccounts] as { data: Uint8Array } | null);
         if (amount !== null) stakeFields.push({ label, value: fmtToken(amount, decimals) });
     }
     if (!pool) missing.push('stake pool');
 
     // ---- Crank & bounty ----
-    const statusInfo = account('marketStatus');
-    const status = statusInfo ? decode(crankCoder, 'MarketStatus', statusInfo.data) : null;
-    const bountyCfgInfo = account('bountyConfig');
-    const bountyCfg = bountyCfgInfo ? decode(crankCoder, 'BountyConfig', bountyCfgInfo.data) : null;
-    const bountyVaultInfo = account('bountyVault');
+    const status = marketStatus;
+    const bountyCfgInfo = remaining.bountyConfig;
+    const bountyCfg = bountyCfgInfo
+        ? (crankCoder.decode('BountyConfig', Buffer.from(bountyCfgInfo.data)) as Record<string, unknown> | null)
+        : null;
+    const bountyVaultInfo = remaining.bountyVault;
     const crankFields: DashField[] = [];
     if (status) {
         crankFields.push(
-            { label: 'Market state (raw)', value: `${field(status, 'currentState', 'current_state')}` },
-            { label: 'Trading day', value: `${field(status, 'tradingDayIndex', 'trading_day_index')}` },
-            {
-                label: 'Last update',
-                value: fmtTs(field(status, 'lastUpdatedTimestamp', 'last_updated_timestamp')),
-            },
+            { label: 'Market state (raw)', value: `${status.state}` },
+            { label: 'Trading day', value: `${status.tradingDay}` },
+            { label: 'Last update', value: fmtTs(status.timestamp) },
         );
     }
     if (bountyCfg) {
@@ -367,10 +308,26 @@ async function buildDashData(
     }
     if (!status) missing.push('market_status');
 
-    // ---- Assemble, top (latest launch stage) → bottom (first) ----
-    const addr = (label: string, key: string): DashField => ({
+    const [acceptedOffersPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from('accepted_offers'), deployment.mintKey.toBuffer()],
+        ammProgram,
+    );
+    const [metricsPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from('metrics'), deployment.mintKey.toBuffer()],
+        ammProgram,
+    );
+    const [bountyConfigPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from('bounty_config')],
+        crankProgram,
+    );
+    const [bountyVaultPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from('bounty_vault')],
+        crankProgram,
+    );
+
+    const addr = (label: string, value?: string): DashField => ({
         label,
-        value: keys[key]?.toBase58() ?? 'not configured',
+        value: value ?? 'not configured',
     });
 
     const sections: DashSection[] = [
@@ -379,9 +336,9 @@ async function buildDashData(
             initialized: !!offerList,
             fields: offerFields,
             addresses: [
-                addr('OfferList', 'offerList'),
-                addr('AcceptedOffers', 'acceptedOffers'),
-                addr('Metrics', 'metrics'),
+                addr('OfferList', deployment.ammOfferList),
+                addr('AcceptedOffers', acceptedOffersPda.toBase58()),
+                addr('Metrics', metricsPda.toBase58()),
             ],
         },
         {
@@ -389,10 +346,10 @@ async function buildDashData(
             initialized: !!ammState,
             fields: ammFields,
             addresses: [
-                addr('AmmState', 'ammState'),
-                addr('AFHO vault', 'ammAfhoVault'),
-                addr('USDC vault', 'ammUsdcVault'),
-                addr('SOL vault', 'ammSolVault'),
+                addr('AmmState', deployment.ammState),
+                addr('AFHO vault', deployment.ammAfhoVault),
+                addr('USDC vault', deployment.ammUsdcVault),
+                addr('SOL vault', deployment.ammSolVault),
             ],
         },
         {
@@ -400,21 +357,21 @@ async function buildDashData(
             initialized: !!pool,
             fields: stakeFields,
             addresses: [
-                addr('Pool', 'pool'),
-                addr('Stake vault', 'stakeVault'),
-                addr('Reward vault', 'rewardVault'),
-                addr('Penalty vault', 'penaltyVault'),
-                addr('POSR vault', 'posrVault'),
+                addr('Pool', deployment.pool),
+                addr('Stake vault', deployment.vault),
+                addr('Reward vault', deployment.rewardVault),
+                addr('Penalty vault', deployment.penaltyVault),
+                addr('POSR vault', deployment.posrVault),
             ],
         },
         {
             title: 'Crank Oracle & Bounty',
-            initialized: !!status && (status.currentState ?? status.current_state) !== 99,
+            initialized: !!status && status.state !== 99,
             fields: crankFields,
             addresses: [
-                addr('MarketStatus', 'marketStatus'),
-                addr('BountyConfig', 'bountyConfig'),
-                addr('BountyVault', 'bountyVault'),
+                addr('MarketStatus', deployment.marketStatus),
+                addr('BountyConfig', bountyConfigPda.toBase58()),
+                addr('BountyVault', bountyVaultPda.toBase58()),
             ],
         },
         {
@@ -426,11 +383,70 @@ async function buildDashData(
                 { label: 'Mint authority', value: mintAuthRenounced ? 'renounced' : 'active' },
             ],
             addresses: [
-                { label: 'Mint', value: config.mint ?? 'not configured' },
-                { label: 'Coin program', value: config.coinMintProgram ?? 'not configured' },
+                { label: 'Mint', value: deployment.mint ?? 'not configured' },
+                { label: 'Coin program', value: deployment.coinMintProgram ?? 'not configured' },
             ],
         },
     ];
 
     return { sections, missing, updatedAt: new Date().toISOString() };
+}
+
+export function useDashData() {
+    const { connection } = useConnection();
+    const { deployment, marketStatus, pool, ammState, offerList, refresh } = useChainData();
+
+    const programs = useMemo(() => {
+        return {
+            ammProgram: deployment?.ammProgram
+                ? new PublicKey(deployment.ammProgram)
+                : AMM_PROGRAM_ID,
+            crankProgram: deployment?.crankProgram
+                ? new PublicKey(deployment.crankProgram)
+                : CRANK_PROGRAM_ID,
+        };
+    }, [deployment]);
+    const { ammProgram, crankProgram } = programs;
+
+    const remainingQuery = useQuery({
+        queryKey: ['dashRemaining', deployment?.mintKey.toBase58() ?? ''],
+        queryFn: async () => {
+            if (!deployment) throw new Error('Deployment not loaded');
+            return fetchRemainingAccounts(connection, deployment, ammProgram, crankProgram);
+        },
+        enabled: !!deployment,
+        staleTime: 15000,
+        refetchInterval: typeof document !== 'undefined' && !document.hidden ? 15000 : false,
+        refetchIntervalInBackground: false,
+        refetchOnWindowFocus: false,
+        retry: (failureCount, error) => {
+            const msg = error instanceof Error ? error.message : String(error);
+            return /429|rate/i.test(msg) ? failureCount < 3 : failureCount < 1;
+        },
+        retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+    });
+
+    const doRefresh = useCallback(() => {
+        void refresh('amm');
+        void refresh('marketStatus');
+        void refresh('pool');
+    }, [refresh]);
+
+    const data = useMemo(() => {
+        if (!deployment || !remainingQuery.data) return null;
+        return buildDashData(
+            deployment,
+            marketStatus,
+            pool,
+            ammState,
+            offerList,
+            remainingQuery.data,
+            ammProgram,
+            crankProgram,
+        );
+    }, [deployment, marketStatus, pool, ammState, offerList, remainingQuery.data, ammProgram, crankProgram]);
+
+    const error = remainingQuery.error instanceof Error ? remainingQuery.error.message : null;
+
+    return { data, error, refresh: doRefresh };
 }

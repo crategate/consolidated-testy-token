@@ -35,15 +35,16 @@ export function ExplainerSection() {
             <div className="landing-section-inner">
                 <h2 className="section-title"><GlitchText text="Features & Mechanics" /></h2>
                 <p className="section-subtitle">
-                    AFHO ties token incentives to the tradFi market pulse.</p>
-                <p className="section-subtitle">
+                    <GlitchText text="AFHO ties token incentives to the tradFi market pulse." variant="light" split="word" step={0.35} />
+                </p>
+                <p className="section-subtitle" style={{ '--glitch-delay': '1.4s' } as React.CSSProperties}>
                     staking, buybacks, and bond sales change with Wall St's market status
                 </p>
                 <div className="explainer-grid">
                     {EXPLAINERS.map((item, index) => (
                         <div
                             key={item.title}
-                            className={`explainer-card neon-glitch neon-shadow ${['glitch-violet', 'glitch-streetlight', 'glitch-ghost', 'glitch-rose'][index]} ${['shadow-diag', 'shadow-bottom', 'shadow-right', 'shadow-top'][index]}`}
+                            className={`explainer-card neon-glitch neon-shadow glass-pane ${['glitch-violet', 'glitch-streetlight', 'glitch-ghost', 'glitch-rose'][index]} ${['shadow-corner-tl', 'shadow-corner-br', 'shadow-corner-bl', 'shadow-corner-tr'][index]}`}
                             style={{
                                 '--glitch-delay': `${(index * 0.7).toFixed(2)}s`,
                                 '--shadow-delay': `${(index * 0.9 + 0.4).toFixed(2)}s`,
@@ -57,7 +58,7 @@ export function ExplainerSection() {
                 </div>
 
                 <div
-                    className="split-chart neon-glitch neon-shadow"
+                    className="split-chart neon-glitch neon-shadow glass-pane"
                     style={{ '--glitch-delay': '1.4s', '--shadow-delay': '2s' } as React.CSSProperties}
                 >
                     <h4 className="split-title">Bond Offer Proceeds:</h4>

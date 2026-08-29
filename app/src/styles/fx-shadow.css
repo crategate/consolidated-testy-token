@@ -1,0 +1,645 @@
+/* ═══════════════════════════════════════════════════════════════════
+   Colored backlit shadows — the rainbow ring.
+
+   The original effect: a conic rainbow ring hugging the element's
+   edges that spends most of its cycle dark, then pops in with short
+   glitchy bursts and fades out again. Edge-only by construction —
+   the ring is masked so it can never shine through the pane body.
+
+   Priority panes (connect wallet, stake form, selected offers, the
+   ready buy button) get the full rainbow; secondary panes get
+   single/two-color cornered or directional shadows on their own
+   slower clocks. All timings derive from the tokens in tokens.css.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ─── Keyframes ─── */
+
+/* Default ring: sparse fade-in pops, no movement, no color jumps.
+   Used by secondary panes. */
+@keyframes neonShadowPop {
+
+    0%,
+    7.5%,
+    25.5%,
+    42.5%,
+    59%,
+    80%,
+    94.5%,
+    100% {
+        opacity: 0;
+    }
+
+    6% {
+        opacity: 0.14;
+    }
+
+    24% {
+        opacity: 0.07;
+    }
+
+    41% {
+        opacity: 0.16;
+    }
+
+    58% {
+        opacity: 0.09;
+    }
+
+    76% {
+        opacity: 0.15;
+    }
+
+    78.5% {
+        opacity: 0.11;
+    }
+
+    93% {
+        opacity: 0.18;
+    }
+}
+
+/* Connected: a few more pops per cycle, same restraint. */
+@keyframes neonShadowPopFast {
+
+    0%,
+    9.5%,
+    12%,
+    27.5%,
+    30%,
+    45.5%,
+    62.5%,
+    65%,
+    79.5%,
+    92.5%,
+    100% {
+        opacity: 0.03;
+    }
+
+    8% {
+        opacity: 0.18;
+    }
+
+    10% {
+        opacity: 0.12;
+    }
+
+    26% {
+        opacity: 0.2;
+    }
+
+    28% {
+        opacity: 0.1;
+    }
+
+    44% {
+        opacity: 0.18;
+    }
+
+    61% {
+        opacity: 0.22;
+    }
+
+    63% {
+        opacity: 0.09;
+    }
+
+    78% {
+        opacity: 0.18;
+    }
+
+    91% {
+        opacity: 0.2;
+    }
+}
+
+/* The restored original rainbow ring: dark through most of the cycle,
+   then a short glitch burst — offset jumps, neon sparks, fade. The
+   "unpowered arcade sign" moment. */
+@keyframes rainbowGlitch {
+
+    0%,
+    30.5%,
+    32.5%,
+    84.5%,
+    96.5%,
+    100% {
+        opacity: 0;
+        transform: translate(0);
+    }
+
+    29% {
+        opacity: 0.08;
+        transform: translate(0);
+    }
+
+    85% {
+        opacity: 0.3;
+        transform: translate(-1px, 1px);
+        box-shadow:
+            0 0 4px var(--neon-cyan),
+            0 0 12px rgba(0, 240, 255, 0.3),
+            2px 0 4px var(--neon-pink);
+    }
+
+    87% {
+        opacity: 0.12;
+        transform: translate(2px, -1px);
+        box-shadow:
+            0 0 2px var(--neon-purple),
+            -1px 0 4px var(--neon-green);
+    }
+
+    90% {
+        opacity: 0.34;
+        transform: translate(-1px, 0);
+        box-shadow:
+            0 0 6px var(--neon-cyan),
+            0 0 20px rgba(0, 240, 255, 0.2);
+    }
+
+    93% {
+        opacity: 0.16;
+        transform: translate(1px, 1px);
+        box-shadow:
+            0 0 3px var(--neon-pink),
+            -1px 0 5px var(--neon-purple);
+    }
+
+    96% {
+        opacity: 0.05;
+        transform: translate(0);
+    }
+}
+
+/* Connected priority panes: more bursts per cycle, still intermittent. */
+@keyframes rainbowGlitchFast {
+
+    0%,
+    11%,
+    14.5%,
+    29.5%,
+    32%,
+    47%,
+    50.5%,
+    65%,
+    67.5%,
+    82.5%,
+    85.5%,
+    100% {
+        opacity: 0;
+        transform: translate(0);
+    }
+
+    9% {
+        opacity: 0.2;
+        transform: translate(1px, 0);
+        box-shadow:
+            0 0 3px var(--neon-cyan),
+            0 0 10px rgba(0, 240, 255, 0.22),
+            -1px 0 3px var(--neon-pink);
+    }
+
+    27% {
+        opacity: 0.14;
+        transform: translate(-1px, 1px);
+        box-shadow:
+            0 0 2px var(--neon-purple),
+            0 0 8px rgba(211, 0, 249, 0.2);
+    }
+
+    45% {
+        opacity: 0.3;
+        transform: translate(2px, -1px);
+        box-shadow:
+            0 0 5px var(--neon-cyan),
+            0 0 16px rgba(0, 240, 255, 0.26),
+            1px 0 4px var(--neon-pink);
+    }
+
+    63% {
+        opacity: 0.16;
+        transform: translate(-1px, 0);
+        box-shadow:
+            0 0 3px var(--neon-amber),
+            0 0 10px rgba(255, 170, 0, 0.2);
+    }
+
+    81% {
+        opacity: 0.26;
+        transform: translate(0, 1px);
+        box-shadow:
+            0 0 4px var(--neon-pink),
+            0 0 14px rgba(255, 42, 109, 0.24),
+            -1px 0 4px var(--neon-purple);
+    }
+}
+
+/* Blue/pink ring (connected stake form, active order pane): sparse
+   glitch bursts in the connected palette, never a constant glow. */
+@keyframes bluePinkGlitch {
+
+    0%,
+    12%,
+    30%,
+    48%,
+    66%,
+    84%,
+    100% {
+        opacity: 0;
+        transform: translate(0);
+    }
+
+    9% {
+        opacity: 0.22;
+        transform: translate(1px, 0);
+        box-shadow:
+            0 0 10px rgba(0, 240, 255, 0.28),
+            0 0 22px rgba(255, 42, 109, 0.14);
+    }
+
+    27% {
+        opacity: 0.14;
+        transform: translate(-1px, 1px);
+        box-shadow:
+            0 0 6px rgba(255, 42, 109, 0.2),
+            1px 0 5px rgba(0, 240, 255, 0.18);
+    }
+
+    44% {
+        opacity: 0.26;
+        transform: translate(-1px, 0);
+        box-shadow:
+            0 0 12px rgba(0, 240, 255, 0.3),
+            0 0 26px rgba(255, 42, 109, 0.16);
+    }
+
+    63% {
+        opacity: 0.12;
+        transform: translate(1px, -1px);
+        box-shadow:
+            0 0 5px rgba(255, 42, 109, 0.22),
+            -1px 0 4px rgba(0, 240, 255, 0.16);
+    }
+
+    81% {
+        opacity: 0.2;
+        transform: translate(0);
+        box-shadow:
+            0 0 9px rgba(0, 240, 255, 0.26),
+            0 0 20px rgba(255, 42, 109, 0.12);
+    }
+}
+
+/* ─── Base ring ─── */
+
+.neon-shadow {
+    position: relative;
+}
+
+.neon-shadow::after {
+    content: '';
+    position: absolute;
+    inset: -5px;
+    border-radius: inherit;
+    pointer-events: none;
+    z-index: -1;
+    padding: 5px;
+    background: conic-gradient(from var(--shadow-from, 0deg) at 50% 50%,
+            var(--shadow-c1, var(--neon-purple)) 0deg,
+            var(--shadow-c2, var(--neon-amber)) 70deg,
+            var(--shadow-c3, var(--neon-pink)) 130deg,
+            var(--shadow-c4, var(--neon-cyan)) 230deg,
+            var(--shadow-c1, var(--neon-purple)) 360deg);
+    filter: blur(14px);
+    opacity: 0;
+    animation: neonShadowPop calc(var(--fx-shadow-cycle) * var(--fx-tempo, 1)) infinite;
+    animation-delay: var(--shadow-delay, 0.5s);
+    /* ring-only mask: renders around the element, never through it */
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+}
+
+/* Hover: gently quicken the rhythm instead of strobing */
+.neon-shadow:hover::after,
+.app-shell[data-connected='true'] .neon-shadow:hover::after,
+.amm-page-shell[data-connected='true'] .neon-shadow:hover::after {
+    animation-duration: calc(var(--fx-shadow-cycle) * var(--fx-tempo, 1) * 0.6);
+}
+
+/* Burst mode: a short flare on click/focus/scroll re-arms everything
+   at a slightly faster pace (set by useGlitchBurst) */
+.app-shell[data-glitch-burst='true'] .neon-shadow::after,
+.amm-page-shell[data-glitch-burst='true'] .neon-shadow::after {
+    animation-duration: calc(var(--fx-shadow-cycle) * 0.45) !important;
+}
+
+.app-shell[data-connected='true'] .neon-shadow::after,
+.amm-page-shell[data-connected='true'] .neon-shadow::after {
+    animation-name: neonShadowPopFast;
+}
+
+.app-shell[data-connected='true'] .neon-shadow::after,
+.amm-page-shell[data-connected='true'] .neon-shadow::after {
+    animation-delay: 0s !important;
+}
+
+/* ─── Priority panes: full rainbow ring, glitching bursts ─── */
+
+/* Connect wallet tile — the original rainbow, restored. */
+.connect-prompt::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: calc(var(--radius-lg) + 2px);
+    padding: 2px;
+    background: conic-gradient(from 0deg at 50% 50%,
+            var(--neon-purple) 0deg,
+            var(--neon-amber) 70deg,
+            var(--neon-pink) 130deg,
+            var(--neon-cyan) 230deg,
+            var(--neon-purple) 360deg);
+    z-index: -2;
+    filter: blur(10px);
+    opacity: 0;
+    animation: rainbowGlitch calc(var(--fx-shadow-cycle) * 0.8) infinite;
+    animation-delay: var(--shadow-delay, 0.3s);
+    /* ring-only mask: around the tile, never through it */
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+}
+
+.app-shell[data-connected='true'] .connect-prompt::before {
+    animation-name: rainbowGlitchFast;
+}
+
+.app-shell[data-connected='true'] .connect-prompt::before {
+    animation-delay: 0s !important;
+}
+
+/* Stake form — rainbow while disconnected, blue/pink once connected.
+   The cycle tightens as the staking steps complete (--fx-step from
+   data-step, see components.css). */
+.stake-form.rainbow-glow::before {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: calc(var(--radius-md) + 3px);
+    padding: 3px;
+    background: conic-gradient(from 0deg at 50% 50%,
+            var(--neon-purple) 0deg,
+            var(--neon-amber) 70deg,
+            var(--neon-pink) 130deg,
+            var(--neon-cyan) 230deg,
+            var(--neon-purple) 360deg);
+    z-index: -1;
+    filter: blur(12px);
+    opacity: 0;
+    animation: rainbowGlitch calc(var(--fx-shadow-cycle) * 0.85 / var(--fx-step, 1)) infinite;
+    animation-delay: var(--shadow-delay, 0.4s);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+}
+
+.stake-form.rainbow-glow.connected::before {
+    background: conic-gradient(from 0deg at 50% 50%,
+            var(--neon-blue) 0deg,
+            var(--neon-pink) 120deg,
+            var(--neon-blue) 240deg,
+            var(--neon-pink) 360deg);
+    animation-name: bluePinkGlitch;
+    animation-duration: calc(var(--fx-shadow-cycle) * 1.1 / var(--fx-step, 1));
+}
+
+/* ─── Shadow palettes: different colors in different places ─── */
+
+.shadow-blue-pink {
+    --shadow-c1: var(--neon-blue);
+    --shadow-c2: var(--neon-pink);
+    --shadow-c3: var(--neon-blue);
+    --shadow-c4: var(--neon-pink);
+    --shadow-from: 45deg;
+}
+
+.shadow-amber-green {
+    --shadow-c1: var(--neon-amber);
+    --shadow-c2: var(--neon-green);
+    --shadow-c3: var(--neon-amber);
+    --shadow-c4: var(--neon-green);
+    --shadow-from: 120deg;
+}
+
+.shadow-violet {
+    --shadow-c1: var(--neon-purple);
+    --shadow-c2: var(--neon-blue);
+    --shadow-c3: var(--neon-pink);
+    --shadow-c4: var(--neon-purple);
+    --shadow-from: 200deg;
+}
+
+.shadow-rose {
+    --shadow-c1: var(--neon-pink);
+    --shadow-c2: var(--neon-amber);
+    --shadow-c3: var(--neon-pink);
+    --shadow-c4: var(--neon-cyan);
+    --shadow-from: 300deg;
+}
+
+.shadow-ghost {
+    --shadow-c1: #f0eef5;
+    --shadow-c2: var(--neon-blue);
+    --shadow-c3: #f0eef5;
+    --shadow-c4: var(--neon-pink);
+    --shadow-from: 160deg;
+}
+
+/* ─── Directional & cornered shadows ───
+   Box-shadows paint only OUTSIDE the box, so these can never bleed
+   through a pane body. Cornered variants light two adjacent sides —
+   the sign is lit from one corner only. */
+.neon-shadow.shadow-right::after,
+.neon-shadow.shadow-left::after,
+.neon-shadow.shadow-top::after,
+.neon-shadow.shadow-bottom::after,
+.neon-shadow.shadow-split::after,
+.neon-shadow.shadow-diag::after,
+.neon-shadow.shadow-under::after,
+.neon-shadow.shadow-corner-tl::after,
+.neon-shadow.shadow-corner-tr::after,
+.neon-shadow.shadow-corner-bl::after,
+.neon-shadow.shadow-corner-br::after {
+    background: none;
+    filter: none;
+    mask: none;
+    -webkit-mask: none;
+}
+
+.neon-shadow.shadow-right::after {
+    box-shadow: 8px 0 16px -4px rgba(0, 240, 255, 0.32), 2px 0 6px -2px rgba(255, 42, 109, 0.18);
+}
+
+.neon-shadow.shadow-left::after {
+    box-shadow: -8px 0 16px -4px rgba(255, 42, 109, 0.32), -2px 0 6px -2px rgba(0, 240, 255, 0.18);
+}
+
+.neon-shadow.shadow-top::after {
+    box-shadow: 0 -8px 16px -4px rgba(211, 0, 249, 0.32), 0 -2px 6px -2px rgba(0, 240, 255, 0.18);
+}
+
+.neon-shadow.shadow-bottom::after {
+    box-shadow: 0 8px 16px -4px rgba(255, 170, 0, 0.32), 0 2px 6px -2px rgba(5, 255, 161, 0.18);
+}
+
+.neon-shadow.shadow-split::after {
+    box-shadow: -7px 0 14px -4px rgba(255, 42, 109, 0.3), 7px 0 14px -4px rgba(0, 240, 255, 0.3);
+}
+
+.neon-shadow.shadow-diag::after {
+    box-shadow: -7px -7px 14px -4px rgba(211, 0, 249, 0.3), 7px 7px 14px -4px rgba(5, 255, 161, 0.26);
+}
+
+.neon-shadow.shadow-under::after {
+    box-shadow: 0 9px 18px -4px rgba(255, 42, 109, 0.36), 0 16px 34px -8px rgba(211, 0, 249, 0.22);
+}
+
+/* Cornered: two adjacent sides lit, like light spilling around a corner */
+.neon-shadow.shadow-corner-tl::after {
+    box-shadow:
+        -7px -7px 14px -4px rgba(211, 0, 249, 0.28),
+        -7px 0 12px -6px rgba(0, 240, 255, 0.2),
+        0 -7px 12px -6px rgba(255, 42, 109, 0.18);
+}
+
+.neon-shadow.shadow-corner-tr::after {
+    box-shadow:
+        7px -7px 14px -4px rgba(0, 240, 255, 0.28),
+        7px 0 12px -6px rgba(255, 42, 109, 0.2),
+        0 -7px 12px -6px rgba(211, 0, 249, 0.18);
+}
+
+.neon-shadow.shadow-corner-bl::after {
+    box-shadow:
+        -7px 7px 14px -4px rgba(255, 42, 109, 0.28),
+        -7px 0 12px -6px rgba(211, 0, 249, 0.2),
+        0 7px 12px -6px rgba(0, 240, 255, 0.18);
+}
+
+.neon-shadow.shadow-corner-br::after {
+    box-shadow:
+        7px 7px 14px -4px rgba(5, 255, 161, 0.26),
+        7px 0 12px -6px rgba(255, 170, 0, 0.2),
+        0 7px 12px -6px rgba(255, 42, 109, 0.18);
+}
+
+/* ─── Directional edge-only back shadows (elements without .neon-shadow) ─── */
+
+.position-card::after,
+.claims-header::after,
+.dashboard-header::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    z-index: -1;
+    opacity: 0.3;
+    animation: neonShadowPop calc(var(--fx-shadow-cycle) * 1.4 * var(--fx-tempo, 1)) infinite;
+    animation-delay: var(--shadow-delay, 0s);
+}
+
+.position-card::after {
+    box-shadow:
+        0 10px 22px -6px rgba(255, 42, 109, 0.35),
+        0 4px 12px -4px rgba(255, 170, 0, 0.22);
+}
+
+.claims-header::after {
+    box-shadow:
+        -8px 0 16px -6px rgba(255, 42, 109, 0.3),
+        8px 0 16px -6px rgba(0, 240, 255, 0.3);
+}
+
+.dashboard-header::after {
+    box-shadow:
+        10px 0 20px -6px rgba(0, 240, 255, 0.32),
+        2px 0 8px -3px rgba(255, 42, 109, 0.2);
+}
+
+.position-card,
+.claims-header,
+.dashboard-header {
+    isolation: isolate;
+}
+
+.app-shell[data-connected='true'] .position-card::after,
+.app-shell[data-connected='true'] .claims-header::after,
+.app-shell[data-connected='true'] .dashboard-header::after {
+    animation-delay: 0s !important;
+}
+
+/* ─── Wallet selector modal: rainbow ring, edge-only ─── */
+.wallet-adapter-modal-container::after {
+    content: '';
+    position: absolute;
+    inset: -5px;
+    border-radius: inherit;
+    pointer-events: none;
+    z-index: -1;
+    padding: 5px;
+    background: conic-gradient(from 0deg at 50% 50%,
+            var(--neon-purple) 0deg,
+            var(--neon-amber) 70deg,
+            var(--neon-pink) 130deg,
+            var(--neon-cyan) 230deg,
+            var(--neon-purple) 360deg);
+    filter: blur(14px);
+    opacity: 0;
+    animation: rainbowGlitch var(--fx-shadow-cycle) infinite;
+    animation-delay: var(--shadow-delay, 0.3s);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+}
+
+.wallet-adapter-modal-container:hover::after {
+    animation-duration: calc(var(--fx-shadow-cycle) * 0.6) !important;
+}
+
+/* ─── Out-of-sync timers: each group runs its own clock, its own
+       multiplier and offset, so the page never shares a beat while
+       disconnected. Connecting unifies the rhythm (above). ─── */
+.app-shell:not([data-connected='true']) .stats-section .neon-shadow::after {
+    animation-duration: calc(var(--fx-shadow-cycle) * 1.9);
+    animation-delay: 1.3s;
+}
+
+.app-shell:not([data-connected='true']) .explainer-grid .neon-shadow::after {
+    animation-duration: calc(var(--fx-shadow-cycle) * 1.3);
+    animation-delay: 0.2s;
+}
+
+.app-shell:not([data-connected='true']) .built-with-grid .neon-shadow::after {
+    animation-duration: calc(var(--fx-shadow-cycle) * 2.1);
+    animation-delay: 0.9s;
+}
+
+.app-shell:not([data-connected='true']) .position-card::after {
+    animation-duration: calc(var(--fx-shadow-cycle) * 1.5);
+    animation-delay: 0.7s;
+}
+
+.app-shell:not([data-connected='true']) .claims-header::after {
+    animation-duration: calc(var(--fx-shadow-cycle) * 1.9);
+    animation-delay: 0.4s;
+}
+
+.app-shell:not([data-connected='true']) .dashboard-header::after {
+    animation-duration: calc(var(--fx-shadow-cycle) * 1.3);
+    animation-delay: 0.6s;
+}

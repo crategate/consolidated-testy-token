@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { BN } from '@coral-xyz/anchor';
-import { PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
+import { PublicKey, SendTransactionError, SystemProgram, Transaction } from '@solana/web3.js';
 import {
     ASSOCIATED_TOKEN_PROGRAM_ID,
     getAccount,
@@ -189,15 +189,17 @@ export function useOfferClaim(
                             afhoMint: accounts.afhoMint,
                             usdcMint: accounts.usdcMint,
                             // spot/sol oracles are Option on-chain and unused
-                            // while both pools are pinned (the UI only enables
-                            // SOL then). anchor 0.31 can't omit optional
-                            // accounts — passing the program id marks them
-                            // optional, then we drop those metas so the
-                            // instruction stays under the 1232-byte limit
-                            // (34 accounts serializes to 1244 bytes; the
-                            // pinned path needs neither oracle).
-                            spotOracle: program.programId,
-                            solOracle: program.programId,
+                            // when both pools are pinned, but they still occupy
+                            // fixed positions in the account list. Do NOT omit
+                            // or filter them — that shifts every account after
+                            // them and causes Anchor to deserialize the wrong
+                            // account as usdc_dip (the error you see is
+                            // AccountNotInitialized on usdc_dip because the
+                            // wsol_vault lands in its slot). The full 33-account
+                            // instruction serializes to ~1180 bytes, well under
+                            // the 1232-byte limit.
+                            spotOracle: accounts.spotOracle,
+                            solOracle: sol.solOracle,
                             cpmmPoolState: accounts.cpmmPoolState,
                             cpmmObservation: accounts.cpmmObservation,
                             cpmmInputVault: accounts.cpmmInputVault,
@@ -226,7 +228,6 @@ export function useOfferClaim(
                             systemProgram: SystemProgram.programId,
                         })
                         .instruction();
-                    solIx.keys = solIx.keys.filter((m) => !m.pubkey.equals(program.programId));
                     solTx.add(solIx);
                     txs.push(solTx);
                 }
@@ -242,7 +243,28 @@ export function useOfferClaim(
             setStatus('success');
             return true;
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Claim transaction failed');
+            let message = err instanceof Error ? err.message : 'Claim transaction failed';
+            // Anchor/Solana transaction errors carry simulator logs; surface them
+            // so the UI shows the same detail the wallet would show on simulation.
+            if (err instanceof SendTransactionError) {
+                try {
+                    const logs = await err.getLogs(connection);
+                    if (logs && logs.length > 0) {
+                        message = `${message}\n\nLogs:\n${logs.join('\n')}`;
+                    }
+                } catch {
+                    // getLogs can fail if the connection is gone; keep the original message.
+                }
+            } else if (
+                err &&
+                typeof err === 'object' &&
+                'logs' in err &&
+                Array.isArray((err as { logs: string[] }).logs)
+            ) {
+                const logs = (err as { logs: string[] }).logs;
+                message = `${message}\n\nLogs:\n${logs.join('\n')}`;
+            }
+            setError(message);
             setStatus('error');
             return false;
         }

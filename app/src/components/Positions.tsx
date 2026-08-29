@@ -71,6 +71,8 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
     if (positionsLoading && !positions.length) return <div>Loading positions…</div>;
     if (positions.length === 0) return <div className="no-positions">No active stakes.</div>;
 
+    const currentTradingDay = marketData?.tradingDay ?? null;
+
     const displayPositions = enriched.length > 0 ? enriched : positions.map(p => ({
         ...p,
         multiplierDisplay: '—',
@@ -80,13 +82,19 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
         posrTaxRaw: 0,
     }));
 
+    const getDaysRemaining = (pos: typeof positions[number]) => {
+        if (pos.daysToUnlock === 0 || currentTradingDay === null) return 0;
+        const unlockDay = pos.entryTradingDay + pos.daysToUnlock;
+        return Math.max(0, unlockDay - currentTradingDay);
+    };
+
     const grandTotalDisplay = (grandTotal).toFixed(4);
 
     return (
         <div className="positions-list">
             <h3>Your Positions</h3>
 
-            <div className="claims-header neon-glitch">
+            <div className="claims-header neon-glitch glass-pane">
                 <button
                     className="claim-collect"
                     onClick={handleClaimAll}
@@ -107,14 +115,33 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
             </div>
 
             <div className="pos-contain">
-                {displayPositions.map((pos) => (
-                    <div key={pos.index} className="position-card neon-glitch">
+                {displayPositions.map((pos) => {
+                    const daysRemaining = getDaysRemaining(pos as typeof positions[number]);
+                    const isVesting = daysRemaining > 0;
+                    const isBond = pos.daysToUnlock > 0;
+                    return (
+                    <div key={pos.index} className={`position-card neon-glitch glass-pane ${isVesting ? 'vesting' : ''}`}>
                         <div className="position-row">
                             <span><strong>{(pos.amount / 1e9).toFixed(2)} </strong> AFHO</span>
-                            {'multiplierDisplay' in pos && pos.multiplierDisplay !== '—' && (
-                                <span className="multiplier-badge">{pos.multiplierDisplay}x</span>
-                            )}
+                            <div className="position-badges">
+                                {isBond && (
+                                    <span className="bond-badge" title="Purchased via night-desk bond offer">
+                                        Bond
+                                    </span>
+                                )}
+                                {'multiplierDisplay' in pos && pos.multiplierDisplay !== '—' && (
+                                    <span className="multiplier-badge">{pos.multiplierDisplay}x</span>
+                                )}
+                            </div>
                         </div>
+                        {isVesting && (
+                            <div className="vesting-countdown">
+                                <span className="countdown-number">{daysRemaining}</span>
+                                <span className="countdown-label">
+                                    trading day{daysRemaining === 1 ? '' : 's'} to unlock
+                                </span>
+                            </div>
+                        )}
                         <div><strong>Entry Day:</strong> #{pos.entryTradingDay}</div>
                         {'tradingDays' in pos && pos.tradingDays > 0 && (
                             <div><strong>Trading Days Elapsed:</strong> {pos.tradingDays}</div>
@@ -150,7 +177,8 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
                                 : `Exit Position (${exitPenaltyPct}% penalty)`}
                         </button>
                     </div>
-                ))}
+                    );
+                })}
             </div>
         </div>
     );

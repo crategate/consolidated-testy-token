@@ -15,12 +15,19 @@ export default function LandingPage({ deployment }: LandingPageProps) {
 
     return (
         <div className="landing-page">
+            <div className="fx-backdrop" aria-hidden="true">
+                <div className="fx-blob fx-blob--1" />
+                <div className="fx-blob fx-blob--2" />
+                <div className="fx-blob fx-blob--3" />
+                <div className="fx-blob fx-blob--4" />
+            </div>
             <HeroSection deployment={deployment} />
             <div className="neon-divider" style={{ '--glitch-delay': '0.3s' } as React.CSSProperties} />
             <StatsSection mint={deployment.mintKey} />
             {connected && (
                 <StakingSection mint={deployment.mintKey} marketStatusPda={deployment.marketStatusKey} />
             )}
+            <div className="neon-divider" style={{ '--glitch-delay': '2.4s' } as React.CSSProperties} />
             <ExplainerSection />
             <div className="neon-divider" style={{ '--glitch-delay': '1.1s' } as React.CSSProperties} />
             <BuiltWithSection />

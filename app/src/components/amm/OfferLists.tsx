@@ -14,6 +14,7 @@ import {
     ratchetActive,
 } from '../../hooks/amm/offerMath.ts';
 import SizedOffers from './SizedOffers.tsx';
+import { GlitchText } from '../GlitchText.tsx';
 
 const PERCENT_STEPS = [25, 50, 75] as const;
 
@@ -152,37 +153,60 @@ export default function OfferLists() {
         setMenuOpen(false);
     };
 
-    // Quick-fill: size the order to pct% of the buyer's balance in the
-    // selected currency. Keeps the user's current tier mix (scaled) when one
-    // exists; with an empty basket it fills smallest lots first so the total
-    // lands as close to the target as whole lots allow.
+    // Quick-fill: pick a combination of whole lots whose total cost is the
+    // largest amount not exceeding pct% of the selected wallet balance. This is
+    // a small bounded knapsack (3 tiers), so a brute-force search is exact and
+    // fast enough for a button click.
     const applyPercent = (pct: number) => {
         if (!priceKnown) return;
         const bal = currency === 'usdc' ? balances.usdc : balances.sol;
         if (bal === null || bal <= 0n) return;
         const target = (bal * BigInt(pct)) / 100n;
-        const next: Record<string, number> = { big: 0, med: 0, sml: 0 };
-        const curCost = data.tiers.reduce(
-            (s, t) => s + costPerLot(t) * BigInt(quantities[t.key] ?? 0), 0n
-        );
-        if (curCost > 0n) {
-            const factor = Number(target) / Number(curCost);
-            for (const t of data.tiers) {
-                next[t.key] = Math.min(t.remaining, Math.floor((quantities[t.key] ?? 0) * factor));
-            }
-        } else {
-            let spent = 0n;
-            const asc = [...data.tiers].sort((a, b) => a.lotTokens - b.lotTokens);
-            for (const t of asc) {
-                const per = costPerLot(t);
-                if (per <= 0n) continue;
-                const can = Number((target - spent) / per);
-                next[t.key] = Math.min(t.remaining, Math.max(0, can));
-                spent += per * BigInt(next[t.key]);
+
+        const byKey = (key: string) => data.tiers.find((t) => t.key === key);
+        const big = byKey('big');
+        const med = byKey('med');
+        const sml = byKey('sml');
+        const bigCost = big ? costPerLot(big) : 0n;
+        const medCost = med ? costPerLot(med) : 0n;
+        const smlCost = sml ? costPerLot(sml) : 0n;
+
+        const maxCount = (tier: OfferTierData | undefined, perLot: bigint): number => {
+            if (!tier || perLot <= 0n) return 0;
+            return Math.min(tier.remaining, Number(target / perLot));
+        };
+
+        const bigMax = maxCount(big, bigCost);
+        const medMax = maxCount(med, medCost);
+
+        let bestCost = 0n;
+        const best: Record<string, number> = { big: 0, med: 0, sml: 0 };
+
+        for (let b = 0; b <= bigMax; b++) {
+            const costB = bigCost * BigInt(b);
+            if (costB > target) break;
+            for (let m = 0; m <= medMax; m++) {
+                const costBM = costB + medCost * BigInt(m);
+                if (costBM > target) break;
+                const remaining = target - costBM;
+                const smlMax = sml ? Math.min(sml.remaining, Number(remaining / smlCost)) : 0;
+                // For this (big, med) pair the best sml count is the most that
+                // still fits; scanning a couple below catches near-target ties
+                // without noticeably increasing work.
+                for (let s = Math.max(0, smlMax - 1); s <= smlMax; s++) {
+                    const cost = costBM + smlCost * BigInt(s);
+                    if (cost <= target && cost > bestCost) {
+                        bestCost = cost;
+                        best.big = b;
+                        best.med = m;
+                        best.sml = s;
+                    }
+                }
             }
         }
+
         if (status !== 'idle') reset();
-        setQuantities(next);
+        setQuantities(best);
     };
 
     const closedMessage = deskMessage(data.marketState, data.sheetStale, data.offersLive);
@@ -201,14 +225,14 @@ export default function OfferLists() {
 
     return (
         <section className="offer-desk">
-            {data.error && <div className="desk-banner error">RPC error: {data.error} — showing last known state</div>}
-            {data.loading && !data.tiers.length && <div className="desk-banner">Loading offer sheet…</div>}
+            {data.error && <div className="desk-banner error glass-pane">RPC error: {data.error} — showing last known state</div>}
+            {data.loading && !data.tiers.length && <div className="desk-banner glass-pane">Loading offer sheet…</div>}
 
             {!data.loading && !data.deskOpen && closedMessage && (
-                <div className="desk-banner closed">{closedMessage}</div>
+                <div className="desk-banner closed glass-pane">{closedMessage}</div>
             )}
             {data.deskOpen && (
-                <div className="desk-banner open">
+                <div className="desk-banner open glass-pane">
                     Desk open — purchased AFHO goes straight into a vesting stake position, not your wallet.
                 </div>
             )}
@@ -227,12 +251,12 @@ export default function OfferLists() {
             )}
 
             <div
-                className="order-bar"
+                className="order-bar glass-pane"
                 data-order={totalLots > 0 ? 'active' : 'idle'}
                 style={{ '--order-excite': String(Math.min(1 + totalLots * 0.18, 2.6)) } as React.CSSProperties}
             >
                 <div className="order-total">
-                    <span className="order-total-label">Total order size (approx.)</span>
+                    <span className="order-total-label"><GlitchText text="Total order size (approx.)" variant="light" split="letter" step={0.12} /></span>
                     <div className="order-total-line">
                         <strong>{displayCost}</strong>
                         <div className="currency-picker" ref={pickerRef}>
@@ -329,7 +353,7 @@ export default function OfferLists() {
             </p>
 
             {status === 'success' && txSig && (
-                <div className="desk-banner success">
+                <div className="desk-banner success glass-pane">
                     Claim submitted — AFHO is vesting in your stake positions.{' '}
                     <a href={`https://explorer.solana.com/tx/${txSig}?cluster=devnet`} target="_blank" rel="noreferrer">
                         View transaction
@@ -337,7 +361,7 @@ export default function OfferLists() {
                 </div>
             )}
             {status === 'error' && claimError && (
-                <div className="desk-banner error">Claim failed: {claimError}</div>
+                <div className="desk-banner error glass-pane">Claim failed: {claimError}</div>
             )}
         </section>
     );

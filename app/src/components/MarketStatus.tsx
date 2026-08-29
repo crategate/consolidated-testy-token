@@ -1,5 +1,6 @@
 import { useMarketStatus } from '../hooks/useMarketStatus.ts';
 import { PublicKey } from '@solana/web3.js';
+import { GlitchText } from './GlitchText.tsx';
 import './MarketStatus.css';
 
 const STATE_LABELS: Record<number, string> = {
@@ -53,7 +54,18 @@ export function MarketStatus({ marketStatusPda, variant = 'full' }: MarketStatus
                             {stale && <span className="stale-badge">Stale</span>}
                         </div>
                         <h1 className="status-title">{label}</h1>
-                        <p className="status-detail">{subtitle}</p>
+                        <p className="status-detail">
+                            {variant === 'hero' ? (
+                                <GlitchText
+                                    text={subtitle}
+                                    variant="light"
+                                    split="word"
+                                    step={0.4}
+                                />
+                            ) : (
+                                subtitle
+                            )}
+                        </p>
                         {data && (
                             <p className="status-meta">
                                 Trading Day #{data.tradingDay} · Oracle updated{' '}

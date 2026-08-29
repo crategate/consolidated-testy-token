@@ -15,7 +15,7 @@ export function BuiltWithSection() {
                     {LOGOS.map((logo, index) => (
                         <div
                             key={logo.name}
-                            className={`built-with-tile neon-glitch neon-shadow ${['glitch-streetlight', 'glitch-shift', 'glitch-rose'][index]} ${['shadow-under', 'shadow-left', 'shadow-right'][index]}`}
+                            className={`built-with-tile neon-glitch neon-shadow glass-pane ${['glitch-streetlight', 'glitch-shift', 'glitch-rose'][index]} ${['shadow-under', 'shadow-corner-tl', 'shadow-corner-br'][index]}`}
                             style={{
                                 '--glitch-delay': `${(index * 0.9).toFixed(2)}s`,
                                 '--shadow-delay': `${(index * 1.1 + 0.2).toFixed(2)}s`,

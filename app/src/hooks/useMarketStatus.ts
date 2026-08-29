@@ -1,7 +1,6 @@
-import { useEffect, useState, useCallback } from 'react';
-import { useConnection } from '@solana/wallet-adapter-react';
+import { useCallback, useEffect, useState } from 'react';
 import { PublicKey } from '@solana/web3.js';
-import { CRANK_PROGRAM_ID } from '../anchor/setup';
+import { useChainData } from '../context/useChainData';
 
 interface MarketStatusData {
     state: number;
@@ -18,72 +17,31 @@ interface UseMarketStatusReturn {
 }
 
 const MAX_STALENESS_MS = 5 * 60 * 1000;
+const STALE_CHECK_MS = 60000;
 
-export function useMarketStatus(marketStatusPda?: PublicKey): UseMarketStatusReturn {
-    const { connection } = useConnection();
-    const [data, setData] = useState<MarketStatusData | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-
-    const [stale, setStale] = useState(false);
-
-    const fetchStatus = useCallback(async () => {
-        if (!connection) return;
-        try {
-            const fallbackPda = PublicKey.findProgramAddressSync(
-                [new TextEncoder().encode('market_status')],
-                CRANK_PROGRAM_ID
-            )[0];
-            const accountInfo = await connection.getAccountInfo(marketStatusPda ?? fallbackPda);
-            if (!accountInfo) {
-                throw new Error('Market status PDA not found. Has the crank oracle been initialized?');
-            }
-
-            const buf = accountInfo.data;
-            if (buf.length < 25) {
-                throw new Error(`Market status account too small: ${buf.length} bytes (expected ≥25)`);
-            }
-
-            // DataView correctly handles Buffer views AND Uint8Array copies
-            const view = new DataView(buf.buffer, buf.byteOffset);
-            const state = view.getUint8(8);
-            const timestamp = Number(view.getBigInt64(9, true));   // little-endian
-            const tradingDay = Number(view.getBigUint64(17, true)); // little-endian
-
-            setData({ state, timestamp, tradingDay });
-            // Computed here rather than during render (Date.now is impure)
-            setStale(Date.now() / 1000 - timestamp > MAX_STALENESS_MS / 1000);
-            setError(null);
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Unknown error fetching oracle');
-        } finally {
-            setLoading(false);
-        }
-    }, [connection, marketStatusPda]);
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function useMarketStatus(_marketStatusPda?: string | PublicKey): UseMarketStatusReturn {
+    const { marketStatus, marketStatusLoading, refresh } = useChainData();
+    const [now, setNow] = useState(() => Date.now());
 
     useEffect(() => {
-        // Deferred to a microtask so no setState runs synchronously inside the effect
-        void Promise.resolve().then(fetchStatus);
+        const id = window.setInterval(() => setNow(Date.now()), STALE_CHECK_MS);
+        return () => window.clearInterval(id);
+    }, []);
 
-        if (!connection) return;
+    const doRefresh = useCallback(() => {
+        void refresh('marketStatus');
+    }, [refresh]);
 
-        const fallbackPda = PublicKey.findProgramAddressSync(
-            [new TextEncoder().encode('market_status')],
-            CRANK_PROGRAM_ID,
-        )[0];
-        const pda = marketStatusPda ?? fallbackPda;
-        const subscriptionId = connection.onAccountChange(
-            pda,
-            () => {
-                void fetchStatus();
-            },
-            'confirmed',
-        );
+    const stale = marketStatus
+        ? now / 1000 - marketStatus.timestamp > MAX_STALENESS_MS / 1000
+        : false;
 
-        return () => {
-            void connection.removeAccountChangeListener(subscriptionId);
-        };
-    }, [connection, marketStatusPda, fetchStatus]);
-
-    return { data, loading, error, stale, refresh: fetchStatus };
+    return {
+        data: marketStatus,
+        loading: marketStatusLoading,
+        error: marketStatusLoading ? null : marketStatus ? null : 'Market status unavailable',
+        stale,
+        refresh: doRefresh,
+    };
 }

@@ -31,10 +31,10 @@ function bufferPolyfill(): Plugin {
 }
 
 export default defineConfig({
-    // Relative base so the built app works from ANY path (cPanel subfolder,
-    // subdomain, file:// preview) — absolute /assets/... paths 404 when the
-    // dist folder isn't at the domain root.
-    base: './',
+    // Clean browser-router URLs need an absolute base. If you deploy to a
+    // subfolder, change this to '/subfolder/' and set BrowserRouter basename
+    // to match, and configure your server to serve index.html for all routes.
+    base: '/',
     plugins: [bufferPolyfill(), react()],
     resolve: {
         alias: {

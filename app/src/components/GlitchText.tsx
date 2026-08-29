@@ -1,34 +1,74 @@
-import type { CSSProperties } from 'react';
+import { Fragment, type CSSProperties, type ReactNode } from 'react';
 
 interface GlitchTextProps {
     text: string;
-    variant?: 'default' | 'bluepink' | 'streetlight' | 'ghost';
+    /** color world of the shadow glitch */
+    variant?: 'default' | 'bluepink' | 'streetlight' | 'ghost' | 'light';
+    /** letter: per-character spans; word: per-word; group: random-ish
+        chunks of 1-3 characters so neighboring letters glitch together */
+    split?: 'letter' | 'word' | 'group';
     className?: string;
-    /** seconds of stagger per letter; the connected state tightens this via CSS */
+    /** seconds of stagger per span; neighbors run their own clocks */
     step?: number;
 }
 
+/* Deterministic group sizes so the chunking is stable across renders */
+const GROUP_SIZES = [2, 1, 3, 2, 1, 2, 3, 1];
+
+function splitGroup(text: string): string[] {
+    const parts: string[] = [];
+    let i = 0;
+    let s = 0;
+    while (i < text.length) {
+        const n = GROUP_SIZES[s % GROUP_SIZES.length];
+        parts.push(text.slice(i, i + n));
+        i += n;
+        s += 1;
+    }
+    return parts;
+}
+
 /**
- * Splits a text body into per-letter spans so each character runs its own
- * glitch animation with a slight cascade. Disconnected: a loose, out-of-sync
- * cascade. Connected: the CSS tightens the stagger and speeds the cycle so
- * the whole word lands on one regular rhythm.
+ * Splits a text body into per-span glitch units so each unit runs its
+ * own animation with a slight cascade. Disconnected: a loose,
+ * out-of-sync cascade. Connected: the CSS tightens the stagger and
+ * speeds the cycle so the whole word lands on one regular rhythm.
  */
-export function GlitchText({ text, variant = 'default', className = '', step = 0.06 }: GlitchTextProps) {
+export function GlitchText({
+    text,
+    variant = 'default',
+    className = '',
+    step = 0.06,
+    split = 'letter',
+}: GlitchTextProps) {
+    const cssVars = (i: number) =>
+        ({ '--i': i, '--letter-stagger': `${step}s` }) as CSSProperties;
+
+    let children: ReactNode;
+    if (split === 'word') {
+        children = text.split(' ').map((word, i) => (
+            <Fragment key={i}>
+                <span aria-hidden="true" style={cssVars(i)}>
+                    {word}
+                </span>
+                {i < text.split(' ').length - 1 && ' '}
+            </Fragment>
+        ));
+    } else {
+        const parts = split === 'group' ? splitGroup(text) : text.split('');
+        children = parts.map((ch, i) => (
+            <span key={i} aria-hidden="true" style={cssVars(i)}>
+                {ch.replace(/ /g, '\u00A0')}
+            </span>
+        ));
+    }
+
     return (
         <span
-            className={`glitch-letters glitch-letters--${variant} ${className}`.trim()}
+            className={`glitch-letters glitch-letters--${variant} glitch-letters--${split} ${className}`.trim()}
             aria-label={text}
         >
-            {text.split('').map((ch, i) => (
-                <span
-                    key={i}
-                    aria-hidden="true"
-                    style={{ '--i': i, '--letter-stagger': `${step}s` } as CSSProperties}
-                >
-                    {ch === ' ' ? '\u00A0' : ch}
-                </span>
-            ))}
+            {children}
         </span>
     );
 }

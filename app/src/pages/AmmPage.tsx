@@ -29,6 +29,11 @@ export default function AmmPage() {
             data-market-state={marketState ?? 99}
             data-desk={deskState}
         >
+            <div className="fx-backdrop" aria-hidden="true">
+                <div className="fx-blob fx-blob--2" />
+                <div className="fx-blob fx-blob--3" />
+                <div className="fx-blob fx-blob--4" />
+            </div>
             <header className="amm-topbar">
                 <div className="amm-title">
                     <h1><GlitchText text="Bond Offer Desk" variant="bluepink" step={0.07} /></h1>

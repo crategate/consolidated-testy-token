@@ -12,7 +12,7 @@ mock_dex_pool = "CAmYEL8zb8rtV2F9r68P7NLeYNdB3cXXCrahDCBRL27S"
 staking = "AR1Wyj3CLhcxB5jAiqFn5xHFamcjdNiiYv9gQLCVvTZp"
 
 [programs.localnet]
-mock_dex_pool = "3fgSPE55km8DrbFPmyi7x3YRLmpQ8BYZHUUr85Miwbod"
+mock_dex_pool = "CAmYEL8zb8rtV2F9r68P7NLeYNdB3cXXCrahDCBRL27S"
 
 [registry]
 url = "https://api.apr.dev"
@@ -25,26 +25,24 @@ wallet = "~/.config/solana/id.json"
 # current flow after feed is set:
 # anchor run mint → anchor run amm-init → anchor run set-cpmm-pool → anchor run set-sol-usdc-pool -> anchor run init → anchor run bount
 
+feed-deploy = "npx ts-node ./scripts/oracle/feed-deploy.ts"
+mint = "npx ts-node scripts/mint-launch.ts"
 amm-init = "npx ts-node ./scripts/amm-init.ts"
-amm-test-data = "npx ts-node ./scripts/amm-test-data.ts"
 amm-offers = "npx ts-node ./scripts/amm-offers.ts"
-
+amm-test-data = "npx ts-node ./scripts/amm-test-data.ts"
 bount = "npx ts-node ./scripts/oracle/mev-keeper.ts"
 crank = "npx ts-node ./scripts/oracle/managedUpdate.ts --feedId 0xaf3a39b12f5c052d81eb8c62bb86f4691fce2c2e0c88b39f83801978b6f203c3"
-feed-deploy = "npx ts-node ./scripts/oracle/feed-deploy.ts"
 fund-bount = "npx ts-node ./scripts/fund-bounty.ts"
-
 init = "npx ts-node ./scripts/initialize.ts && npx ts-node ./scripts/init-bounty.ts"
 init-o = "npx ts-node ./scripts/initialize.ts"
-
-mint = "npx ts-node scripts/mint-launch.ts"
 pool = "npx ts-node ./scripts/pool-init.ts"
 pool-status = "npx ts-node ./scripts/raydium-pool-status.ts"
-
 set-cpmm-pool = "npx ts-node ./scripts/set-cpmm-pool.ts"
-set-oracle = "npx ts-node ./scripts/oracle/set-oracle-state.ts"
 set-sol-usdc-pool = "npx ts-node ./scripts/set-sol-usdc-pool.ts"
-twitter = "npx ts-node ./scripts/twitter-announcer.ts"
+
+set-oracle = "npx ts-node ./scripts/oracle/set-oracle-state.ts"
 
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
 test-staking = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/staking.test.ts"
+
+twitter = "npx ts-node ./scripts/twitter-announcer.ts"

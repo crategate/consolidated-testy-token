@@ -33,9 +33,18 @@ export function StakeForm({ mint, marketStatusPda, onStakeSuccess }: StakeFormPr
         }
     };
 
+    /* Step ladder: the form's effects grow slightly more excited as the
+       staking process completes — empty (idle) → typing → ready. */
+    const step = !amount
+        ? 'idle'
+        : balance !== null && Number(amount) > balance
+            ? 'typing'
+            : 'ready';
+
     return (
         <div
-            className={`stake-form stake-card rainbow-glow neon-shadow ${connected ? 'connected' : ''}`}
+            className={`stake-form stake-card rainbow-glow neon-shadow glass-pane ${connected ? 'connected' : ''}`}
+            data-step={step}
             style={{ '--shadow-delay': '0.4s' } as React.CSSProperties}
         >
             <h3>Stake AFHO</h3>

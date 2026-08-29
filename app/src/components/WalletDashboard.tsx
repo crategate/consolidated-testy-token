@@ -7,7 +7,7 @@ export function WalletDashboard() {
 
     if (!connected) {
         return (
-            <div className="wallet-dashboard connect-prompt">
+            <div className="wallet-dashboard connect-prompt glass-pane">
                 <span className="glitch-border" aria-hidden="true" />
                 <h2><GlitchText text="Connect Wallet" /></h2>
                 <p>Connect your wallet to stake AFHO and enter the bond offer desk.</p>
@@ -21,7 +21,7 @@ export function WalletDashboard() {
 
     return (
         <div className="wallet-dashboard">
-            <div className="dashboard-header neon-glitch">
+            <div className="dashboard-header neon-glitch glass-pane">
                 <span className="wallet-label">Connected</span>
                 <div className="wallet-button-wrapper">
                     <WalletMultiButton />

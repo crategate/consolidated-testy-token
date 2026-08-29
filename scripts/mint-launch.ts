@@ -81,8 +81,8 @@ async function main() {
     // 4. Token Metadata Configuration
     const metadata: TokenMetadata = {
         mint: mint.publicKey,
-        name: 'bingbond',
-        symbol: '8-28',
+        name: '2929',
+        symbol: '8-29',
         uri: 'https://copper-quick-koi-488.mypinata.cloud/ipfs/bafkreiblskodz5bwtelz4id437rnhsndtq3rfh7jjsgaj72wb55cgnbbea',
         additionalMetadata: [['description', 'a token bound by the hours of Wall Street']],
     };
@@ -203,9 +203,9 @@ async function main() {
             })
         );
         const mdSig = await sendAndConfirmTransaction(connection, mdRevokeTx, [wallet.payer], { skipPreflight: true });
-        console.log(`✅ Metadata update authority revoked: ${mdSig}`);
+        console.log(` Metadata update authority revoked: ${mdSig}`);
     } catch (e) {
-        console.error("❌ Metadata update authority revoke failed:", e);
+        console.error(" Metadata update authority revoke failed:", e);
     }
 
     // ── Raydium CPMM liquidity pool (devnet) ────────────────────────────────

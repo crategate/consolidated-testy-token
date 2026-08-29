@@ -40,7 +40,7 @@ export default function SingleOffer({
 
     return (
         <article
-            className={`offer-card ${selected ? 'selected' : ''} ${soldOut ? 'sold-out' : ''}`}
+            className={`offer-card glass-pane ${selected ? 'selected' : ''} ${soldOut ? 'sold-out' : ''}`}
             data-tier={offer.tier}
             style={{
                 '--tier-excite': String(excite),
