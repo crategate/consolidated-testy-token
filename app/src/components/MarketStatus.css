@@ -129,7 +129,7 @@
 
 .status-title {
     font-size: clamp(2.5rem, 10vw, 5.5rem);
-    font-weight: 800;
+    font-weight: 400;
     letter-spacing: -0.04em;
     margin: 0 0 0.75rem;
     line-height: 1.05;

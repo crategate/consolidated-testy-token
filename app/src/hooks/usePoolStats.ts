@@ -87,9 +87,24 @@ export function usePoolStats(mint: PublicKey | null) {
 
             const totalStaked = pool ? Number(pool.totalStaked) / 10 ** decimals : 0;
 
+            let vaultBalance = 0;
+            const stakingVault = pool ? pub(pool, 'vault') : null;
+            if (stakingVault) {
+                try {
+                    const vaultInfo = await connection.getParsedAccountInfo(stakingVault);
+                    if (vaultInfo.value && 'parsed' in vaultInfo.value.data) {
+                        const parsed = (vaultInfo.value.data as ParsedAccountData).parsed.info;
+                        vaultBalance = Number(parsed.tokenAmount?.amount ?? 0) / 10 ** decimals;
+                    }
+                } catch (e) {
+                    console.log('PoolStats: vault balance fetch failed', e instanceof Error ? e.message : e);
+                }
+            }
+
             setStats({
                 totalStaked,
                 totalSupply: supply / 10 ** decimals,
+                vaultBalance,
                 userCount,
                 decimals,
             });

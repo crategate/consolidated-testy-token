@@ -92,7 +92,10 @@ export function StakingSection({ mint, marketStatusPda }: StakingSectionProps) {
 
                 {connected && expanded && (
                     <div className="staking-content">
-                        <div className="positions-shell neon-glitch">
+                        <div
+                            className="positions-shell neon-glitch neon-shadow"
+                            style={{ '--glitch-delay': '0.3s', '--shadow-delay': '0.8s' } as React.CSSProperties}
+                        >
                             <Positions mint={mint} marketStatusPda={marketStatusPda} />
                         </div>
                     </div>

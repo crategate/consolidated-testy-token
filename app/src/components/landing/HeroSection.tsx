@@ -16,8 +16,8 @@ export function HeroSection({ deployment }: HeroSectionProps) {
     return (
         <section className="hero-section">
             <div className="hero-brand">
-                <h1>After Hours</h1>
-                <div className="tagline">A token tuned to the market clock</div>
+                <h1><span>After</span><span>_</span><span>Hours</span></h1>
+                <div className="tagline">A to<span>k</span>en <span>t</span>uned to t<span>h</span>e market clo<span>c</span>k</div>
             </div>
 
             <div className="hero-content">
@@ -33,13 +33,17 @@ export function HeroSection({ deployment }: HeroSectionProps) {
                 ) : (
                     <div className="hero-row hero-row--disconnected">
                         <WalletDashboard />
-                        <MarketStatus marketStatusPda={deployment.marketStatusKey} variant="hero" />
+                        <div className="neon-shadow" style={{ '--shadow-delay': '0.2s' } as React.CSSProperties}>
+                            <MarketStatus marketStatusPda={deployment.marketStatusKey} variant="hero" />
+                        </div>
                     </div>
                 )}
                 {connected && (
-                    <MarketStatus marketStatusPda={deployment.marketStatusKey} variant="hero" />
+                    <div className="neon-shadow" style={{ '--shadow-delay': '0.2s' } as React.CSSProperties}>
+                        <MarketStatus marketStatusPda={deployment.marketStatusKey} variant="hero" />
+                    </div>
                 )}
             </div>
-        </section>
+        </section >
     );
 }

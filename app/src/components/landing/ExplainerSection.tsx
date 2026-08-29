@@ -41,8 +41,11 @@ export function ExplainerSection() {
                     {EXPLAINERS.map((item, index) => (
                         <div
                             key={item.title}
-                            className="explainer-card neon-glitch"
-                            style={{ '--glitch-delay': `${(index * 0.7).toFixed(2)}s` } as React.CSSProperties}
+                            className="explainer-card neon-glitch neon-shadow"
+                            style={{
+                                '--glitch-delay': `${(index * 0.7).toFixed(2)}s`,
+                                '--shadow-delay': `${(index * 0.9 + 0.4).toFixed(2)}s`,
+                            } as React.CSSProperties}
                         >
                             <div className="explainer-icon">{item.icon}</div>
                             <h4>{item.title}</h4>
@@ -52,8 +55,8 @@ export function ExplainerSection() {
                 </div>
 
                 <div
-                    className="split-chart neon-glitch"
-                    style={{ '--glitch-delay': '1.4s' } as React.CSSProperties}
+                    className="split-chart neon-glitch neon-shadow"
+                    style={{ '--glitch-delay': '1.4s', '--shadow-delay': '2s' } as React.CSSProperties}
                 >
                     <h4 className="split-title">Bond Offer Proceeds:</h4>
                     <div className="split-bars">

@@ -34,7 +34,10 @@ export function StakeForm({ mint, marketStatusPda, onStakeSuccess }: StakeFormPr
     };
 
     return (
-        <div className={`stake-form stake-card rainbow-glow ${connected ? 'connected' : ''}`}>
+        <div
+            className={`stake-form stake-card rainbow-glow neon-shadow ${connected ? 'connected' : ''}`}
+            style={{ '--shadow-delay': '0.4s' } as React.CSSProperties}
+        >
             <h3>Stake AFHO</h3>
             <div className="mint-display">
                 Mint: <br /><code>{mint.toBase58().slice(0, 8)}…{mint.toBase58().slice(-8)}</code>
