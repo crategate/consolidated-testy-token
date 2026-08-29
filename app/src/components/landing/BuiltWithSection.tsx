@@ -1,3 +1,5 @@
+import { GlitchText } from '../GlitchText';
+
 const LOGOS = [
     { name: 'Raydium', src: '/raydium-logo-and-letters.svg', top: '16px', link: 'https://docs.raydium.io/' },
     { name: 'Solana', src: '/solana-logo-and-letters.png', link: 'https://www.anchor-lang.com/docs' },
@@ -8,12 +10,12 @@ export function BuiltWithSection() {
     return (
         <section className="landing-section">
             <div className="landing-section-inner">
-                <h2 className="section-title">Built With</h2>
+                <h2 className="section-title"><GlitchText text="Built With" variant="ghost" /></h2>
                 <div className="built-with-grid">
                     {LOGOS.map((logo, index) => (
                         <div
                             key={logo.name}
-                            className="built-with-tile neon-glitch neon-shadow"
+                            className={`built-with-tile neon-glitch neon-shadow ${['glitch-streetlight', 'glitch-shift', 'glitch-rose'][index]} ${['shadow-under', 'shadow-left', 'shadow-right'][index]}`}
                             style={{
                                 '--glitch-delay': `${(index * 0.9).toFixed(2)}s`,
                                 '--shadow-delay': `${(index * 1.1 + 0.2).toFixed(2)}s`,

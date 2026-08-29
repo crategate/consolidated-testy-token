@@ -54,7 +54,7 @@ function tokenAmount(data: Uint8Array | null): bigint | null {
 }
 
 async function fetchConfig(): Promise<DeploymentConfig> {
-    const res = await fetch(`/deployment.json?t=${Date.now()}`, { cache: 'no-store' });
+    const res = await fetch(`${import.meta.env.BASE_URL}deployment.json?t=${Date.now()}`, { cache: 'no-store' });
     return res.ok ? await res.json() : {};
 }
 
@@ -209,39 +209,69 @@ export function useAmmData(): OfferDeskData {
                 [Buffer.from('market_status')], crankProgram
             );
 
-            // dependent accounts: price oracle, market status, mints, staking pool
+            // dependent accounts: derive every PDA up front, then fetch them
+            // ALL in one batched round trip. The public devnet endpoint
+            // rate-limits hard, so each 4s tick must be as few HTTP POSTs as
+            // possible (this is 2 POSTs total: state+sheet, then everything).
             const solOracle = pub(ammState, 'solOracle', 'sol_oracle');
-            const [spotInfo, statusInfo, afhoInfo, usdcInfo, poolInfo, solInfo] =
+            const cpmmPoolState = pub(ammState, 'cpmmPoolState', 'cpmm_pool_state');
+            const cpmmProgram = pub(ammState, 'cpmmProgram', 'cpmm_program');
+            const usdcMintKey = pub(ammState, 'usdcMint', 'usdc_mint');
+            const cpmmSolUsdcPool = pub(ammState, 'cpmmSolUsdcPool', 'cpmm_sol_usdc_pool');
+            const cpmmSolUsdcConfig = pub(ammState, 'cpmmSolUsdcConfig', 'cpmm_sol_usdc_config');
+
+            let afhoPoolVault: PublicKey | null = null;
+            let usdcPoolVault: PublicKey | null = null;
+            let solUsdcInputVault: PublicKey | null = null;
+            let solUsdcOutputVault: PublicKey | null = null;
+            let solUsdcObservation: PublicKey | null = null;
+            let solUsdcAuthority: PublicKey | null = null;
+            if (cpmmPoolState && cpmmProgram && usdcMintKey) {
+                [afhoPoolVault] = PublicKey.findProgramAddressSync(
+                    [Buffer.from('pool_vault'), cpmmPoolState.toBuffer(), mint.toBuffer()], cpmmProgram
+                );
+                [usdcPoolVault] = PublicKey.findProgramAddressSync(
+                    [Buffer.from('pool_vault'), cpmmPoolState.toBuffer(), usdcMintKey.toBuffer()], cpmmProgram
+                );
+            }
+            if (cpmmSolUsdcPool && cpmmSolUsdcConfig && cpmmProgram && usdcMintKey) {
+                [solUsdcInputVault] = PublicKey.findProgramAddressSync(
+                    [Buffer.from('pool_vault'), cpmmSolUsdcPool.toBuffer(), WSOL_MINT.toBuffer()], cpmmProgram
+                );
+                [solUsdcOutputVault] = PublicKey.findProgramAddressSync(
+                    [Buffer.from('pool_vault'), cpmmSolUsdcPool.toBuffer(), usdcMintKey.toBuffer()], cpmmProgram
+                );
+                [solUsdcObservation] = PublicKey.findProgramAddressSync(
+                    [Buffer.from('observation'), cpmmSolUsdcPool.toBuffer()], cpmmProgram
+                );
+                [solUsdcAuthority] = PublicKey.findProgramAddressSync(
+                    [Buffer.from('vault_and_lp_mint_auth_seed')], cpmmProgram
+                );
+            }
+
+            const [spotInfo, statusInfo, afhoInfo, usdcInfo, poolInfo, solInfo,
+                afhoVaultInfo, usdcVaultInfo, solInInfo, solOutInfo] =
                 await connection.getMultipleAccountsInfo([
                     spotOracle,
                     marketStatusPda,
                     mint,
-                    pub(ammState, 'usdcMint', 'usdc_mint') ?? PublicKey.default,
+                    usdcMintKey ?? PublicKey.default,
                     stakingPool,
                     solOracle ?? PublicKey.default,
+                    afhoPoolVault ?? PublicKey.default,
+                    usdcPoolVault ?? PublicKey.default,
+                    solUsdcInputVault ?? PublicKey.default,
+                    solUsdcOutputVault ?? PublicKey.default,
                 ]);
 
-            // Live price (floor units). When the CPMM AFHO/USDC pool is pinned,
-            // use the pool's vault ratio (same fallback the on-chain TWAP uses
-            // while the ring warms); otherwise fall back to the mock PDA.
+            // Live price (floor units). Pinned AFHO/USDC pool → its vault
+            // ratio (same fallback the on-chain TWAP uses while the ring
+            // warms); otherwise the mock spot-oracle PDA.
             let livePrice: bigint | null = null;
-            const cpmmPoolState = pub(ammState, 'cpmmPoolState', 'cpmm_pool_state');
-            const cpmmProgram = pub(ammState, 'cpmmProgram', 'cpmm_program');
-            const usdcMintKey = pub(ammState, 'usdcMint', 'usdc_mint');
-            if (cpmmPoolState && cpmmProgram && usdcMintKey) {
-                const [afhoVault] = PublicKey.findProgramAddressSync(
-                    [Buffer.from('pool_vault'), cpmmPoolState.toBuffer(), mint.toBuffer()],
-                    cpmmProgram
-                );
-                const [usdcVault] = PublicKey.findProgramAddressSync(
-                    [Buffer.from('pool_vault'), cpmmPoolState.toBuffer(), usdcMintKey.toBuffer()],
-                    cpmmProgram
-                );
-                const vaultInfos = await connection.getMultipleAccountsInfo([afhoVault, usdcVault]);
-                const baseRaw = tokenAmount(vaultInfos[0]?.data ?? null);
-                const quoteRaw = tokenAmount(vaultInfos[1]?.data ?? null);
+            if (afhoVaultInfo && usdcVaultInfo) {
+                const baseRaw = tokenAmount(afhoVaultInfo.data);
+                const quoteRaw = tokenAmount(usdcVaultInfo.data);
                 if (baseRaw !== null && quoteRaw !== null && baseRaw > 0n) {
-                    // floor units: (usdc_raw × 1e6) / afho_raw
                     livePrice = (quoteRaw * 1_000_000n) / baseRaw;
                 }
             }
@@ -250,34 +280,19 @@ export function useAmmData(): OfferDeskData {
             }
 
             // ── SOL payment path (offer_claim_sol) ──
-            // SOL/USD floor units ((usdc_raw × 1e6) / wSOL_raw). Pinned pool →
-            // its wSOL/USDC vault ratio (the same fallback the on-chain TWAP
-            // uses while the observation ring warms); otherwise the raw-u64
-            // mock sol_oracle. solAccounts only exist while the pool is pinned
-            // because the claim unconditionally CPIs the wSOL→USDC swap.
-            const cpmmSolUsdcPool = pub(ammState, 'cpmmSolUsdcPool', 'cpmm_sol_usdc_pool');
-            const cpmmSolUsdcConfig = pub(ammState, 'cpmmSolUsdcConfig', 'cpmm_sol_usdc_config');
+            // SOL/USD floor units ((usdc_raw × 1e6) / wSOL_raw). Pinned
+            // SOL/USDC pool → its vault ratio; otherwise the mock sol_oracle.
+            // solAccounts only exist while the pool is pinned, because the
+            // claim unconditionally CPIs the wSOL→USDC swap.
             let solPrice: bigint | null = null;
             let solAccounts: SolClaimAccounts | null = null;
-            if (cpmmSolUsdcPool && cpmmSolUsdcConfig && cpmmProgram && usdcMintKey) {
-                const [solUsdcInputVault] = PublicKey.findProgramAddressSync(
-                    [Buffer.from('pool_vault'), cpmmSolUsdcPool.toBuffer(), WSOL_MINT.toBuffer()], cpmmProgram
-                );
-                const [solUsdcOutputVault] = PublicKey.findProgramAddressSync(
-                    [Buffer.from('pool_vault'), cpmmSolUsdcPool.toBuffer(), usdcMintKey.toBuffer()], cpmmProgram
-                );
-                const vaultInfos = await connection.getMultipleAccountsInfo([solUsdcInputVault, solUsdcOutputVault]);
-                const baseRaw = tokenAmount(vaultInfos[0]?.data ?? null);   // wSOL (9 dp)
-                const quoteRaw = tokenAmount(vaultInfos[1]?.data ?? null);  // USDC (6 dp)
+            if (solInInfo && solOutInfo && solUsdcInputVault && solUsdcOutputVault &&
+                solUsdcObservation && solUsdcAuthority && cpmmSolUsdcPool && cpmmSolUsdcConfig) {
+                const baseRaw = tokenAmount(solInInfo.data);   // wSOL (9 dp)
+                const quoteRaw = tokenAmount(solOutInfo.data); // USDC (6 dp)
                 if (baseRaw !== null && quoteRaw !== null && baseRaw > 0n) {
                     solPrice = (quoteRaw * 1_000_000n) / baseRaw;
                 }
-                const [solUsdcObservation] = PublicKey.findProgramAddressSync(
-                    [Buffer.from('observation'), cpmmSolUsdcPool.toBuffer()], cpmmProgram
-                );
-                const [solUsdcAuthority] = PublicKey.findProgramAddressSync(
-                    [Buffer.from('vault_and_lp_mint_auth_seed')], cpmmProgram
-                );
                 solAccounts = {
                     solOracle: solOracle ?? PublicKey.default,
                     wsolVault: getAssociatedTokenAddressSync(WSOL_MINT, ammStatePda, true, TOKEN_PROGRAM_ID),

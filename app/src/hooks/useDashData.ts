@@ -102,7 +102,7 @@ function field<T>(obj: DecodedAccount, ...names: string[]): T | undefined {
 }
 
 async function fetchConfig(): Promise<DashConfig> {
-    const res = await fetch(`/deployment.json?t=${Date.now()}`, { cache: 'no-store' });
+    const res = await fetch(`${import.meta.env.BASE_URL}deployment.json?t=${Date.now()}`, { cache: 'no-store' });
     return res.ok ? await res.json() : {};
 }
 

@@ -36,8 +36,17 @@ export default function SingleOffer({
             : usd.toPrecision(3);
     }
 
+    const excite = qty > 0 ? Math.min(1 + (qty - 1) * 0.35, 2.4) : 1;
+
     return (
-        <article className={`offer-card ${selected ? 'selected' : ''} ${soldOut ? 'sold-out' : ''}`}>
+        <article
+            className={`offer-card ${selected ? 'selected' : ''} ${soldOut ? 'sold-out' : ''}`}
+            data-tier={offer.tier}
+            style={{
+                '--tier-excite': String(excite),
+                '--glitch-delay': `${(offer.tier * 1.35 + 0.4).toFixed(2)}s`,
+            } as React.CSSProperties}
+        >
             <header className="offer-card-header">
                 <h3>{offer.label}</h3>
                 <span className="offer-discount">{offer.discountBps / 10}% off</span>

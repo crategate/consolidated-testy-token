@@ -1,3 +1,5 @@
+import { GlitchText } from '../GlitchText';
+
 const EXPLAINERS = [
     {
         icon: '🌙',
@@ -31,7 +33,7 @@ export function ExplainerSection() {
     return (
         <section className="landing-section alt">
             <div className="landing-section-inner">
-                <h2 className="section-title">Features & Mechanics</h2>
+                <h2 className="section-title"><GlitchText text="Features & Mechanics" /></h2>
                 <p className="section-subtitle">
                     AFHO ties token incentives to the tradFi market pulse.</p>
                 <p className="section-subtitle">
@@ -41,7 +43,7 @@ export function ExplainerSection() {
                     {EXPLAINERS.map((item, index) => (
                         <div
                             key={item.title}
-                            className="explainer-card neon-glitch neon-shadow"
+                            className={`explainer-card neon-glitch neon-shadow ${['glitch-violet', 'glitch-streetlight', 'glitch-ghost', 'glitch-rose'][index]} ${['shadow-diag', 'shadow-bottom', 'shadow-right', 'shadow-top'][index]}`}
                             style={{
                                 '--glitch-delay': `${(index * 0.7).toFixed(2)}s`,
                                 '--shadow-delay': `${(index * 0.9 + 0.4).toFixed(2)}s`,
@@ -65,7 +67,7 @@ export function ExplainerSection() {
                                 <div className="split-bar-track">
                                     <div
                                         className="split-bar-fill"
-                                        style={{ height: `${s.value}%`, background: s.color }}
+                                        style={{ height: `${s.value}%`, backgroundColor: s.color }}
                                     />
                                 </div>
                                 <span className="split-value">{s.value}%</span>

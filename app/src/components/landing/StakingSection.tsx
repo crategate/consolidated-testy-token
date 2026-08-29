@@ -7,6 +7,7 @@ import { useClaimAll } from '../../hooks/stake/useClaimAll';
 import { useUnstake } from '../../hooks/stake/useUnstake';
 import { useMarketStatus } from '../../hooks/useMarketStatus';
 import { PublicKey } from '@solana/web3.js';
+import { GlitchText } from '../GlitchText';
 
 interface StakingSectionProps {
     mint: PublicKey;
@@ -50,7 +51,7 @@ export function StakingSection({ mint, marketStatusPda }: StakingSectionProps) {
         <section className="landing-section staking-section alt">
             <div className="landing-section-inner">
                 <div className="staking-toolbar">
-                    <h2>Active Staking Positions</h2>
+                    <h2><GlitchText text="Active Staking Positions" variant="streetlight" step={0.05} /></h2>
                     <div className="staking-actions">
                         {connected && hasPositions && (
                             <>
@@ -71,7 +72,7 @@ export function StakingSection({ mint, marketStatusPda }: StakingSectionProps) {
                             </>
                         )}
                         <button
-                            className="staking-toggle neon-glitch"
+                            className="staking-toggle neon-glitch glitch-shift"
                             onClick={() => setExpanded((v) => !v)}
                             aria-expanded={expanded}
                             style={{ '--glitch-delay': '0.6s' } as React.CSSProperties}
@@ -93,7 +94,7 @@ export function StakingSection({ mint, marketStatusPda }: StakingSectionProps) {
                 {connected && expanded && (
                     <div className="staking-content">
                         <div
-                            className="positions-shell neon-glitch neon-shadow"
+                            className="positions-shell neon-glitch neon-shadow glitch-double"
                             style={{ '--glitch-delay': '0.3s', '--shadow-delay': '0.8s' } as React.CSSProperties}
                         >
                             <Positions mint={mint} marketStatusPda={marketStatusPda} />

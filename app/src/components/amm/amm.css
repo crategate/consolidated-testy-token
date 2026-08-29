@@ -24,6 +24,12 @@
     background: #ffe14d;
 }
 
+@media (prefers-reduced-motion: reduce) {
+    .home-offer-indicator {
+        animation: none !important;
+    }
+}
+
 /* Reserves the banner's height in flow so page content starts below it. */
 .home-offer-indicator-spacer {
     height: 40px;
@@ -41,17 +47,17 @@
 
 @keyframes indicator-pulse {
     0% {
-        transform: scale(0.95);
+        opacity: 0.6;
         box-shadow: 0 0 0 0 rgba(21, 128, 61, 0.55);
     }
 
     70% {
-        transform: scale(1);
+        opacity: 1;
         box-shadow: 0 0 0 10px rgba(21, 128, 61, 0);
     }
 
     100% {
-        transform: scale(0.95);
+        opacity: 0.6;
         box-shadow: 0 0 0 0 rgba(21, 128, 61, 0);
     }
 }

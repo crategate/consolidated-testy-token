@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
+import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { getAccount, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { useAmmData, type OfferTierData } from '../../hooks/amm/useAmmData.ts';
 import { useOfferClaim, type ClaimCurrency } from '../../hooks/amm/useOfferClaim.ts';
@@ -35,6 +36,7 @@ export default function OfferLists() {
         data.solAccounts,
         data.usdcDecimals,
     );
+    const { setVisible } = useWalletModal();
     const [quantities, setQuantities] = useState<Record<string, number>>({ big: 0, med: 0, sml: 0 });
     const [currency, setCurrency] = useState<ClaimCurrency>('usdc');
     const [menuOpen, setMenuOpen] = useState(false);
@@ -224,7 +226,11 @@ export default function OfferLists() {
                 />
             )}
 
-            <div className="order-bar">
+            <div
+                className="order-bar"
+                data-order={totalLots > 0 ? 'active' : 'idle'}
+                style={{ '--order-excite': String(Math.min(1 + totalLots * 0.18, 2.6)) } as React.CSSProperties}
+            >
                 <div className="order-total">
                     <span className="order-total-label">Total order size (approx.)</span>
                     <div className="order-total-line">
@@ -303,9 +309,15 @@ export default function OfferLists() {
                 </div>
                 <button
                     type="button"
-                    className="buy-button"
-                    onClick={handleBuy}
-                    disabled={!canBuy}
+                    className={`buy-button${!connected ? ' needs-wallet' : ''}${totalLots > 0 ? ' has-order' : ''}${canBuy ? ' ready' : ''}`}
+                    onClick={() => {
+                        if (!connected) {
+                            setVisible(true);
+                            return;
+                        }
+                        void handleBuy();
+                    }}
+                    disabled={connected && !canBuy}
                 >
                     {buyLabel}
                 </button>

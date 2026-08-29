@@ -31,6 +31,10 @@ function bufferPolyfill(): Plugin {
 }
 
 export default defineConfig({
+    // Relative base so the built app works from ANY path (cPanel subfolder,
+    // subdomain, file:// preview) — absolute /assets/... paths 404 when the
+    // dist folder isn't at the domain root.
+    base: './',
     plugins: [bufferPolyfill(), react()],
     resolve: {
         alias: {
@@ -43,10 +47,8 @@ export default defineConfig({
         global: 'globalThis',
     },
     optimizeDeps: {
-        esbuildOptions: {
-            define: {
-                global: 'globalThis',
-            },
+        rolldownOptions: {
+
         },
         include: ['buffer', '@coral-xyz/anchor', '@solana/web3.js'],
     },

@@ -17,7 +17,7 @@ export function useDeployment(): DeploymentState {
 
         async function load() {
             try {
-                const response = await fetch(`/deployment.json?t=${Date.now()}`, {
+                const response = await fetch(`${import.meta.env.BASE_URL}deployment.json?t=${Date.now()}`, {
                     cache: 'no-store',
                 });
                 const config = response.ok ? await response.json() : {};

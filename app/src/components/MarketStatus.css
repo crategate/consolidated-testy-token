@@ -11,6 +11,9 @@
     overflow: hidden;
     font-family: var(--font-sans);
     border-radius: var(--radius-lg);
+    /* Solid base under the tinted gradient so the shadow behind the tile
+       never shows through the body */
+    background-color: var(--bg-primary);
 }
 
 /* ── State Themes ── */
@@ -64,7 +67,6 @@
 
 @keyframes gridDrift {
     0% {
-        transform: translateY(0) scale(1);
         opacity: 0.3;
     }
 
@@ -73,7 +75,6 @@
     }
 
     100% {
-        transform: translateY(-30px) scale(1.05);
         opacity: 0.3;
     }
 }
