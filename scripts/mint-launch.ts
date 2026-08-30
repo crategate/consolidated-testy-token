@@ -81,8 +81,8 @@ async function main() {
     // 4. Token Metadata Configuration
     const metadata: TokenMetadata = {
         mint: mint.publicKey,
-        name: '2929',
-        symbol: '8-29',
+        name: 'nitenite',
+        symbol: '8-29999',
         uri: 'https://copper-quick-koi-488.mypinata.cloud/ipfs/bafkreiblskodz5bwtelz4id437rnhsndtq3rfh7jjsgaj72wb55cgnbbea',
         additionalMetadata: [['description', 'a token bound by the hours of Wall Street']],
     };

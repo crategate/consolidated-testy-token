@@ -33,13 +33,13 @@ export function HeroSection({ deployment }: HeroSectionProps) {
                 ) : (
                     <div className="hero-row hero-row--disconnected">
                         <WalletDashboard />
-                        <div className="neon-shadow" style={{ '--shadow-delay': '0.2s' } as React.CSSProperties}>
+                        <div className="neon-shadow shadow-wander-b" style={{ '--shadow-delay': '0.2s' } as React.CSSProperties}>
                             <MarketStatus marketStatusPda={deployment.marketStatusKey} variant="hero" />
                         </div>
                     </div>
                 )}
                 {connected && (
-                    <div className="neon-shadow" style={{ '--shadow-delay': '0.2s' } as React.CSSProperties}>
+                    <div className="neon-shadow shadow-wander-b" style={{ '--shadow-delay': '0.2s' } as React.CSSProperties}>
                         <MarketStatus marketStatusPda={deployment.marketStatusKey} variant="hero" />
                     </div>
                 )}

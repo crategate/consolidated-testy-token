@@ -15,6 +15,11 @@ interface GlitchTextProps {
 /* Deterministic group sizes so the chunking is stable across renders */
 const GROUP_SIZES = [2, 1, 3, 2, 1, 2, 3, 1];
 
+/* Deterministic scatter: neighboring spans get far-apart delays instead
+   of a left-to-right cascade. 13 is prime so the order cycles through
+   every phase before repeating. */
+const scatter = (i: number) => (i * 7) % 13;
+
 function splitGroup(text: string): string[] {
     const parts: string[] = [];
     let i = 0;
@@ -42,7 +47,7 @@ export function GlitchText({
     split = 'letter',
 }: GlitchTextProps) {
     const cssVars = (i: number) =>
-        ({ '--i': i, '--letter-stagger': `${step}s` }) as CSSProperties;
+        ({ '--i': scatter(i), '--letter-stagger': `${step}s` }) as CSSProperties;
 
     let children: ReactNode;
     if (split === 'word') {

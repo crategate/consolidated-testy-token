@@ -13,22 +13,24 @@ export function BuiltWithSection() {
                 <h2 className="section-title"><GlitchText text="Built With" variant="ghost" /></h2>
                 <div className="built-with-grid">
                     {LOGOS.map((logo, index) => (
-                        <div
-                            key={logo.name}
-                            className={`built-with-tile neon-glitch neon-shadow glass-pane ${['glitch-streetlight', 'glitch-shift', 'glitch-rose'][index]} ${['shadow-under', 'shadow-corner-tl', 'shadow-corner-br'][index]}`}
-                            style={{
-                                '--glitch-delay': `${(index * 0.9).toFixed(2)}s`,
-                                '--shadow-delay': `${(index * 1.1 + 0.2).toFixed(2)}s`,
-                            } as React.CSSProperties}
-                        >
-                            <img
-                                src={logo.src}
-                                alt={`${logo.name} logo`}
-                                className="built-with-logo"
-                                style={{ marginTop: logo.top }}
-                                loading="lazy"
-                            />
-                        </div>
+                        <a href={logo.link}>
+                            <div
+                                key={logo.name}
+                                className={`built-with-tile neon-glitch neon-shadow glass-pane ${['glitch-streetlight', 'glitch-shift', 'glitch-rose'][index]} ${['shadow-under', 'shadow-corner-tl', 'shadow-corner-br'][index]}`}
+                                style={{
+                                    '--glitch-delay': `${(index * 0.9).toFixed(2)}s`,
+                                    '--shadow-delay': `${(index * 1.1 + 0.2).toFixed(2)}s`,
+                                } as React.CSSProperties}
+                            >
+                                <img
+                                    src={logo.src}
+                                    alt={`${logo.name} logo`}
+                                    className="built-with-logo"
+                                    style={{ marginTop: logo.top }}
+                                    loading="lazy"
+                                />
+                            </div>
+                        </a>
                     ))}
                 </div>
             </div>

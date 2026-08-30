@@ -106,12 +106,33 @@
 @keyframes deskOpenPulse {
 
     0%,
+    13%,
+    31%,
+    48%,
+    66%,
+    84%,
     100% {
-        box-shadow: 0 0 4px rgba(5, 255, 161, 0.1);
+        box-shadow: none;
     }
 
-    50% {
-        box-shadow: 0 0 9px rgba(5, 255, 161, 0.25);
+    10% {
+        box-shadow: 0 0 5px rgba(5, 255, 161, 0.18);
+    }
+
+    28% {
+        box-shadow: 0 0 10px rgba(5, 255, 161, 0.3);
+    }
+
+    45% {
+        box-shadow: 0 0 5px rgba(5, 255, 161, 0.2);
+    }
+
+    63% {
+        box-shadow: 0 0 8px rgba(5, 255, 161, 0.26);
+    }
+
+    81% {
+        box-shadow: 0 0 11px rgba(5, 255, 161, 0.32);
     }
 }
 
@@ -289,9 +310,10 @@
     animation-delay: var(--glitch-delay, 0s);
 }
 
-/* Cornered colored back-shadow: two adjacent sides lit in the tier's
-   palette, popping on a slow irregular clock. Box-shadow paints only
-   outside the card, never through the glass. */
+/* Idle tiers: one or two sides lit in the tier's palette, and the lit
+   sides + colors change between stages — a shadow that wanders the
+   card on a slow, off-beat clock. Box-shadow only, never through the
+   glass. Selected cards get the full rainbow ring instead. */
 .offer-card::after {
     content: '';
     position: absolute;
@@ -300,33 +322,147 @@
     pointer-events: none;
     z-index: -1;
     opacity: 0;
-    animation: neonShadowPop calc(var(--fx-desk-shadow-cycle) * 1.35 / var(--tier-excite, 1)) infinite;
+    animation: tierShadowA calc(var(--fx-desk-shadow-cycle) * 1.6 / var(--tier-excite, 1)) infinite;
     animation-delay: var(--glitch-delay, 0s);
 }
 
-.offer-card[data-tier='0']::after {
-    box-shadow:
-        -7px -7px 14px -4px rgba(255, 170, 0, 0.26),
-        -7px 0 12px -6px rgba(255, 170, 0, 0.18),
-        0 -7px 12px -6px rgba(5, 255, 161, 0.16);
-}
-
 .offer-card[data-tier='1']::after {
-    box-shadow:
-        7px 7px 14px -4px rgba(0, 240, 255, 0.26),
-        7px 0 12px -6px rgba(0, 240, 255, 0.18),
-        0 7px 12px -6px rgba(255, 42, 109, 0.16);
+    animation-name: tierShadowB;
+    animation-duration: calc(var(--fx-desk-shadow-cycle) * 1.9 / var(--tier-excite, 1));
+    animation-delay: 2.1s;
 }
 
 .offer-card[data-tier='2']::after {
-    box-shadow:
-        -7px 7px 14px -4px rgba(211, 0, 249, 0.26),
-        -7px 0 12px -6px rgba(211, 0, 249, 0.18),
-        0 7px 12px -6px rgba(0, 240, 255, 0.16);
+    animation-name: tierShadowC;
+    animation-duration: calc(var(--fx-desk-shadow-cycle) * 2.3 / var(--tier-excite, 1));
+    animation-delay: 4.2s;
+}
+
+@keyframes tierShadowA {
+
+    0%,
+    17%,
+    44%,
+    70%,
+    93%,
+    100% {
+        opacity: 0;
+        box-shadow: none;
+    }
+
+    13% {
+        opacity: 1;
+        box-shadow:
+            -7px -7px 14px -4px rgba(255, 170, 0, 0.22),
+            -7px 0 10px -6px rgba(255, 170, 0, 0.14);
+    }
+
+    40% {
+        opacity: 1;
+        box-shadow:
+            7px 0 14px -5px rgba(5, 255, 161, 0.18),
+            2px 0 6px -3px rgba(5, 255, 161, 0.1);
+    }
+
+    66% {
+        opacity: 1;
+        box-shadow:
+            0 8px 12px -5px rgba(255, 170, 0, 0.18),
+            0 2px 6px -3px rgba(255, 170, 0, 0.1);
+    }
+
+    89% {
+        opacity: 1;
+        box-shadow:
+            7px 7px 12px -5px rgba(5, 255, 161, 0.16),
+            0 7px 10px -6px rgba(255, 170, 0, 0.12);
+    }
+}
+
+@keyframes tierShadowB {
+
+    0%,
+    20%,
+    46%,
+    72%,
+    96%,
+    100% {
+        opacity: 0;
+        box-shadow: none;
+    }
+
+    15% {
+        opacity: 1;
+        box-shadow:
+            0 8px 14px -5px rgba(0, 240, 255, 0.2),
+            0 2px 6px -3px rgba(0, 240, 255, 0.1);
+    }
+
+    42% {
+        opacity: 1;
+        box-shadow:
+            7px -7px 12px -5px rgba(255, 42, 109, 0.2),
+            0 -7px 10px -6px rgba(0, 240, 255, 0.14);
+    }
+
+    68% {
+        opacity: 1;
+        box-shadow:
+            -7px 0 14px -5px rgba(0, 240, 255, 0.18),
+            -2px 0 6px -3px rgba(0, 240, 255, 0.1);
+    }
+
+    92% {
+        opacity: 1;
+        box-shadow:
+            -6px -6px 12px -5px rgba(0, 240, 255, 0.16),
+            6px 6px 12px -5px rgba(255, 42, 109, 0.12);
+    }
+}
+
+@keyframes tierShadowC {
+
+    0%,
+    15%,
+    41%,
+    66%,
+    91%,
+    100% {
+        opacity: 0;
+        box-shadow: none;
+    }
+
+    11% {
+        opacity: 1;
+        box-shadow:
+            -7px 7px 14px -4px rgba(211, 0, 249, 0.22),
+            -7px 0 10px -6px rgba(211, 0, 249, 0.14);
+    }
+
+    37% {
+        opacity: 1;
+        box-shadow:
+            0 -7px 12px -5px rgba(0, 240, 255, 0.18),
+            0 -2px 6px -3px rgba(0, 240, 255, 0.1);
+    }
+
+    62% {
+        opacity: 1;
+        box-shadow:
+            7px -7px 12px -5px rgba(211, 0, 249, 0.2),
+            0 -7px 10px -6px rgba(0, 240, 255, 0.14);
+    }
+
+    87% {
+        opacity: 1;
+        box-shadow:
+            7px 0 14px -5px rgba(0, 240, 255, 0.18),
+            2px 0 6px -3px rgba(211, 0, 249, 0.12);
+    }
 }
 
 /* Selected: the tier palette border rhythm plus the full rainbow ring
-   radiating behind. More lots → faster rainbow. */
+   radiating behind. More lots → faster, more saturated rainbow. */
 .offer-card.selected {
     border-color: rgba(0, 240, 255, 0.35);
 }
@@ -337,17 +473,17 @@
 }
 
 .offer-card.selected::after {
-    inset: -4px;
-    padding: 4px;
+    inset: -7px;
+    padding: 7px;
     background: conic-gradient(from 0deg at 50% 50%,
             var(--neon-purple) 0deg,
             var(--neon-amber) 70deg,
             var(--neon-pink) 130deg,
             var(--neon-cyan) 230deg,
             var(--neon-purple) 360deg);
-    filter: blur(11px);
+    filter: blur(15px) saturate(calc(var(--fx-sat, 1) + (var(--tier-excite, 1) - 1) * 0.5));
     box-shadow: none;
-    animation: rainbowGlitch calc(var(--fx-desk-shadow-cycle) * 0.9 / var(--tier-excite, 1)) infinite;
+    animation: rainbowGlitch calc(var(--fx-desk-shadow-cycle) * 1.1 / var(--tier-excite, 1)) infinite;
     animation-delay: 0s;
     -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
@@ -531,7 +667,7 @@
 
 .order-bar[data-order='active']::before {
     animation-name: neonFlickerFast;
-    animation-duration: calc(var(--fx-desk-cycle) * 0.6 / var(--order-excite, 1));
+    animation-duration: calc(var(--fx-desk-cycle) * 0.9 / var(--order-excite, 1));
 }
 
 /* Active order pane: sparse blue/pink edge glow behind the bar */
@@ -548,10 +684,10 @@
             var(--neon-pink) 120deg,
             var(--neon-blue) 240deg,
             var(--neon-pink) 360deg);
-    filter: blur(12px);
+    filter: blur(14px) saturate(calc(var(--fx-sat, 1) + (var(--order-excite, 1) - 1) * 0.4));
     opacity: 0;
     animation: bluePinkGlitch calc(var(--fx-desk-shadow-cycle) / var(--order-excite, 1)) infinite;
-    animation-delay: var(--shadow-delay, 0s);
+    animation-delay: 1.2s;
     -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
     mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -559,7 +695,8 @@
 }
 
 .order-bar[data-order='active'] .order-total strong {
-    animation: textShadowRgbSplit 4.5s infinite;
+    animation: textShadowRgbSplit calc(var(--fx-desk-text-cycle) * 1.2) infinite;
+    animation-delay: 0.7s;
 }
 
 .order-total-label {
@@ -754,30 +891,30 @@
     box-shadow: 0 0 18px rgba(0, 240, 255, 0.25);
 }
 
-/* Ready (connected + selection): calm pulse + intermittent rainbow
-   ring, quickening as the order grows */
+/* Ready (connected + selection): slow irregular glitch + intermittent
+   rainbow ring, quickening only slightly as the order grows */
 .buy-button.ready {
-    animation: buyReadyPulse 3.2s ease-in-out infinite;
+    animation: buyReadyGlitch 8s infinite;
 }
 
 .buy-button.ready::after {
     content: '';
     position: absolute;
-    inset: -4px;
-    border-radius: 14px;
+    inset: -6px;
+    border-radius: 16px;
     z-index: -1;
-    padding: 4px;
+    padding: 6px;
     background: conic-gradient(from 0deg at 50% 50%,
             var(--neon-purple) 0deg,
             var(--neon-amber) 70deg,
             var(--neon-pink) 130deg,
             var(--neon-cyan) 230deg,
             var(--neon-purple) 360deg);
-    filter: blur(12px);
+    filter: blur(14px) saturate(calc(var(--fx-sat, 1) + (var(--order-excite, 1) - 1) * 0.5));
     opacity: 0;
     pointer-events: none;
-    animation: rainbowGlitch calc(var(--fx-desk-shadow-cycle) * 0.75 / var(--order-excite, 1)) infinite;
-    animation-delay: 0s;
+    animation: rainbowGlitch calc(var(--fx-desk-shadow-cycle) * 1.0 / var(--order-excite, 1)) infinite;
+    animation-delay: 0.4s;
     -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
     mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -829,7 +966,7 @@
     animation: textShadowShiver 1.8s infinite;
 }
 
-/* ── Connected stage ladder + synchronized rhythm (desk) ── */
+/* ── Connected stage ladder + varied rhythm (desk) ── */
 
 /* Connected: idle tiers shift from broken sputter to an alive buzz;
    the selected pulse and sold-out dead states still take precedence. */
@@ -840,7 +977,7 @@
 
 .amm-page-shell .offer-card.selected::before {
     animation-name: tierFlickerFast;
-    animation-duration: calc(var(--fx-desk-cycle) * 0.6 / var(--tier-excite, 1));
+    animation-duration: calc(var(--fx-desk-cycle) * 0.8 / var(--tier-excite, 1));
 }
 
 .amm-page-shell .offer-card.sold-out::before {
@@ -848,10 +985,18 @@
     animation-duration: 18s;
 }
 
-/* Connected: one synchronized clock across tiers and the order pane */
-.amm-page-shell[data-connected='true'] .offer-card::before,
+/* Connected: one faster base tick across tiers and the order pane,
+   but every element keeps its own offset — never synchronized */
+.amm-page-shell[data-connected='true'] .offer-card[data-tier='1']::before {
+    animation-delay: 1.8s;
+}
+
+.amm-page-shell[data-connected='true'] .offer-card[data-tier='2']::before {
+    animation-delay: 3.1s;
+}
+
 .amm-page-shell[data-connected='true'] .order-bar::before {
-    animation-delay: 0s !important;
+    animation-delay: 0.9s;
 }
 
 /* Building an order (not yet buyable) — border glitch speeds with the order */

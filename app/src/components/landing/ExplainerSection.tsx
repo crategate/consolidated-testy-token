@@ -38,7 +38,7 @@ export function ExplainerSection() {
                     <GlitchText text="AFHO ties token incentives to the tradFi market pulse." variant="light" split="word" step={0.35} />
                 </p>
                 <p className="section-subtitle" style={{ '--glitch-delay': '1.4s' } as React.CSSProperties}>
-                    staking, buybacks, and bond sales change with Wall St's market status
+                    <GlitchText text="staking, buybacks, and bond sales change with Wall St's market status" variant="light" split="word" step={0.4} />
                 </p>
                 <div className="explainer-grid">
                     {EXPLAINERS.map((item, index) => (
@@ -58,7 +58,7 @@ export function ExplainerSection() {
                 </div>
 
                 <div
-                    className="split-chart neon-glitch neon-shadow glass-pane"
+                    className="split-chart neon-glitch neon-shadow shadow-corner-bl glass-pane"
                     style={{ '--glitch-delay': '1.4s', '--shadow-delay': '2s' } as React.CSSProperties}
                 >
                     <h4 className="split-title">Bond Offer Proceeds:</h4>

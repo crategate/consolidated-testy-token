@@ -50,6 +50,10 @@ export interface ClaimAccounts {
 }
 
 export interface SolClaimAccounts {
+    // Raydium CPMM program. offer_claim_sol CPIs the wSOL→USDC swap into it,
+    // and the runtime requires the callee program id to be among the caller
+    // instruction's accounts — the client passes it as a remaining account.
+    cpmmProgram: PublicKey;
     solOracle: PublicKey;
     wsolVault: PublicKey;
     wrappedSolMint: PublicKey;
@@ -204,6 +208,7 @@ function deriveSolClaimAccounts(
     );
 
     return {
+        cpmmProgram,
         solOracle,
         wsolVault,
         wrappedSolMint: WSOL_MINT,

@@ -126,9 +126,10 @@ export function useOfferClaim(
 
             const tx = new Transaction();
             // Chunking: the USDC instruction is ~950 bytes, so all tiers fit in
-            // one transaction. A single SOL instruction is ~1180 bytes — two
-            // would exceed the 1232-byte packet limit, so SOL claims go out as
-            // one transaction per tier (one wallet prompt each).
+            // one transaction. A single SOL instruction is ~1180 bytes (+33 for
+            // the CPMM program remaining account), so two would exceed the
+            // 1232-byte packet limit — SOL claims go out as one transaction per
+            // tier (one wallet prompt each).
             const txs: Transaction[] = currency === 'usdc' ? [tx] : [];
             for (let i = 0; i < active.length; i++) {
                 const { tier, units } = active[i];
@@ -188,22 +189,6 @@ export function useOfferClaim(
                             offerList: accounts.offerList,
                             afhoMint: accounts.afhoMint,
                             usdcMint: accounts.usdcMint,
-                            // spot/sol oracles are Option on-chain and unused
-                            // when both pools are pinned, but they still occupy
-                            // fixed positions in the account list. Do NOT omit
-                            // or filter them — that shifts every account after
-                            // them and causes Anchor to deserialize the wrong
-                            // account as usdc_dip (the error you see is
-                            // AccountNotInitialized on usdc_dip because the
-                            // wsol_vault lands in its slot). The full 33-account
-                            // instruction serializes to ~1180 bytes, well under
-                            // the 1232-byte limit.
-                            spotOracle: accounts.spotOracle,
-                            solOracle: sol.solOracle,
-                            cpmmPoolState: accounts.cpmmPoolState,
-                            cpmmObservation: accounts.cpmmObservation,
-                            cpmmInputVault: accounts.cpmmInputVault,
-                            cpmmOutputVault: accounts.cpmmOutputVault,
                             marketStatus: accounts.marketStatus,
                             usdcVault: accounts.ammUsdcVault,
                             usdcDip: accounts.usdcDip,
@@ -226,7 +211,37 @@ export function useOfferClaim(
                             tokenProgram: TOKEN_PROGRAM_ID,
                             token2022Program: TOKEN_2022_PROGRAM_ID,
                             systemProgram: SystemProgram.programId,
+                            // Pricing oracles are only used in unpinned mode;
+                            // the SOL path is only exposed when both pools are
+                            // pinned, so they are unused here. Anchor optional
+                            // accounts must still be passed, and programId is the
+                            // sentinel that means "omitted". Because they live at
+                            // the end of the account list, the sentinel does not
+                            // shift any required account.
+                            spotOracle: program.programId,
+                            solOracle: program.programId,
+                            cpmmPoolState: accounts.cpmmPoolState,
+                            cpmmObservation: accounts.cpmmObservation,
+                            cpmmInputVault: accounts.cpmmInputVault,
+                            cpmmOutputVault: accounts.cpmmOutputVault,
                         })
+                        // The program CPIs the wSOL→USDC swap into
+                        // amm_state.cpmm_program (Raydium CPMM). Solana's
+                        // runtime refuses a CPI unless the callee program id
+                        // is itself among the caller instruction's accounts
+                        // (otherwise: "Unknown program DRay…" +
+                        // "An account required by the instruction is missing").
+                        // The deployed amm program has no struct slot for it,
+                        // so pass it as a read-only remaining account — it is
+                        // appended after the optional-account sentinels and
+                        // never consumed by Anchor's account deserializer.
+                        .remainingAccounts([
+                            {
+                                pubkey: sol.cpmmProgram,
+                                isSigner: false,
+                                isWritable: false,
+                            },
+                        ])
                         .instruction();
                     solTx.add(solIx);
                     txs.push(solTx);

@@ -1,7 +1,9 @@
 import { usePoolStats } from '../hooks/usePoolStats';
 import { PublicKey } from '@solana/web3.js';
 
-const SHADOW_VARIANTS = ['shadow-right', 'shadow-corner-tl', 'shadow-under', 'shadow-left', 'shadow-corner-br'];
+/* Stat tiles: one or two directions each, with two of them wandering
+   between corners on their own slow clocks */
+const SHADOW_VARIANTS = ['shadow-corner-tl', 'shadow-wander-a', 'shadow-under', 'shadow-wander-b', 'shadow-corner-br'];
 
 interface PoolStatsProps {
     mint: PublicKey;

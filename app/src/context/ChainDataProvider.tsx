@@ -2,6 +2,7 @@ import {
     useCallback,
     useEffect,
     useMemo,
+    useRef,
     useState,
     type ReactNode,
 } from 'react';
@@ -28,10 +29,10 @@ import { ChainDataContext, type ChainDataContextValue, type RefreshKey } from '.
 
 /* ── Environment tuning ── */
 
-const POLL_MS = Number(import.meta.env.VITE_RPC_POLL_MS ?? 15000);
-const MARKET_STALE_MS = Number(import.meta.env.VITE_MARKET_STALE_MS ?? 15000);
+const POLL_MS = Number(import.meta.env.VITE_RPC_POLL_MS ?? 30000);
+const MARKET_STALE_MS = Number(import.meta.env.VITE_MARKET_STALE_MS ?? 30000);
 const POOL_STALE_MS = Number(import.meta.env.VITE_POOL_STALE_MS ?? 60000);
-const AMM_STALE_MS = Number(import.meta.env.VITE_AMM_STALE_MS ?? 15000);
+const AMM_STALE_MS = Number(import.meta.env.VITE_AMM_STALE_MS ?? 30000);
 const DEPLOYMENT_STALE_MS = Number(import.meta.env.VITE_DEPLOYMENT_STALE_MS ?? 60000);
 
 /* ── Visibility hook ── */
@@ -59,9 +60,11 @@ function retryDelay(attemptIndex: number): number {
 
 /* ── Account-change subscription helper ──
    Opens one WebSocket listener per account. When the account changes, the
-   corresponding TanStack Query cache entry is invalidated. Because the query
-   itself has staleTime, this usually results in a single re-fetch per change,
-   not a retry storm. */
+   corresponding TanStack Query cache entry is invalidated. Throttled so a
+   flurry of account updates (or StrictMode double subscriptions) cannot
+   trigger a retry storm against a rate-limited RPC. */
+
+const WS_INVALIDATE_MIN_MS = 5000;
 
 function useAccountSubscription(
     account: PublicKey | null,
@@ -71,6 +74,7 @@ function useAccountSubscription(
     const { connection } = useConnection();
     const queryClient = useQueryClient();
     const visible = usePageVisible();
+    const lastInvalidateRef = useRef<number>(0);
 
     useEffect(() => {
         if (!account || !enabled || !connection) return;
@@ -79,6 +83,9 @@ function useAccountSubscription(
         const id = connection.onAccountChange(
             account,
             () => {
+                const now = Date.now();
+                if (now - lastInvalidateRef.current < WS_INVALIDATE_MIN_MS) return;
+                lastInvalidateRef.current = now;
                 void queryClient.invalidateQueries({ queryKey, refetchType: 'active' });
             },
             'confirmed',

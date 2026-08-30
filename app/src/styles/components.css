@@ -22,6 +22,11 @@
     border: 1px solid var(--border-subtle);
     position: relative;
     isolation: isolate;
+    /* Keep the header's stacking context (and the wallet-adapter
+       dropdown inside it) above the sibling glass panes, which are
+       later in the DOM and would otherwise paint over the open
+       dropdown. */
+    z-index: 2;
 }
 
 .wallet-label {
@@ -826,11 +831,31 @@
 @keyframes pulse {
 
     0%,
+    18%,
+    37%,
+    54%,
+    72%,
     100% {
         opacity: 1;
     }
 
+    14% {
+        opacity: 0.45;
+    }
+
+    33% {
+        opacity: 0.6;
+    }
+
     50% {
+        opacity: 0.35;
+    }
+
+    68% {
+        opacity: 0.55;
+    }
+
+    89% {
         opacity: 0.4;
     }
 }

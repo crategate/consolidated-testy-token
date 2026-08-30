@@ -53,7 +53,13 @@ export function MarketStatus({ marketStatusPda, variant = 'full' }: MarketStatus
                             {label}
                             {stale && <span className="stale-badge">Stale</span>}
                         </div>
-                        <h1 className="status-title">{label}</h1>
+                        <h1 className="status-title">
+                            {variant === 'hero' ? (
+                                <GlitchText text={label} variant="light" split="letter" step={0.4} />
+                            ) : (
+                                label
+                            )}
+                        </h1>
                         <p className="status-detail">
                             {variant === 'hero' ? (
                                 <GlitchText

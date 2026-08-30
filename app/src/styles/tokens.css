@@ -52,6 +52,8 @@
        --fx-base      master tick of every glitch cycle (disconnected)
        --fx-excite    global excitement multiplier — market state,
                       wallet connection fold into it (set per shell)
+       --fx-sat       colorfulness of the backlit shadows — connected
+                      shells turn it up a notch
        --fx-step      checkout/staking step ladder (local: set on a
                       pane as the user completes its flow; divides
                       that pane's cycles)
@@ -62,8 +64,9 @@
                       a shell redefinition recomputes them from the
                       shell's own --fx-base / --fx-excite. Retune
                       the whole page here. */
-    --fx-base: 7.5s;
+    --fx-base: 16s;
     --fx-excite: 1;
+    --fx-sat: 1;
     --fx-shadow-cycle: calc(var(--fx-base) / var(--fx-excite));
     --fx-border-cycle: calc(var(--fx-base) / var(--fx-excite));
     --fx-text-cycle: calc(var(--fx-base) * 1.1 / var(--fx-excite));
@@ -87,7 +90,7 @@
 
 .app-shell,
 .amm-page-shell {
-    --fx-base: 7.5s;
+    --fx-base: 16s;
     --fx-excite: 1;
     --fx-shadow-cycle: calc(var(--fx-base) / var(--fx-excite));
     --fx-border-cycle: calc(var(--fx-base) / var(--fx-excite));
@@ -95,12 +98,13 @@
     --fx-span-cycle: calc(var(--fx-base) * 1.25 / var(--fx-excite));
 }
 
-/* Wallet connected: the whole page lands on a slightly faster, more
-   synchronized rhythm. Subtle — not frantic. */
+/* Wallet connected: everything lands on a slightly faster, more
+   colorful rhythm — subtle, not frantic. */
 .app-shell[data-connected='true'],
 .amm-page-shell[data-connected='true'] {
-    --fx-base: 5.4s;
+    --fx-base: 11s;
     --fx-excite: 1.15;
+    --fx-sat: 1.2;
 }
 
 /* Market state: the page runs hottest while the market is open. */
@@ -130,9 +134,6 @@
     /* border glitch */
     .neon-glitch::before,
     .neon-border::before,
-    .neon-divider::after,
-    .section-hairline::before,
-    .section-hairline::after,
     .connect-prompt .glitch-border,
     .offer-card::before,
     .order-bar::before,

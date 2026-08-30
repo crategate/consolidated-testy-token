@@ -285,28 +285,6 @@ pub struct OfferClaimSol<'info> {
     #[account(address = amm_state.usdc_mint)]
     pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
 
-    /// AFHO absolute-price oracle — fallback when the AFHO/USDC CPMM pool is
-    /// NOT pinned. Optional so the pinned path can omit it (the SOL claim
-    /// instruction is at the transaction-size limit; 2 fewer accounts matter).
-    /// CHECK: address-verified against amm_state.spot_oracle when present.
-    #[account(address = amm_state.spot_oracle)]
-    pub spot_oracle: Option<AccountInfo<'info>>,
-    /// SOL/USD price oracle — fallback when the SOL/USDC pool is NOT pinned.
-    /// Optional for the same transaction-size reason.
-    /// CHECK: address-verified against amm_state.sol_oracle when present.
-    #[account(address = amm_state.sol_oracle)]
-    pub sol_oracle: Option<AccountInfo<'info>>,
-
-    // Raydium CPMM AFHO/USDC pool — live spot-price source when pinned.
-    /// CHECK: pool state, pinned to amm_state.cpmm_pool_state in the handler
-    pub cpmm_pool_state: Option<AccountInfo<'info>>,
-    /// CHECK: pool observation (TWAP ring)
-    pub cpmm_observation: Option<AccountInfo<'info>>,
-    /// CHECK: pool USDC vault (quote leg)
-    pub cpmm_input_vault: Option<AccountInfo<'info>>,
-    /// CHECK: pool AFHO vault (base leg)
-    pub cpmm_output_vault: Option<AccountInfo<'info>>,
-
     /// Market status PDA — same gate as the USDC path.
     /// CHECK: seeds-verified against the crank program stored at init
     #[account(
@@ -388,6 +366,30 @@ pub struct OfferClaimSol<'info> {
     /// Token-2022 (AFHO leg into staking)
     pub token_2022_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
+
+    // --- Optional pricing accounts (kept at the end so the client can omit
+    //     unused oracle accounts without shifting required accounts) ---
+    /// AFHO absolute-price oracle — fallback when the AFHO/USDC CPMM pool is
+    /// NOT pinned. Optional so the pinned path can omit it (the SOL claim
+    /// instruction is at the transaction-size limit; 2 fewer accounts matter).
+    /// CHECK: address-verified against amm_state.spot_oracle when present.
+    #[account(address = amm_state.spot_oracle)]
+    pub spot_oracle: Option<AccountInfo<'info>>,
+    /// SOL/USD price oracle — fallback when the SOL/USDC pool is NOT pinned.
+    /// Optional for the same transaction-size reason.
+    /// CHECK: address-verified against amm_state.sol_oracle when present.
+    #[account(address = amm_state.sol_oracle)]
+    pub sol_oracle: Option<AccountInfo<'info>>,
+
+    // Raydium CPMM AFHO/USDC pool — live spot-price source when pinned.
+    /// CHECK: pool state, pinned to amm_state.cpmm_pool_state in the handler
+    pub cpmm_pool_state: Option<AccountInfo<'info>>,
+    /// CHECK: pool observation (TWAP ring)
+    pub cpmm_observation: Option<AccountInfo<'info>>,
+    /// CHECK: pool USDC vault (quote leg)
+    pub cpmm_input_vault: Option<AccountInfo<'info>>,
+    /// CHECK: pool AFHO vault (base leg)
+    pub cpmm_output_vault: Option<AccountInfo<'info>>,
 }
 
 pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u8, index: u64) -> Result<()> {

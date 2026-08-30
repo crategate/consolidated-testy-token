@@ -3,6 +3,7 @@ import { useStake } from '../hooks/stake/useStake';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import { useTokenBalance } from '../hooks/useTokenBalance';
+import { GlitchText } from './GlitchText.tsx';
 
 interface StakeFormProps {
     mint: PublicKey;
@@ -55,8 +56,12 @@ export function StakeForm({ mint, marketStatusPda, onStakeSuccess }: StakeFormPr
                 {balance !== null ? balance.toFixed(4) : '—'} <span>AFHO</span>
             </div>
             <p className="custodial-note">
-                Tokens move into the program vault and no longer appear in your wallet.
-                Your stake is tracked by an on-chain position account.
+                <GlitchText
+                    text="Tokens move into the program vault and no longer appear in your wallet. Your stake is tracked by an on-chain position account."
+                    variant="light"
+                    split="word"
+                    step={0.3}
+                />
             </p>
             <input
                 type="number"

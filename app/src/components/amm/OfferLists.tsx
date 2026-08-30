@@ -256,7 +256,7 @@ export default function OfferLists() {
                 style={{ '--order-excite': String(Math.min(1 + totalLots * 0.18, 2.6)) } as React.CSSProperties}
             >
                 <div className="order-total">
-                    <span className="order-total-label"><GlitchText text="Total order size (approx.)" variant="light" split="letter" step={0.12} /></span>
+                    <span className="order-total-label"><GlitchText text="Total order size (approx.)" variant="light" split="letter" step={0.3} /></span>
                     <div className="order-total-line">
                         <strong>{displayCost}</strong>
                         <div className="currency-picker" ref={pickerRef}>
@@ -343,12 +343,16 @@ export default function OfferLists() {
                     }}
                     disabled={connected && !canBuy}
                 >
-                    {buyLabel}
+                    <GlitchText text={buyLabel} variant="light" split="letter" step={0.3} />
                 </button>
             </div>
             <p className="order-note">
-                Estimate only — the live oracle price at claim time sets the final cost.
-                Payment splits 80% buybacks / 10% dip reserve / 10% staker rewards.
+                <GlitchText
+                    text="Estimate only — the live oracle price at claim time sets the final cost. Payment splits 80% buybacks / 10% dip reserve / 10% staker rewards."
+                    variant="light"
+                    split="word"
+                    step={0.12}
+                />
                 {currency === 'sol' && ' SOL payments swap to USDC at claim (you cover the 0.25% pool fee).'}
             </p>
 
