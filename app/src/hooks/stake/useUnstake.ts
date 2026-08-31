@@ -2,13 +2,13 @@ import { useCallback, useState } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';
-import { useStakingProgram, STAKING_PROGRAM_ID, CRANK_PROGRAM_ID } from '../../anchor/setup';
+import { useStakingProgram, STAKING_PROGRAM_ID, CRANK_PROGRAM_ID, AMM_PROGRAM_ID } from '../../anchor/setup';
 import type { Position } from './usePositions';
 
 function principalPenaltyBpsForState(state?: number) {
-    if (state === 1) return 300;
-    if (state === 2) return 700;
-    if (state === 3) return 1800;
+    if (state === 1) return 300; // after-hours exit: 3%
+    if (state === 2) return 600; // closed exit: 6%
+    if (state === 3) return 1800; // halted exit: 18%
     return 0;
 }
 
@@ -41,10 +41,13 @@ export function useUnstake(mint: PublicKey | null, marketStatusPda?: PublicKey, 
                 [Buffer.from('penalties'), poolPda.toBuffer()],
                 STAKING_PROGRAM_ID
             );
-            const [posrVaultPda] = PublicKey.findProgramAddressSync(
-                [Buffer.from('posr'), poolPda.toBuffer()],
-                STAKING_PROGRAM_ID
+            // AMM bond vault: the AFHO ATA of the amm_state PDA. The 5% POSR
+            // legs of every exit refill this (bond-sale inventory).
+            const [ammStatePda] = PublicKey.findProgramAddressSync(
+                [Buffer.from('amm_state'), mint.toBuffer()],
+                AMM_PROGRAM_ID
             );
+            const bondVault = getAssociatedTokenAddressSync(mint, ammStatePda, true, TOKEN_2022_PROGRAM_ID);
             const marketStatus = marketStatusPda ?? PublicKey.findProgramAddressSync(
                 [Buffer.from('market_status')],
                 CRANK_PROGRAM_ID
@@ -64,7 +67,7 @@ export function useUnstake(mint: PublicKey | null, marketStatusPda?: PublicKey, 
                 pool: poolPda.toBase58(),
                 vault: vaultPda.toBase58(),
                 rewardVault: rewardVaultPda.toBase58(),
-                posrVault: posrVaultPda.toBase58(),
+                bondVault: bondVault.toBase58(),
                 marketStatus: marketStatus.toBase58(),
             });
 
@@ -78,7 +81,7 @@ export function useUnstake(mint: PublicKey | null, marketStatusPda?: PublicKey, 
                     vault: vaultPda,
                     rewardVault: rewardVaultPda,
                     penaltyVault: penaltyVaultPda,
-                    afhoVault: posrVaultPda,
+                    bondVault,
                     ownerToken,
                     marketStatus,
                     tokenProgram: TOKEN_2022_PROGRAM_ID,

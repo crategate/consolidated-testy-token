@@ -279,7 +279,9 @@ pub mod crank_oracle {
         msg!("Bounty authority rotated to: {}", new_authority);
         Ok(())
     }
-    // Add this instruction for testing ONLY — remove before mainnet
+    // DEVNET/TEST ONLY — remove before mainnet (paired with the script
+    // scripts/oracle/set-oracle-state.ts, which refuses non-devnet clusters;
+    // the instruction itself has no gate and must be deleted alongside it).
     pub fn test_set_state(ctx: Context<TestSetState>, state: u8, day: u64, ts: i64) -> Result<()> {
         ctx.accounts.market_status.current_state = state;
         ctx.accounts.market_status.trading_day_index = day;

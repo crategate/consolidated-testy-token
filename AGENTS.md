@@ -39,6 +39,6 @@ SPL token protocol tied to NYSE trading hours. Market status (open / after-hours
 - `dex_buyback`/`buy_the_dip` ratchet units: exec price = (input raw × 1e6) / AFHO raw — the SOL leg is converted via `sol_oracle` before ratcheting (lamports × sol_price / out), so both legs ratchet in the same USDC-denominated units. The real-DEX adapter must report a USDC-denominated exec price. Fine for the stub era.
 - Stack budget: `initialize_amm` blew the SBF stack until the big accounts were boxed and `opt-level = "s"` was added to `[profile.release]` — keep both; and always `anchor build` before running tests (stale .so masks fixes).
 - `yarn lint` (prettier --check) fails repo-wide including at HEAD — informational only, don't reformat whole files to satisfy it.
-- Before mainnet: remove `mock-dex-pool`, `load_test_data`, crank `test_set_state`; point `amm_state.dex_program` at the real pool program at init and rewrite `execute_swap`; rotate keeper via `set_keeper`.
+- Before mainnet: remove `mock-dex-pool`, `load_test_data`, crank `test_set_state` (plus `scripts/oracle/set-oracle-state.ts`, the devnet-only state writer that calls it); point `amm_state.dex_program` at the real pool program at init and rewrite `execute_swap`; rotate keeper via `set_keeper`.
 - `programs/staking/tests/test_staking.ts` has a pre-existing broken import (`../target/types/crank_oracle`).
 - Root `tsc` shows pre-existing errors from `app/` — check script files individually instead.

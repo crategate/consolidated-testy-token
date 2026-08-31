@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use anchor_spl::associated_token::get_associated_token_address_with_program_id;
 use anchor_spl::token_interface::{
     transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked,
 };
@@ -36,11 +37,15 @@ pub use amm_stake::*;
 //
 // PENALTY TIERS (applied when claiming/unstaking during non-open hours):
 //   - State 0 (Open):      0 bps — no penalty
-//   - State 1 (After):     configurable (e.g., 500 = 5%)
-//   - State 2 (Closed):    configurable (e.g., 1500 = 15%)
+//   - State 1 (After):     configurable (e.g., 300 = 3%)
+//   - State 2 (Closed):    configurable (e.g., 600 = 6%)
 //   - State 3 (Halted):    configurable (e.g., 3000 = 30%)
 //
-// POSR TAX: 5% on all claims and 1% on unstakes → goes to protocol-owned reserve
+// PENALTY ROUTING: 5% of every claim/unstake reward share (posr_tax) and 5%
+// of every principal exit penalty refills the AMM's bond vault (the AFHO ATA
+// of the AMM state PDA) — it grows the inventory available for future bond
+// sales. pool.posr_vault (seeds b"posr") is vestigial: still created at
+// initialize_pool but no longer funded.
 //
 // USER STORIES
 // ------------
@@ -59,11 +64,11 @@ pub use amm_stake::*;
 //   → Alice receives 95% of penalty_share
 //
 // [Bob unstakes during after-hours (state 1)]
-//   → unstake() reads state=1, penalty_bps=500 (5%)
-//   → Bob's penalty_share calculated from his weight
-//   → 5% of penalty_share → penalty_vault (for future distribution)
-//   → 95% of remainder → Bob (after another 5% POSR tax)
-//   → principal returned, position account closed
+//   → unstake() reads state=1, principal penalty_bps=300 (3%)
+//   → 3% of Bob's principal is penalized: 5% of the penalty → bond vault,
+//     95% → reward_vault (index-bumped for remaining stakers)
+//   → reward share: 5% → bond vault, 95% → Bob
+//   → net principal returned, position account closed
 //
 // [Market opens next day — penalties distribute]
 //   → tokens move from penalty_vault → reward_vault
@@ -113,7 +118,7 @@ pub mod staking {
         pool.vault = ctx.accounts.vault.key();
         pool.reward_vault = ctx.accounts.reward_vault.key();
         pool.penalty_vault = ctx.accounts.penalty_vault.key();
-        pool.afho_vault = ctx.accounts.afho_vault.key();
+        pool.posr_vault = ctx.accounts.posr_vault.key();
         pool.total_staked = 0;
         pool.total_weighted_stake = 0;
         pool.max_multiplier_bps = max_multiplier_bps;
@@ -358,12 +363,19 @@ pub mod staking {
 
         let signer_seeds: &[&[&[u8]]] = &[&[b"pool", pool.mint.as_ref(), &[pool.bump]]];
 
-        // Send POSR tax to the big AMM afho_vault
+        // Pin the bond vault: the AMM state PDA's AFHO ATA. The 5% leg
+        // refills the inventory available for future bond sales.
+        require!(
+            ctx.accounts.bond_vault.key() == amm_bond_vault(pool),
+            StakeError::InvalidBondVault
+        );
+
+        // Send POSR tax to the AMM's bond vault (refills bond-sale supply).
         if posr_tax > 0 {
             let cpi = TransferChecked {
                 from: ctx.accounts.reward_vault.to_account_info(),
                 mint: ctx.accounts.mint.to_account_info(),
-                to: ctx.accounts.afho_vault.to_account_info(),
+                to: ctx.accounts.bond_vault.to_account_info(),
                 authority: pool.to_account_info(),
             };
             transfer_checked(
@@ -467,6 +479,12 @@ pub mod staking {
         let pool_mint = pool.mint;
         let signer_seeds: &[&[&[u8]]] = &[&[b"pool", pool_mint.as_ref(), &[pool_bump]]];
 
+        // Same bond-vault pin as claim: penalties refill bond-sale supply.
+        require!(
+            ctx.accounts.bond_vault.key() == amm_bond_vault(pool),
+            StakeError::InvalidBondVault
+        );
+
         // Return principal from vault
         let cpi = TransferChecked {
             from: ctx.accounts.vault.to_account_info(),
@@ -486,12 +504,12 @@ pub mod staking {
 
         // 95% of principal exit penalties becomes rewards for remaining stakers.
         // If this was the LAST staker, there is no one left to distribute to —
-        // route to POSR instead of stranding tokens in reward_vault.
+        // route to the bond vault instead of stranding tokens in reward_vault.
         if principal_penalty_to_rewards > 0 {
             let rewards_dst = if pool.total_weighted_stake > 0 {
                 ctx.accounts.reward_vault.to_account_info()
             } else {
-                ctx.accounts.afho_vault.to_account_info()
+                ctx.accounts.bond_vault.to_account_info()
             };
             let cpi = TransferChecked {
                 from: ctx.accounts.vault.to_account_info(),
@@ -529,12 +547,12 @@ pub mod staking {
             )?;
         }
 
-        // Reward POSR tax plus 5% of principal exit penalties goes to POSR.
+        // Reward POSR tax plus 5% of principal exit penalties → bond vault.
         if reward_posr_tax > 0 {
             let cpi = TransferChecked {
                 from: ctx.accounts.reward_vault.to_account_info(),
                 mint: ctx.accounts.mint.to_account_info(),
-                to: ctx.accounts.afho_vault.to_account_info(),
+                to: ctx.accounts.bond_vault.to_account_info(),
                 authority: pool.to_account_info(),
             };
             transfer_checked(
@@ -552,7 +570,7 @@ pub mod staking {
             let cpi = TransferChecked {
                 from: ctx.accounts.vault.to_account_info(),
                 mint: ctx.accounts.mint.to_account_info(),
-                to: ctx.accounts.afho_vault.to_account_info(),
+                to: ctx.accounts.bond_vault.to_account_info(),
                 authority: pool.to_account_info(),
             };
             transfer_checked(
@@ -594,6 +612,20 @@ fn get_trading_day_index(market_status: &AccountInfo) -> Result<u64> {
     Ok(u64::from_le_bytes(data[17..25].try_into().unwrap()))
 }
 
+/// The AMM's bond vault: the AFHO ATA of the AMM state PDA (derived from the
+/// pool's mint + amm_program). Penalty legs land here to refill the supply
+/// available for bond sales.
+fn amm_bond_vault(pool: &StakePool) -> Pubkey {
+    let (amm_state, _) = Pubkey::find_program_address(
+        &[b"amm_state", pool.mint.as_ref()],
+        &pool.amm_program,
+    );
+    // AFHO is Token-2022 and the ATA address derivation includes the mint's
+    // token program in its seeds — the classic-SPL default would derive a
+    // different (never-created) account than the vault amm-init made.
+    get_associated_token_address_with_program_id(&amm_state, &pool.mint, &anchor_spl::token_2022::ID)
+}
+
 fn calculate_multiplier(trading_days: u64, max_bps: u16) -> u64 {
     let base = 10_000u64;
     let max = max_bps as u64;
@@ -615,7 +647,9 @@ pub struct StakePool {
     pub vault: Pubkey,
     pub reward_vault: Pubkey,
     pub penalty_vault: Pubkey,
-    pub afho_vault: Pubkey,
+    /// Vestigial protocol reserve (b"posr") — still created at init but no
+    /// longer funded; the 5% penalty legs now refill the AMM bond vault.
+    pub posr_vault: Pubkey,
     pub total_staked: u64,
     pub total_weighted_stake: u128,
     pub max_multiplier_bps: u16,
@@ -704,7 +738,7 @@ pub struct InitializePool<'info> {
         token::mint = mint,
         token::authority = pool,
     )]
-    pub afho_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub posr_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     /// CHECK: Verified in instruction via find_program_address
     pub market_status_pda: UncheckedAccount<'info>,
     pub token_program: Interface<'info, TokenInterface>,
@@ -788,8 +822,11 @@ pub struct Claim<'info> {
     pub position: Box<Account<'info, StakePosition>>,
     #[account(mut, token::mint = mint, token::authority = pool)]
     pub reward_vault: Box<InterfaceAccount<'info, TokenAccount>>,
-    #[account(mut, address= pool.afho_vault)]
-    pub afho_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    /// AMM bond vault — the AFHO ATA of the AMM state PDA. Destination of
+    /// the 5% POSR legs (refills bond-sale supply). Pinned in the handler
+    /// against pool.amm_program + pool.mint.
+    #[account(mut, token::mint = mint)]
+    pub bond_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, token::mint = mint, token::authority = owner)]
     pub owner_token: Box<InterfaceAccount<'info, TokenAccount>>,
     /// CHECK: Address verified by pool.market_status_pda constraint
@@ -813,8 +850,9 @@ pub struct Unstake<'info> {
     pub reward_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, token::mint = mint, token::authority = pool)]
     pub penalty_vault: Box<InterfaceAccount<'info, TokenAccount>>,
-    #[account(mut, address = pool.afho_vault)]
-    pub afho_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    /// AMM bond vault — see Claim.
+    #[account(mut, token::mint = mint)]
+    pub bond_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, token::mint = mint, token::authority = owner)]
     pub owner_token: Box<InterfaceAccount<'info, TokenAccount>>,
     /// CHECK: Address verified by pool.market_status_pda constraint
@@ -845,4 +883,6 @@ pub enum StakeError {
     InvalidIndex,
     #[msg("bps value exceeds 10_000 (100%)")]
     InvalidBps,
+    #[msg("bond vault account does not match the AMM bond vault")]
+    InvalidBondVault,
 }

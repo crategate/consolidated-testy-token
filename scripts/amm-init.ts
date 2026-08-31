@@ -182,7 +182,7 @@ async function main() {
         );
         try {
             await stakingProgram.methods
-                .initializePool(CRANK_PROGRAM_ID, 30000, 500, 400, 800, 1800, AMM_PROGRAM_ID)
+                .initializePool(CRANK_PROGRAM_ID, 30000, 500, 300, 600, 1800, AMM_PROGRAM_ID)
                 .accounts({
                     authority: provider.wallet.publicKey,
                     mint: AFHO_MINT,
@@ -190,7 +190,7 @@ async function main() {
                     vault: stakingVaultPda,
                     rewardVault: stakingRewardPda,
                     penaltyVault: stakingPenaltyPda,
-                    afhoVault: stakingPosrPda,
+                    posrVault: stakingPosrPda,
                     marketStatusPda: stakingMarketStatusPda,
                     tokenProgram: TOKEN_2022_PROGRAM_ID,
                     systemProgram: anchor.web3.SystemProgram.programId,

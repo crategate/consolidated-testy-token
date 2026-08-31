@@ -3,9 +3,11 @@ import { useAmmData } from '../../hooks/amm/useAmmData.ts';
 import './amm.css';
 
 export function HomePageIndicator() {
-    const { offersLive, loading, tiers } = useAmmData();
+    const { deskOpen, loading, tiers } = useAmmData();
 
-    if (loading || !offersLive) return null;
+    // Only during the night window with a live, current sheet. Desk closed
+    // (market open/halted) or a fully sold-out sheet → no indicator.
+    if (loading || !deskOpen) return null;
 
     const totalLots = tiers.reduce((n, t) => n + t.remaining, 0);
 

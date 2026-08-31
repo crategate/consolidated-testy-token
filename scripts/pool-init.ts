@@ -121,8 +121,8 @@ async function main() {
                 CRANK_PROGRAM_ID,
                 30000,              // max multiplier 3.0x
                 500,                // POSR tax 5%
-                400,                // after hours penalty 4%
-                800,               // closed penalty 8%
+                300,                // after hours penalty 3%
+                600,               // closed penalty 6%
                 1800,               // halted penalty 18
                 AMM_PROGRAM_ID,
             )
@@ -133,7 +133,7 @@ async function main() {
                 vault: vaultPda,
                 rewardVault: rewardVaultPda,
                 penaltyVault: penaltyVaultPda,
-                afhoVault: posrVaultPda,
+                posrVault: posrVaultPda,
                 marketStatusPda,
                 tokenProgram: new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"), // TOKEN_2022
                 systemProgram: anchor.web3.SystemProgram.programId,

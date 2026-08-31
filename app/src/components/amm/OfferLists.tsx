@@ -211,6 +211,13 @@ export default function OfferLists() {
 
     const closedMessage = deskMessage(data.marketState, data.sheetStale, data.offersLive);
 
+    // Tiles exist only inside the desk's night window with tonight's sheet
+    // posted. Market open / halted (or a stale sheet) = desk closed → tiles
+    // hidden. Sold out during the night = tiles stay up, greyed via each
+    // tier's sold-out state (remaining reads 0 / N).
+    const night = data.marketState === 1 || data.marketState === 2;
+    const showTiles = night && !data.sheetStale && data.tiers.length > 0;
+
     const displayCost = totalLots > 0 && priceKnown
         ? currency === 'usdc'
             ? `≈ ${formatUsdc(estCostRaw, data.usdcDecimals)}`
@@ -237,7 +244,7 @@ export default function OfferLists() {
                 </div>
             )}
 
-            {data.tiers.length > 0 && (
+            {showTiles && (
                 <SizedOffers
                     tiers={data.tiers}
                     quantities={quantities}

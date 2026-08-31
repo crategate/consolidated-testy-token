@@ -235,7 +235,7 @@ describe("offer_claim + distribute_staker_rewards", () => {
                 vault: stakingVaultPda,
                 rewardVault: rewardVaultPda,
                 penaltyVault: penaltyVaultPda,
-                afhoVault: posrVaultPda,
+                posrVault: posrVaultPda,
                 marketStatusPda,
                 tokenProgram: TOKEN_2022_PROGRAM_ID,
             })
