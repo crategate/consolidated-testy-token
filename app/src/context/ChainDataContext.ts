@@ -23,6 +23,8 @@ export interface ChainDataContextValue {
     offerListLoading: boolean;
     livePrice: LivePriceData;
     livePriceLoading: boolean;
+    /** Last successful live-price fetch (ms epoch) — 0/null when never fetched. */
+    livePriceUpdatedAt: number | null;
     refresh: (key: RefreshKey) => Promise<void>;
 }
 

@@ -23,6 +23,13 @@ const queryClient = new QueryClient({
 const wallets = [new SolflareWalletAdapter()];
 const endpoint = import.meta.env.VITE_RPC_URL || 'https://api.devnet.solana.com';
 
+// web3.js retries HTTP 429s internally (5x, 500ms→8s) and console.errors
+// "Server responded with 429 Too Many Requests. Retrying…" on every attempt.
+// On rate-limited shared endpoints (Helius free-tier devnet) that turns a
+// single 429 into a console-spam retry storm that multiplies the load.
+// Disable it so TanStack Query is the single retry layer (backoff + jitter).
+const connectionConfig = { disableRetryOnRateLimit: true };
+
 function Shell() {
     const { pathname } = useLocation();
     const onOfferDesk = pathname === '/offer-desk' || pathname.startsWith('/offer-desk/');
@@ -36,7 +43,7 @@ function Shell() {
 
 createRoot(document.getElementById('root')!).render(
     <StrictMode>
-        <ConnectionProvider endpoint={endpoint}>
+        <ConnectionProvider endpoint={endpoint} config={connectionConfig}>
             <WalletProvider wallets={wallets} autoConnect>
                 <WalletModalProvider>
                     <QueryClientProvider client={queryClient}>

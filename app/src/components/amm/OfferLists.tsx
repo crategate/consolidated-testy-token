@@ -56,7 +56,7 @@ export default function OfferLists() {
     }, [data.tiers]);
 
     // Buyer's spendable balances for the % quick-fill buttons. Own 15s cadence
-    // (not tied to the 4s price tick) to spare the rate-limited devnet RPC.
+    // (not tied to the 30s price poll) to spare the rate-limited devnet RPC.
     useEffect(() => {
         let cancelled = false;
         const fetchBalances = async () => {

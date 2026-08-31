@@ -50,12 +50,14 @@ function usePageVisible() {
 /* ── Shared retry config ── */
 
 function rateLimitRetry(failureCount: number, error: Error): boolean {
-    if (isRateLimitError(error)) return failureCount < 3;
+    if (isRateLimitError(error)) return failureCount < 2;
     return failureCount < 1;
 }
 
 function retryDelay(attemptIndex: number): number {
-    return Math.min(1000 * 2 ** attemptIndex, 30000);
+    // Longer, jittered delays: hammering a shared rate-limited devnet endpoint
+    // makes the 429 storm worse, and the next poll tick (≤~40s) recovers anyway.
+    return Math.min(4000 * 2 ** attemptIndex, 30000) + Math.random() * 2000;
 }
 
 /* ── Account-change subscription helper ──
@@ -144,6 +146,17 @@ export function ChainDataProvider({ children }: { children: ReactNode }) {
 
     const enabled = !!connection && !!deployment && visible;
 
+    /* Stable query keys. useAccountSubscription re-opens its WebSocket
+       subscription whenever its deps change, so a fresh array literal on every
+       render would unsubscribe/resubscribe all four accounts on every provider
+       render (queries re-render the provider on each fetch transition). */
+    const marketStatusKey = marketStatusPda.toBase58();
+    const marketStatusQueryKey = useMemo(() => ['marketStatus', marketStatusKey], [marketStatusKey]);
+    const poolQueryKey = useMemo(() => ['pool', poolPda?.toBase58() ?? ''], [poolPda]);
+    const ammStateQueryKey = useMemo(() => ['ammState', ammStatePda?.toBase58() ?? ''], [ammStatePda]);
+    const offerListQueryKey = useMemo(() => ['offerList', offerListPda?.toBase58() ?? ''], [offerListPda]);
+    const livePriceQueryKey = useMemo(() => ['livePrice', ammStatePda?.toBase58() ?? ''], [ammStatePda]);
+
     /* Read-only staking program for typed camelCase account decoding. */
     const stakingProgram = useMemo(() => {
         if (!connection) return null;
@@ -153,7 +166,7 @@ export function ChainDataProvider({ children }: { children: ReactNode }) {
 
     /* Market status */
     const marketStatusQuery = useQuery({
-        queryKey: ['marketStatus', marketStatusPda.toBase58()],
+        queryKey: marketStatusQueryKey,
         queryFn: async () => {
             const info = await connection.getAccountInfo(marketStatusPda, 'confirmed');
             if (!info) throw new Error('Market status PDA not found');
@@ -163,18 +176,24 @@ export function ChainDataProvider({ children }: { children: ReactNode }) {
         },
         enabled,
         staleTime: MARKET_STALE_MS,
+        // Poll ticks are staggered per query (+0s/+2s/+4s/+6s/+8s) so the
+        // page never fires all its RPC requests in the same instant — aligned
+        // bursts are what trip shared free-tier devnet endpoints (Helius 429s).
         refetchInterval: visible ? MARKET_STALE_MS : false,
         refetchIntervalInBackground: false,
         refetchOnWindowFocus: false,
+        // Keep the last known data through a transient 429 — a single failed
+        // poll tick must not blank the UI or drop the price to null.
+        placeholderData: (previous) => previous,
         retry: rateLimitRetry,
         retryDelay,
     });
-    useAccountSubscription(marketStatusPda, ['marketStatus', marketStatusPda.toBase58()], enabled);
+    useAccountSubscription(marketStatusPda, marketStatusQueryKey, enabled);
 
     /* Pool — use Anchor typed fetch so field names are camelCase and match
        existing consumers (usePositionRewards, usePoolStats). */
     const poolQuery = useQuery({
-        queryKey: ['pool', poolPda?.toBase58() ?? ''],
+        queryKey: poolQueryKey,
         queryFn: async () => {
             if (!poolPda) throw new Error('Pool PDA unknown');
             if (!stakingProgram) throw new Error('Staking program not initialized');
@@ -187,17 +206,18 @@ export function ChainDataProvider({ children }: { children: ReactNode }) {
         },
         enabled: enabled && !!poolPda && !!stakingProgram,
         staleTime: POOL_STALE_MS,
-        refetchInterval: visible ? POOL_STALE_MS : false,
+        refetchInterval: visible ? POOL_STALE_MS + 4000 : false,
         refetchIntervalInBackground: false,
         refetchOnWindowFocus: false,
+        placeholderData: (previous) => previous,
         retry: rateLimitRetry,
         retryDelay,
     });
-    useAccountSubscription(poolPda, ['pool', poolPda?.toBase58() ?? ''], enabled && !!poolPda);
+    useAccountSubscription(poolPda, poolQueryKey, enabled && !!poolPda);
 
     /* AMM state */
     const ammStateQuery = useQuery({
-        queryKey: ['ammState', ammStatePda?.toBase58() ?? ''],
+        queryKey: ammStateQueryKey,
         queryFn: async () => {
             if (!ammStatePda) throw new Error('AMM state PDA unknown');
             const info = await connection.getAccountInfo(ammStatePda, 'confirmed');
@@ -208,17 +228,18 @@ export function ChainDataProvider({ children }: { children: ReactNode }) {
         },
         enabled: enabled && !!ammStatePda,
         staleTime: AMM_STALE_MS,
-        refetchInterval: visible ? AMM_STALE_MS : false,
+        refetchInterval: visible ? AMM_STALE_MS + 2000 : false,
         refetchIntervalInBackground: false,
         refetchOnWindowFocus: false,
+        placeholderData: (previous) => previous,
         retry: rateLimitRetry,
         retryDelay,
     });
-    useAccountSubscription(ammStatePda, ['ammState', ammStatePda?.toBase58() ?? ''], enabled && !!ammStatePda);
+    useAccountSubscription(ammStatePda, ammStateQueryKey, enabled && !!ammStatePda);
 
     /* Offer list */
     const offerListQuery = useQuery({
-        queryKey: ['offerList', offerListPda?.toBase58() ?? ''],
+        queryKey: offerListQueryKey,
         queryFn: async () => {
             if (!offerListPda) throw new Error('Offer list PDA unknown');
             const info = await connection.getAccountInfo(offerListPda, 'confirmed');
@@ -227,17 +248,18 @@ export function ChainDataProvider({ children }: { children: ReactNode }) {
         },
         enabled: enabled && !!offerListPda,
         staleTime: AMM_STALE_MS,
-        refetchInterval: visible ? AMM_STALE_MS : false,
+        refetchInterval: visible ? AMM_STALE_MS + 6000 : false,
         refetchIntervalInBackground: false,
         refetchOnWindowFocus: false,
+        placeholderData: (previous) => previous,
         retry: rateLimitRetry,
         retryDelay,
     });
-    useAccountSubscription(offerListPda, ['offerList', offerListPda?.toBase58() ?? ''], enabled && !!offerListPda);
+    useAccountSubscription(offerListPda, offerListQueryKey, enabled && !!offerListPda);
 
     /* Live price — depends on AMM state. */
     const livePriceQuery = useQuery({
-        queryKey: ['livePrice', ammStatePda?.toBase58() ?? ''],
+        queryKey: livePriceQueryKey,
         queryFn: async () => {
             if (!ammStatePda || !deployment?.mintKey) throw new Error('AMM state/mint unknown');
             const ammState = ammStateQuery.data;
@@ -246,9 +268,10 @@ export function ChainDataProvider({ children }: { children: ReactNode }) {
         },
         enabled: enabled && !!ammStatePda && !!deployment?.mintKey && !!ammStateQuery.data,
         staleTime: POLL_MS,
-        refetchInterval: visible ? POLL_MS : false,
+        refetchInterval: visible ? POLL_MS + 8000 : false,
         refetchIntervalInBackground: false,
         refetchOnWindowFocus: false,
+        placeholderData: (previous) => previous,
         retry: rateLimitRetry,
         retryDelay,
     });
@@ -295,6 +318,7 @@ export function ChainDataProvider({ children }: { children: ReactNode }) {
         offerListLoading: offerListQuery.isLoading,
         livePrice: livePriceQuery.data ?? { afhoUsdc: null, solUsdc: null },
         livePriceLoading: livePriceQuery.isLoading,
+        livePriceUpdatedAt: livePriceQuery.dataUpdatedAt || null,
         refresh,
     };
 

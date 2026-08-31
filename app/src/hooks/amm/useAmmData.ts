@@ -236,6 +236,7 @@ export function useAmmData(): OfferDeskData {
         offerList,
         marketStatus,
         livePrice,
+        livePriceUpdatedAt,
         refresh,
     } = useChainData();
 
@@ -329,7 +330,10 @@ export function useAmmData(): OfferDeskData {
         solAccounts,
         loading,
         error,
-        updatedAt: new Date().toISOString(),
+        // Honest freshness: when the last poll tick got rate-limited, the UI
+        // shows how stale the displayed price actually is instead of a fake
+        // "0s ago" computed from render time.
+        updatedAt: livePriceUpdatedAt ? new Date(livePriceUpdatedAt).toISOString() : null,
         refresh: doRefresh,
     };
 }
