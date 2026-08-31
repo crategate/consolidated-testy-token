@@ -263,6 +263,17 @@ pub fn handler(ctx: Context<BountyTopUp>) -> Result<()> {
     require!(usdc_got > 0, ErrorCode::SwapReturnedNothing);
 
     // ── Leg 2: USDC → wSOL (into wsol_vault) ──
+    // 98% min-out (2% drift tolerance, same as the claim path): a manipulated
+    // SOL/USDC pool must not be able to eat the whole conversion.
+    let wsol_min_out = (usdc_got as u128)
+        .checked_mul(1_000_000_000u128)
+        .ok_or(ErrorCode::MathOverflow)?
+        .checked_div(sol_price as u128)
+        .ok_or(ErrorCode::MathOverflow)?
+        .checked_mul(98u128)
+        .ok_or(ErrorCode::MathOverflow)?
+        .checked_div(100u128)
+        .ok_or(ErrorCode::MathOverflow)? as u64;
     let ix = cpmm_swap_base_input_ix(
         cpmm_program,
         ctx.accounts.amm_state.key(),
@@ -279,7 +290,7 @@ pub fn handler(ctx: Context<BountyTopUp>) -> Result<()> {
         ctx.accounts.wrapped_sol_mint.key(),
         ctx.accounts.sol_usdc_observation.key(),
         usdc_got,
-        0, // min-out loose — undershoot only under-funds the bounty, harmless
+        wsol_min_out,
     );
     anchor_lang::solana_program::program::invoke_signed(
         &ix,

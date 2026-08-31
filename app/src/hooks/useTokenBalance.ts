@@ -62,7 +62,7 @@ export function useTokenBalance(
         const subscriptionId = connection.onAccountChange(
             ata,
             (info) => {
-                if (!cancelled) {
+                if (!cancelled && !document.hidden) {
                     setBalance(amountFromAccountInfo(info) / 10 ** decimals);
                 }
             },

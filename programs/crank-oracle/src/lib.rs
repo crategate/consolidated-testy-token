@@ -211,8 +211,11 @@ pub mod crank_oracle {
             _ => 300,
         };
         require!(staleness <= max_age, CrankError::QuoteTooStale);
-        // Read-only monotonic check: no bounty is paid and last_crank_slot is
-        // NOT updated here (that's the paying path, permissionless_crank).
+        // This path WRITES market state but never pays, so it must still
+        // consume the quote slot: otherwise the same fresh quote could be
+        // replayed to burn a transition before the paying cranker sees it
+        // (the monotonic check would still pass for the paying path, but the
+        // state would already have flipped, so no bounty).
         require!(quote_slot > last_slot, CrankError::StaleQuote);
 
         let feeds = &ctx.accounts.quote_account.feeds;
@@ -245,6 +248,7 @@ pub mod crank_oracle {
 
         market_status.current_state = new_state;
         market_status.last_updated_timestamp = Clock::get()?.unix_timestamp;
+        ctx.accounts.bounty_config.last_crank_slot = quote_slot;
 
         msg!(
             "Market state: {} |& Timestamp: {}",
@@ -279,7 +283,9 @@ pub mod crank_oracle {
         msg!("Bounty authority rotated to: {}", new_authority);
         Ok(())
     }
-    // Add this instruction for testing ONLY — remove before mainnet
+    // DEVNET/TEST ONLY — remove before mainnet (paired with the script
+    // scripts/oracle/set-oracle-state.ts, which refuses non-devnet clusters;
+    // the instruction itself has no gate and must be deleted alongside it).
     pub fn test_set_state(ctx: Context<TestSetState>, state: u8, day: u64, ts: i64) -> Result<()> {
         ctx.accounts.market_status.current_state = state;
         ctx.accounts.market_status.trading_day_index = day;
@@ -366,7 +372,7 @@ pub struct PermissionlessCrank<'info> {
 #[derive(Accounts)]
 pub struct ReadOracleData<'info> {
     pub cranker: Signer<'info>,
-    #[account(seeds = [b"bounty_config"], bump = bounty_config.bump)]
+    #[account(mut, seeds = [b"bounty_config"], bump = bounty_config.bump)]
     pub bounty_config: Account<'info, BountyConfig>,
     #[account(address = quote_account.canonical_key(&default_queue()))]
     pub quote_account: Box<Account<'info, SwitchboardQuote>>,

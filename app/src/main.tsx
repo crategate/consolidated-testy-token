@@ -3,14 +3,16 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
-import { SolflareWalletAdapter } from '@solana/wallet-adapter-wallets';
+import { SolflareWalletAdapter } from '@solana/wallet-adapter-solflare';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Route, Routes, Outlet, useLocation } from 'react-router-dom';
 import '@solana/wallet-adapter-react-ui/styles.css';
 import './index.css';
 import App from './App';
 import Dash from './pages/Dash';
 import AmmPage from './pages/AmmPage';
+import { HomePageIndicator } from './components/amm/HomePageIndicator';
+import { ChainDataProvider } from './context/ChainDataProvider';
 
 const queryClient = new QueryClient({
     defaultOptions: {
@@ -21,19 +23,41 @@ const queryClient = new QueryClient({
 const wallets = [new SolflareWalletAdapter()];
 const endpoint = import.meta.env.VITE_RPC_URL || 'https://api.devnet.solana.com';
 
+// web3.js retries HTTP 429s internally (5x, 500ms→8s) and console.errors
+// "Server responded with 429 Too Many Requests. Retrying…" on every attempt.
+// On rate-limited shared endpoints (Helius free-tier devnet) that turns a
+// single 429 into a console-spam retry storm that multiplies the load.
+// Disable it so TanStack Query is the single retry layer (backoff + jitter).
+const connectionConfig = { disableRetryOnRateLimit: true };
+
+function Shell() {
+    const { pathname } = useLocation();
+    const onOfferDesk = pathname === '/offer-desk' || pathname.startsWith('/offer-desk/');
+    return (
+        <>
+            {!onOfferDesk && <HomePageIndicator />}
+            <Outlet />
+        </>
+    );
+}
+
 createRoot(document.getElementById('root')!).render(
     <StrictMode>
-        <ConnectionProvider endpoint={endpoint}>
+        <ConnectionProvider endpoint={endpoint} config={connectionConfig}>
             <WalletProvider wallets={wallets} autoConnect>
                 <WalletModalProvider>
                     <QueryClientProvider client={queryClient}>
-                        <BrowserRouter>
-                            <Routes>
-                                <Route path="/" element={<App />} />
-                                <Route path="/dash" element={<Dash />} />
-                                <Route path="/offer-desk" element={<AmmPage />} />
-                            </Routes>
-                        </BrowserRouter>
+                        <ChainDataProvider>
+                            <BrowserRouter>
+                                <Routes>
+                                    <Route element={<Shell />}>
+                                        <Route path="/" element={<App />} />
+                                        <Route path="/dash" element={<Dash />} />
+                                        <Route path="/offer-desk" element={<AmmPage />} />
+                                    </Route>
+                                </Routes>
+                            </BrowserRouter>
+                        </ChainDataProvider>
                     </QueryClientProvider>
                 </WalletModalProvider>
             </WalletProvider>

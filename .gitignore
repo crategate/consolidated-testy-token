@@ -10,3 +10,5 @@ test-ledger
 repomix-output.xml
 .aider*
 .codewhale*
+__pycache__/
+*.pyc

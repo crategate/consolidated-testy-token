@@ -4,11 +4,12 @@ import { Staking } from "../target/types/staking";
 import { CrankOracle } from "../target/types/crank_oracle";
 import { Amm } from "../target/types/amm";
 import { expect } from "chai";
-import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
+import { PublicKey, Keypair, SystemProgram, Transaction } from "@solana/web3.js";
 import {
     createMint,
     mintTo,
     createAssociatedTokenAccount,
+    createAssociatedTokenAccountIdempotentInstruction,
     getAssociatedTokenAddressSync,
     ASSOCIATED_TOKEN_PROGRAM_ID,
     TOKEN_2022_PROGRAM_ID,
@@ -32,11 +33,12 @@ describe("AFHO Staking", () => {
     let rewardVaultPda: PublicKey;
     let penaltyVaultPda: PublicKey;
     let posrVaultPda: PublicKey;
+    let bondVaultPda: PublicKey;
 
     const MAX_MULT = 30000;
     const POSR_TAX = 500;
-    const AH_PENALTY = 500;
-    const CLOSED_PENALTY = 1500;
+    const AH_PENALTY = 300;
+    const CLOSED_PENALTY = 600;
     const HALTED_PENALTY = 3000;
 
     // Helper: set market state via the crank oracle's test instruction
@@ -124,6 +126,25 @@ describe("AFHO Staking", () => {
             [Buffer.from("posr"), poolPda.toBuffer()],
             stakingProgram.programId
         );
+        // AMM bond vault — the AFHO ATA of the amm_state PDA. Claim/unstake
+        // penalty legs (5%) must land here. Created off-curve like amm-init.
+        const [ammStatePda] = PublicKey.findProgramAddressSync(
+            [Buffer.from("amm_state"), mint.toBuffer()],
+            ammProgram.programId
+        );
+        bondVaultPda = getAssociatedTokenAddressSync(mint, ammStatePda, true, TOKEN_2022_PROGRAM_ID);
+        const bondAtaTx = new Transaction().add(
+            createAssociatedTokenAccountIdempotentInstruction(
+                provider.wallet.publicKey,
+                bondVaultPda,
+                ammStatePda,
+                mint,
+                TOKEN_2022_PROGRAM_ID
+            )
+        );
+        bondAtaTx.recentBlockhash = (await provider.connection.getLatestBlockhash("confirmed")).blockhash;
+        bondAtaTx.feePayer = provider.wallet.publicKey;
+        await provider.sendAndConfirm(bondAtaTx);
         [marketStatusPda] = PublicKey.findProgramAddressSync(
             [Buffer.from("market_status")],
             crankProgram.programId
@@ -165,7 +186,7 @@ describe("AFHO Staking", () => {
                 vault: vaultPda,
                 rewardVault: rewardVaultPda,
                 penaltyVault: penaltyVaultPda,
-                afhoVault: posrVaultPda,
+                posrVault: posrVaultPda,
                 marketStatusPda,
                 tokenProgram: TOKEN_2022_PROGRAM_ID,
                 systemProgram: SystemProgram.programId,
@@ -253,7 +274,7 @@ describe("AFHO Staking", () => {
                 pool: poolPda,
                 position: positionPda,
                 rewardVault: rewardVaultPda,
-                afhoVault: posrVaultPda,
+                bondVault: bondVaultPda,
                 ownerToken: userToken,
                 marketStatus: marketStatusPda,
                 tokenProgram: TOKEN_2022_PROGRAM_ID,
@@ -285,7 +306,7 @@ describe("AFHO Staking", () => {
                     pool: poolPda,
                     position: positionPda,
                     rewardVault: rewardVaultPda,
-                    afhoVault: posrVaultPda,
+                    bondVault: bondVaultPda,
                     ownerToken: userToken,
                     marketStatus: marketStatusPda,
                     tokenProgram: TOKEN_2022_PROGRAM_ID,
@@ -303,7 +324,7 @@ describe("AFHO Staking", () => {
 
         const poolBefore = await stakingProgram.account.stakePool.fetch(poolPda);
         const totalStakedBefore = poolBefore.totalStaked.toNumber();
-        const posrBefore = await provider.connection.getTokenAccountBalance(posrVaultPda);
+        const bondBefore = await provider.connection.getTokenAccountBalance(bondVaultPda);
 
         const positionPda = getPositionPda(userKeypair.publicKey, 0);
         const userTokenBefore = await provider.connection.getTokenAccountBalance(userToken);
@@ -318,7 +339,7 @@ describe("AFHO Staking", () => {
                 vault: vaultPda,
                 rewardVault: rewardVaultPda,
                 penaltyVault: penaltyVaultPda,
-                afhoVault: posrVaultPda,
+                bondVault: bondVaultPda,
                 ownerToken: userToken,
                 marketStatus: marketStatusPda,
                 tokenProgram: TOKEN_2022_PROGRAM_ID,
@@ -328,8 +349,11 @@ describe("AFHO Staking", () => {
 
         const poolAfter = await stakingProgram.account.stakePool.fetch(poolPda);
         expect(poolAfter.totalStaked.toNumber()).to.be.lessThan(totalStakedBefore);
-        const posrAfter = await provider.connection.getTokenAccountBalance(posrVaultPda);
-        expect(Number(posrAfter.value.amount)).to.be.greaterThan(Number(posrBefore.value.amount));
+        // 5% POSR legs (reward tax + 5% of the closed-market principal
+        // penalty, plus the last-staker 95% fallback) must refill the AMM
+        // bond vault.
+        const bondAfter = await provider.connection.getTokenAccountBalance(bondVaultPda);
+        expect(Number(bondAfter.value.amount)).to.be.greaterThan(Number(bondBefore.value.amount));
 
         // Position account should have been closed (rent refunded)
         try {
@@ -425,7 +449,7 @@ describe("AFHO Staking", () => {
                     vault: vault2,
                     rewardVault: reward2,
                     penaltyVault: penalty2,
-                    afhoVault: posr2,
+                    posrVault: posr2,
                     marketStatusPda,
                     tokenProgram: TOKEN_2022_PROGRAM_ID,
                     systemProgram: SystemProgram.programId,

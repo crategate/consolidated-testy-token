@@ -27,6 +27,10 @@ pub use bounty_top_up::*;
 
 pub mod load_test_data;
 pub use load_test_data::*;
+
+pub mod load_offers;
+pub use load_offers::*;
+
 pub mod update_tradeday_stats;
 pub use update_tradeday_stats::*;
 

@@ -1,7 +1,7 @@
 [package]
 name = "crank-oracle"
 version = "0.1.0"
-description = "Basic Switchboard On-Demand Oracle Integration Example"
+description = "AFHO market-status crank oracle (Switchboard On-Demand market-state feed + keeper bounty)"
 edition = "2021"
 
 [lib]

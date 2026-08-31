@@ -62,3 +62,24 @@ export function pricePerToken(floorUnits: bigint, afhoDecimals: number, usdcDeci
 export function formatTokens(n: number): string {
     return n.toLocaleString('en-US');
 }
+
+// ── SOL payment path (offer_claim_sol) ───────────────────────────────────
+// sol_price uses the same floor-unit convention as the AFHO spot oracle:
+//   (usdc_raw × 1e6) / lamports
+// The buyer covers the CPMM 0.25% input fee on the wSOL→USDC swap, so the
+// on-chain lamports charge mirrors:
+//   lamports = cost_usdc × 1e6 × 10_025 / sol_price / 10_000
+// (the pool nets the protocol the full USDC cost; min-out tolerates 2%).
+export function lamportsForCost(costUsdcRaw: bigint, solPrice: bigint): bigint {
+    if (costUsdcRaw <= 0n || solPrice <= 0n) return 0n;
+    return (costUsdcRaw * 1_000_000n * 10_025n) / solPrice / 10_000n;
+}
+
+// Lamports → human SOL, up to 4 decimal places (trailing zeros trimmed).
+export function formatSol(lamports: bigint): string {
+    const unit = 1_000_000_000n;
+    const whole = lamports / unit;
+    const frac4 = (lamports % unit) / 100_000n;
+    const frac = frac4.toString().padStart(4, '0').replace(/0+$/, '');
+    return frac ? `${whole.toLocaleString('en-US')}.${frac}` : whole.toLocaleString('en-US');
+}

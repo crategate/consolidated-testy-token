@@ -14,8 +14,9 @@ async function main() {
         fs.readFileSync(path.join(process.cwd(), "app", "public", "deployment.json"), "utf-8")
     );
     const mint = new PublicKey(deployment.mint);
+    // MAINNET: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
     const usdcMint = new PublicKey(
-        process.env.DEVNET_USDC_MINT || "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+        process.env.DEVNET_USDC_MINT || "USDCoctVLVnvTXBEuP9s8hntucdJokbo17RwHuNXemT"
     );
     const cpmmProgram = new PublicKey(deployment.raydiumProgram);
     const pool = new PublicKey(deployment.raydiumPool);

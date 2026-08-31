@@ -55,13 +55,13 @@ const argv = yargs(process.argv)
         await sb.AnchorUtils.loadEnv();
 
     logFeedId(argv.feedId);
-    console.log("🌐 Queue selected:", queue.pubkey.toBase58());
-    console.log("🔧 Crossbar network:", crossbar.getNetwork());
+    console.log(" Queue selected:", queue.pubkey.toBase58());
+    console.log(" Crossbar network:", crossbar.getNetwork());
 
     // Step 1: Derive the canonical oracle account from feed hashes
     // This uses the same derivation logic as the quote program
     const [quoteAccount] = OracleQuote.getCanonicalPubkey(queue.pubkey, [argv.feedId]);
-    console.log("📍 Quote Account (derived):", quoteAccount.toBase58());
+    console.log(" Quote Account (derived):", quoteAccount.toBase58());
 
     // Simulate the feed - automatically uses the network configured in loadEnv
     const simFeed = await crossbar.simulateFeed(argv.feedId);
@@ -84,7 +84,7 @@ const argv = yargs(process.argv)
         }
     );
 
-    console.log("✨ Generated instructions:", instructions.length);
+    console.log(" Generated instructions:", instructions.length);
     console.log("  - Ed25519 signature verification");
     console.log("  - Quote program verified_update");
 
@@ -96,7 +96,6 @@ const argv = yargs(process.argv)
     let basicProgram;
     if (fs.existsSync(BASIC_PROGRAM_PATH)) {
         try {
-            //const basicProgram = await loadBasicProgram(program!.provider);
             basicProgram = new anchor.Program(myIdl as anchor.Idl, program!.provider);
             const readOracleIx = await basicReadOracleIx(
                 basicProgram,
@@ -111,7 +110,7 @@ const argv = yargs(process.argv)
             console.log("   To deploy, run: anchor build && anchor deploy");
         }
     } else {
-        console.log("ℹ️  Skipping crank: program not deployed");
+        console.log("  Skipping crank: program not deployed");
         console.log("   To deploy, run: anchor build && anchor deploy");
     }
 
@@ -137,7 +136,7 @@ const argv = yargs(process.argv)
         }
 
         // 2. ACTUALLY SEND IT TO THE NETWORK
-        console.log("🚀 Simulation passed. Sending transaction to Devnet...");
+        console.log(" Simulation passed. Sending transaction to Devnet...");
         const signature = await connection.sendTransaction(tx);
 
         // 3. Wait for confirmation
@@ -148,11 +147,11 @@ const argv = yargs(process.argv)
             lastValidBlockHeight: latestBlockhash.lastValidBlockHeight
         });
 
-        console.log(`✅ State Updated Successfully!`);
-        console.log(`🔍 View on Solscan: https://solscan.io/tx/${signature}?cluster=devnet`);
+        console.log(` State Updated Successfully!`);
+        console.log(` View on Solscan: https://solscan.io/tx/${signature}?cluster=devnet`);
 
     } catch (error) {
-        console.error("❌ Transaction failed:", error);
+        console.error("!! Transaction failed:", error);
     }
 
     // After confirmation in managedUpdate.ts

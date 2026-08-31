@@ -27,7 +27,6 @@ async function main() {
 
     const provider = new anchor.AnchorProvider(connection, wallet, {});
     anchor.setProvider(provider);
-    // const program = await myAnchorProgram(provider, "./target/deploy/basic_oracle_example-keypair.json");
     const program = new anchor.Program(myIdl as anchor.Idl, provider);
 
     console.log("Program ID:", program.programId.toBase58());

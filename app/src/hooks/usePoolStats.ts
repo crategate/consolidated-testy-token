@@ -1,138 +1,113 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey, type ParsedAccountData } from '@solana/web3.js';
-import { useReadOnlyStakingProgram } from './useReadOnlyProgram';
+import { useQuery } from '@tanstack/react-query';
+import { useChainData } from '../context/useChainData';
 import { STAKING_PROGRAM_ID } from '../anchor/setup';
 import type { StakePoolData } from './stake/usePool';
+
+function pub(obj: Record<string, unknown> | null, ...names: string[]): PublicKey | null {
+    for (const n of names) {
+        const v = obj?.[n];
+        if (v instanceof PublicKey) return v;
+        if (typeof v === 'string') {
+            try {
+                return new PublicKey(v);
+            } catch {
+                /* ignore */
+            }
+        }
+    }
+    return null;
+}
+
 export interface PoolStats {
     totalStaked: number;
     totalSupply: number;
+    vaultBalance: number;
     userCount: number;
     decimals: number;
 }
 
-type AccountNamespace = Record<string, { fetch(key: PublicKey): Promise<unknown> } | undefined>;
+const FIVE_MINUTES = 5 * 60 * 1000;
 
-export function usePoolStats(mint: PublicKey | null) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function usePoolStats(_mint?: PublicKey | null) {
     const { connection } = useConnection();
-    const program = useReadOnlyStakingProgram();
-    const [stats, setStats] = useState<PoolStats | null>(null);
-    const [loading, setLoading] = useState(false);
+    const { deployment, pool, poolLoading, refresh } = useChainData();
+    const mint = deployment?.mintKey;
 
-    const fetchStats = useCallback(async () => {
-        if (!connection || !mint || !program) {
-            console.log('PoolStats: missing deps', { connection: !!connection, mint: !!mint, program: !!program });
-            return;
-        }
-        setLoading(true);
-        try {
-            const [poolPda] = PublicKey.findProgramAddressSync(
-                [Buffer.from('pool'), mint.toBuffer()],
-                STAKING_PROGRAM_ID
-            );
-            console.log('PoolStats: fetching pool at', poolPda.toBase58());
-
-            // Try to fetch pool account - use try/catch since fetchNullable doesn't exist
-            let pool: StakePoolData | null = null;
-            try {
-                pool = (await (program.account as AccountNamespace).stakePool?.fetch(
-                    poolPda,
-                )) as StakePoolData | null;
-                console.log('PoolStats: pool fetched', pool);
-            } catch (e) {
-                console.log('PoolStats: pool not found or not initialized yet', e instanceof Error ? e.message : e);
-            }
-
-            // Get mint info for supply and decimals
-            const mintInfo = await connection.getParsedAccountInfo(mint);
+    const mintQuery = useQuery({
+        queryKey: ['poolStatsMint', mint?.toBase58() ?? ''],
+        queryFn: async () => {
+            if (!mint) throw new Error('Mint unknown');
+            const info = await connection.getParsedAccountInfo(mint, 'confirmed');
             let supply = 0;
             let decimals = 9;
-            if (mintInfo.value && 'parsed' in mintInfo.value.data) {
-                const parsed = (mintInfo.value.data as ParsedAccountData).parsed.info;
+            if (info.value && 'parsed' in info.value.data) {
+                const parsed = (info.value.data as ParsedAccountData).parsed.info;
                 supply = Number(parsed.supply);
                 decimals = Number(parsed.decimals);
-                console.log('PoolStats: mint info', { supply, decimals });
-            } else {
-                console.log('PoolStats: could not parse mint info');
             }
+            return { supply, decimals };
+        },
+        enabled: !!mint,
+        staleTime: FIVE_MINUTES,
+        gcTime: FIVE_MINUTES * 2,
+        refetchOnWindowFocus: false,
+    });
 
-            // Count user index accounts - UserStakeIndex is 8 (discriminator) + 8 (next_index u64) = 16 bytes
-            // But let's also check for position accounts which are larger
-            let userCount = 0;
-            try {
-                const userAccounts = await connection.getProgramAccounts(program.programId, {
-                    filters: [
-                        { dataSize: 16 }, // UserStakeIndex accounts
-                    ],
-                    commitment: 'confirmed',
-                });
-                userCount = userAccounts.length;
-                console.log('PoolStats: found users', userCount);
-            } catch (e) {
-                console.log('PoolStats: error counting users', e);
+    const vaultQuery = useQuery({
+        queryKey: ['poolStatsVault', pool ? pub(pool as StakePoolData, 'vault')?.toBase58() ?? '' : ''],
+        queryFn: async () => {
+            const vault = pool ? pub(pool as StakePoolData, 'vault') : null;
+            if (!vault) throw new Error('Vault unknown');
+            const info = await connection.getParsedAccountInfo(vault, 'confirmed');
+            if (info.value && 'parsed' in info.value.data) {
+                const parsed = (info.value.data as ParsedAccountData).parsed.info;
+                return Number(parsed.tokenAmount?.amount ?? 0);
             }
+            return 0;
+        },
+        enabled: !!pool,
+        staleTime: 15000,
+        refetchOnWindowFocus: false,
+    });
 
-            const totalStaked = pool ? Number(pool.totalStaked) / 10 ** decimals : 0;
-
-            setStats({
-                totalStaked,
-                totalSupply: supply / 10 ** decimals,
-                userCount,
-                decimals,
+    const userCountQuery = useQuery({
+        queryKey: ['poolStatsUserCount', STAKING_PROGRAM_ID.toBase58()],
+        queryFn: async () => {
+            const accounts = await connection.getProgramAccounts(STAKING_PROGRAM_ID, {
+                filters: [{ dataSize: 16 }], // UserStakeIndex accounts
+                commitment: 'confirmed',
             });
-        } catch (e) {
-            console.error('PoolStats error:', e);
-        } finally {
-            setLoading(false);
-        }
-    }, [connection, mint, program]);
+            return accounts.length;
+        },
+        enabled: true,
+        staleTime: FIVE_MINUTES,
+        gcTime: FIVE_MINUTES * 2,
+        refetchOnWindowFocus: false,
+    });
 
-    useEffect(() => {
-        // Deferred to a microtask so no setState runs synchronously inside the effect
-        void Promise.resolve().then(fetchStats);
-
-        if (!connection || !mint) return;
-
-        const [poolPda] = PublicKey.findProgramAddressSync(
-            [Buffer.from('pool'), mint.toBuffer()],
-            STAKING_PROGRAM_ID,
-        );
-
-        const accountSubs: number[] = [
-            connection.onAccountChange(
-                poolPda,
-                () => {
-                    void fetchStats();
-                },
-                'confirmed',
-            ),
-            connection.onAccountChange(
-                mint,
-                () => {
-                    void fetchStats();
-                },
-                'confirmed',
-            ),
-        ];
-
-        // UserStakeIndex accounts are 16 bytes; watching the program for new
-        // or removed ones keeps the staker count live without polling.
-        const programSub = connection.onProgramAccountChange(
-            STAKING_PROGRAM_ID,
-            () => {
-                void fetchStats();
-            },
-            'confirmed',
-            [{ dataSize: 16 }],
-        );
-
-        return () => {
-            for (const id of accountSubs) {
-                void connection.removeAccountChangeListener(id);
-            }
-            void connection.removeProgramAccountChangeListener(programSub);
+    const stats = useMemo((): PoolStats | null => {
+        if (!pool || !mintQuery.data) return null;
+        const decimals = mintQuery.data.decimals;
+        return {
+            totalStaked: Number((pool as StakePoolData).totalStaked) / 10 ** decimals,
+            totalSupply: mintQuery.data.supply / 10 ** decimals,
+            vaultBalance: (vaultQuery.data ?? 0) / 10 ** decimals,
+            userCount: userCountQuery.data ?? 0,
+            decimals,
         };
-    }, [connection, mint, fetchStats]);
+    }, [pool, mintQuery.data, vaultQuery.data, userCountQuery.data]);
 
-    return { stats, loading, refresh: fetchStats };
+    const doRefresh = useCallback(() => {
+        void refresh('pool');
+    }, [refresh]);
+
+    return {
+        stats,
+        loading: poolLoading || mintQuery.isLoading || vaultQuery.isLoading || userCountQuery.isLoading,
+        refresh: doRefresh,
+    };
 }

@@ -526,7 +526,7 @@ impl<'a> OracleQuote<'a> {
 
     /// Writes oracle quote data from an ED25519 instruction to an oracle account without slot validation.
     ///
-    /// # ⚠️ WARNING ⚠️
+    /// # !! WARNING !!
     ///
     /// **This method bypasses critical security validations and should only be used in very specific scenarios.**
     ///

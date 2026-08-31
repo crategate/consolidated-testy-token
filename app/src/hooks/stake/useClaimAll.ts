@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
-import { useStakingProgram, STAKING_PROGRAM_ID, CRANK_PROGRAM_ID } from '../../anchor/setup';
+import { useStakingProgram, STAKING_PROGRAM_ID, CRANK_PROGRAM_ID, AMM_PROGRAM_ID } from '../../anchor/setup';
 import { PublicKey, Transaction } from '@solana/web3.js';
 import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';
 import type { Position } from './usePositions';
@@ -26,10 +26,13 @@ export function useClaimAll(mint: PublicKey | null, positions: Position[], marke
                 [Buffer.from('rewards'), poolPda.toBuffer()],
                 STAKING_PROGRAM_ID
             );
-            const [posrVaultPda] = PublicKey.findProgramAddressSync(
-                [Buffer.from('posr'), poolPda.toBuffer()],
-                STAKING_PROGRAM_ID
+            // AMM bond vault: the AFHO ATA of the amm_state PDA. The 5% POSR
+            // leg of every claim refills this (bond-sale inventory).
+            const [ammStatePda] = PublicKey.findProgramAddressSync(
+                [Buffer.from('amm_state'), mint.toBuffer()],
+                AMM_PROGRAM_ID
             );
+            const bondVault = getAssociatedTokenAddressSync(mint, ammStatePda, true, TOKEN_2022_PROGRAM_ID);
             const marketStatus = marketStatusPda ?? PublicKey.findProgramAddressSync(
                 [Buffer.from('market_status')],
                 CRANK_PROGRAM_ID
@@ -50,7 +53,7 @@ export function useClaimAll(mint: PublicKey | null, positions: Position[], marke
                         pool: poolPda,
                         position: position.pda,
                         rewardVault: rewardVaultPda,
-                        afhoVault: posrVaultPda,
+                        bondVault,
                         ownerToken,
                         marketStatus,
                         tokenProgram: TOKEN_2022_PROGRAM_ID,

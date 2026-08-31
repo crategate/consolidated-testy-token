@@ -56,8 +56,22 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
         }
     };
 
+    const handleExitAll = async () => {
+        for (const pos of positions) {
+            try {
+                await unstake(pos);
+            } catch (e) {
+                alert('Failed to exit a position: ' + (e as Error).message);
+                break;
+            }
+        }
+        refreshPositions();
+    };
+
     if (positionsLoading && !positions.length) return <div>Loading positions…</div>;
     if (positions.length === 0) return <div className="no-positions">No active stakes.</div>;
+
+    const currentTradingDay = marketData?.tradingDay ?? null;
 
     const displayPositions = enriched.length > 0 ? enriched : positions.map(p => ({
         ...p,
@@ -68,13 +82,32 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
         posrTaxRaw: 0,
     }));
 
+    const getDaysRemaining = (pos: typeof positions[number]) => {
+        if (pos.daysToUnlock === 0 || currentTradingDay === null) return 0;
+        const unlockDay = pos.entryTradingDay + pos.daysToUnlock;
+        return Math.max(0, unlockDay - currentTradingDay);
+    };
+
     const grandTotalDisplay = (grandTotal).toFixed(4);
+
+    // Sum of all staked principal — the user's total balance locked in staking.
+    const lockedTotal = positions.reduce((sum, pos) => sum + pos.amount, 0) / 1e9;
+    const lockedTotalDisplay = lockedTotal.toFixed(2);
 
     return (
         <div className="positions-list">
-            <h3>Your Positions</h3>
+            <div className="locked-total-header">
+                <span className="locked-total-label text-glitch-light">Total locked:</span>
+                <strong
+                    className="locked-total-balance text-glitch"
+                    style={{ '--glitch-delay': '0.9s' } as React.CSSProperties}
+                >
+                    {lockedTotalDisplay} AFHO
+                </strong>
+            </div>
 
-            <div className="claims-header">
+
+            <div className="claims-header neon-glitch glass-pane">
                 <button
                     className="claim-collect"
                     onClick={handleClaimAll}
@@ -82,57 +115,84 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
                 >
                     {!claimsOpen ? 'Claim Available After Opening Bell' : claimLoading ? 'Collecting…' : 'Collect All Claims'}
                 </button>
+                <button
+                    className="exit-all-button"
+                    onClick={handleExitAll}
+                    disabled={positions.length === 0}
+                >
+                    Exit All Positions
+                </button>
                 <span className="grand-total">
                     Total available: <strong>{grandTotalDisplay} AFHO</strong>
                 </span>
             </div>
 
             <div className="pos-contain">
-                {displayPositions.map((pos) => (
-                    <div key={pos.index} className={`position-card market-state-${marketData?.state ?? 0}`}>
-                        <div className="position-row">
-                            <span><strong>{(pos.amount / 1e9).toFixed(2)} </strong> AFHO</span>
-                            {'multiplierDisplay' in pos && pos.multiplierDisplay !== '—' && (
-                                <span className="multiplier-badge">{pos.multiplierDisplay}x</span>
-                            )}
-                        </div>
-                        <div><strong>Entry Day:</strong> #{pos.entryTradingDay}</div>
-                        {'tradingDays' in pos && pos.tradingDays > 0 && (
-                            <div><strong>Trading Days Elapsed:</strong> {pos.tradingDays}</div>
-                        )}
-                        {'netRewardDisplay' in pos && pos.netRewardDisplay !== '—' ? (
-                            <>
-                                <div className="reward-line">
-                                    <strong>Available Reward:</strong> {pos.netRewardDisplay}
+                {displayPositions.map((pos) => {
+                    const daysRemaining = getDaysRemaining(pos as typeof positions[number]);
+                    const isVesting = daysRemaining > 0;
+                    const isBond = pos.daysToUnlock > 0;
+                    return (
+                        <div key={pos.index} className={`position-card neon-glitch glass-pane ${isVesting ? 'vesting' : ''}`}>
+                            <div className="position-row">
+                                <span><strong>{(pos.amount / 1e9).toFixed(2)} </strong> AFHO</span>
+                                <div className="position-badges">
+                                    {isBond && (
+                                        <span className="bond-badge" title="Purchased via night-desk bond offer">
+                                            Bond
+                                        </span>
+                                    )}
+                                    {'multiplierDisplay' in pos && pos.multiplierDisplay !== '—' && (
+                                        <span className="multiplier-badge">{pos.multiplierDisplay}x</span>
+                                    )}
                                 </div>
-                                {'penaltyRaw' in pos && pos.penaltyRaw > 0 && (
-                                    <div className="penalty-warning">
-                                        ⚠️ Market penalty: –{pos.penaltyRaw.toFixed(4)} AFHO
+                            </div>
+                            {isVesting && (
+                                <div className="vesting-countdown">
+                                    <span className="countdown-number">{daysRemaining}</span>
+                                    <span className="countdown-label">
+                                        trading day{daysRemaining === 1 ? '' : 's'} to unlock
+                                    </span>
+                                </div>
+                            )}
+                            <div><strong>Entry Day:</strong> #{pos.entryTradingDay}</div>
+                            {'tradingDays' in pos && pos.tradingDays > 0 && (
+                                <div><strong>Trading Days Elapsed:</strong> {pos.tradingDays}</div>
+                            )}
+                            {'netRewardDisplay' in pos && pos.netRewardDisplay !== '—' ? (
+                                <>
+                                    <div className="reward-line">
+                                        <strong>Available Reward:</strong> {pos.netRewardDisplay}
                                     </div>
-                                )}
-                                {'posrTaxRaw' in pos && pos.posrTaxRaw > 0 && (
-                                    <div className="posr-line">
-                                        Protocol tax: –{pos.posrTaxRaw.toFixed(4)} AFHO
-                                    </div>
-                                )}
-                            </>
-                        ) : (
-                            <div>Calculating rewards…</div>
-                        )}
-                        <div><strong>Last Claim:</strong> {new Date(pos.lastClaimTimestamp * 1000).toLocaleDateString()}</div>
+                                    {'penaltyRaw' in pos && pos.penaltyRaw > 0 && (
+                                        <div className="penalty-warning">
+                                            !! Market penalty: –{pos.penaltyRaw.toFixed(4)} AFHO
+                                        </div>
+                                    )}
+                                    {'posrTaxRaw' in pos && pos.posrTaxRaw > 0 && (
+                                        <div className="posr-line">
+                                            Protocol tax: –{pos.posrTaxRaw.toFixed(4)} AFHO
+                                        </div>
+                                    )}
+                                </>
+                            ) : (
+                                <div>Calculating rewards…</div>
+                            )}
+                            <div><strong>Last Claim:</strong> {new Date(pos.lastClaimTimestamp * 1000).toLocaleDateString()}</div>
 
-                        <button
-                            className="unstake"
-                            onClick={() => handleUnstake(pos)}
-                            disabled={unstakeLoadingIndex === pos.index}
-                        >
-                            {unstakeLoadingIndex === pos.index
-                                ? 'Exiting…'
-                                : `Exit Position (${exitPenaltyPct}% penalty)`}
-                        </button>
-                    </div>
-                ))}
+                            <button
+                                className="unstake"
+                                onClick={() => handleUnstake(pos)}
+                                disabled={unstakeLoadingIndex === pos.index}
+                            >
+                                {unstakeLoadingIndex === pos.index
+                                    ? 'Exiting…'
+                                    : `Exit Position (${exitPenaltyPct}% penalty)`}
+                            </button>
+                        </div>
+                    );
+                })}
             </div>
-        </div >
+        </div>
     );
 };

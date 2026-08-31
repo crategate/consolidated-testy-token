@@ -1,5 +1,6 @@
 import { useMarketStatus } from '../hooks/useMarketStatus.ts';
 import { PublicKey } from '@solana/web3.js';
+import { GlitchText } from './GlitchText.tsx';
 import './MarketStatus.css';
 
 const STATE_LABELS: Record<number, string> = {
@@ -18,9 +19,10 @@ const STATE_SUBTITLES: Record<number, string> = {
 
 interface MarketStatusProps {
     marketStatusPda?: PublicKey;
+    variant?: 'full' | 'hero' | 'compact';
 }
 
-export function MarketStatus({ marketStatusPda }: MarketStatusProps) {
+export function MarketStatus({ marketStatusPda, variant = 'full' }: MarketStatusProps) {
     const { data, loading, error, stale } = useMarketStatus(marketStatusPda);
 
     const state = data?.state ?? 99;
@@ -28,7 +30,11 @@ export function MarketStatus({ marketStatusPda }: MarketStatusProps) {
     const subtitle = STATE_SUBTITLES[state] ?? 'Waiting for oracle…';
 
     return (
-        <div className="market-status-bg" data-market-state={state} aria-live="polite">
+        <div
+            className={`market-status-bg market-status-${variant}`}
+            data-market-state={state}
+            aria-live="polite"
+        >
             <div className="market-status-grid" aria-hidden="true" />
 
             <header className="market-status-header">
@@ -47,8 +53,25 @@ export function MarketStatus({ marketStatusPda }: MarketStatusProps) {
                             {label}
                             {stale && <span className="stale-badge">Stale</span>}
                         </div>
-                        <h1 className="status-title">{label}</h1>
-                        <p className="status-detail">{subtitle}</p>
+                        <h1 className="status-title">
+                            {variant === 'hero' ? (
+                                <GlitchText text={label} variant="light" split="letter" step={0.4} />
+                            ) : (
+                                label
+                            )}
+                        </h1>
+                        <p className="status-detail">
+                            {variant === 'hero' ? (
+                                <GlitchText
+                                    text={subtitle}
+                                    variant="light"
+                                    split="word"
+                                    step={0.4}
+                                />
+                            ) : (
+                                subtitle
+                            )}
+                        </p>
                         {data && (
                             <p className="status-meta">
                                 Trading Day #{data.tradingDay} · Oracle updated{' '}

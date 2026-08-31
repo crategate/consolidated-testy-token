@@ -98,7 +98,7 @@ pub(crate) fn offer_accepted_aggression(accepted: &AcceptedOffers) -> u16 {
 }
 
 // Momentum score, 0-10000 (5000 = flat). Primary weight in offer construction.
-// Derived only from the 20-day price_changes ring (daily priceChange24h,
+// Derived only from the 20-day price_changes ring (daily close→close change,
 // centi-percent). No volume input — price is the signal, per design.
 //   blended = recency-weighted mean + (recent-5-day avg - older avg) / 2
 //   score   = 5000 + blended * 10  →  sustained ±5% daily move pins the scale

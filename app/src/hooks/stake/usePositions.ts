@@ -1,8 +1,15 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
-import BN from 'bn.js';
-import { useStakingProgram, STAKING_PROGRAM_ID } from '../../anchor/setup';
+import { useQuery } from '@tanstack/react-query';
+import { useChainData } from '../../context/useChainData';
+import {
+    decodeStakePosition,
+    derivePoolPda,
+    derivePositionPda,
+    deriveUserIndexPda,
+} from '../../context/chainDataHelpers';
+import { STAKING_PROGRAM_ID, useStakingProgram } from '../../anchor/setup';
 
 export interface Position {
     pda: PublicKey;
@@ -10,101 +17,90 @@ export interface Position {
     amount: number;
     entryTradingDay: number;
     lastClaimTimestamp: number;
-    currentWeight: string; // u128 as string to keep precision
-    rewardDebt: string; // u128 as string to keep precision
+    daysToUnlock: number;
+    currentWeight: string;
+    rewardDebt: string;
 }
-
-type StakePositionAccount = {
-    amount: { toString(): string };
-    entryTradingDay: { toString(): string };
-    lastClaimTimestamp: { toString(): string };
-    currentWeight?: { toString(): string };
-    rewardDebt?: { toString(): string };
-};
 
 type AccountNamespace = Record<
     string,
     { fetchNullable(key: PublicKey): Promise<unknown> } | undefined
 >;
 
-export function usePositions(mint: PublicKey | null) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function usePositions(_mint?: PublicKey | null) {
     const { publicKey } = useWallet();
     const { connection } = useConnection();
     const program = useStakingProgram();
-    const [positions, setPositions] = useState<Position[]>([]);
-    const [loading, setLoading] = useState(false);
+    const { deployment } = useChainData();
+    const mint = deployment?.mintKey;
 
-    const fetchPositions = useCallback(async () => {
-        if (!publicKey || !program || !mint) {
-            setPositions([]);
-            return;
+    const fetchPositions = useCallback(async (): Promise<Position[]> => {
+        if (!publicKey || !program || !mint) return [];
+
+        const poolPda = derivePoolPda(mint);
+        const userIndexPda = deriveUserIndexPda(publicKey);
+        const userIndex = (await (program.account as AccountNamespace).userStakeIndex?.fetchNullable(
+            userIndexPda,
+        )) as { nextIndex: { toString(): string } } | null | undefined;
+        const nextIndex = userIndex ? Number(userIndex.nextIndex) : 0;
+        if (nextIndex === 0) return [];
+
+        const pdas: PublicKey[] = [];
+        for (let i = 0; i < nextIndex; i++) {
+            pdas.push(derivePositionPda(poolPda, publicKey, i));
         }
-        setLoading(true);
-        try {
-            const [poolPda] = PublicKey.findProgramAddressSync(
-                [Buffer.from('pool'), mint.toBuffer()],
-                STAKING_PROGRAM_ID
-            );
-            const [userIndexPda] = PublicKey.findProgramAddressSync(
-                [Buffer.from('user_index'), publicKey.toBuffer()],
-                STAKING_PROGRAM_ID
-            );
-            const userIndex = (await (program.account as AccountNamespace).userStakeIndex?.fetchNullable(
-                userIndexPda,
-            )) as { nextIndex: { toString(): string } } | null | undefined;
-            const nextIndex = userIndex ? Number(userIndex.nextIndex) : 0;
-            const fetched: Position[] = [];
-            for (let i = 0; i < nextIndex; i++) {
-                try {
-                    const indexBytes = new BN(i).toArrayLike(Buffer, 'le', 8);
-                    const [positionPda] = PublicKey.findProgramAddressSync([
-                        Buffer.from('position'),
-                        poolPda.toBuffer(),
-                        publicKey.toBuffer(),
-                        indexBytes,
-                    ], STAKING_PROGRAM_ID);
 
-                    const pos = (await (program.account as AccountNamespace).stakePosition?.fetchNullable(
-                        positionPda,
-                    )) as StakePositionAccount | null | undefined;
-                    if (pos) {
-                        fetched.push({
-                            pda: positionPda,
-                            index: i,
-                            amount: Number(pos.amount),
-                            entryTradingDay: Number(pos.entryTradingDay),
-                            lastClaimTimestamp: Number(pos.lastClaimTimestamp),
-                            currentWeight: pos.currentWeight ? pos.currentWeight.toString() : pos.amount.toString(),
-                            rewardDebt: pos.rewardDebt ? pos.rewardDebt.toString() : '0',
-                        });
-                    }
-                } catch (e) {
-                    // Old positions have incompatible account data — skip them
-                    console.warn(`Skipping position ${i}: stale account data (pre-upgrade layout)`, e);
-                    continue;
+        const infos = await connection.getMultipleAccountsInfo(pdas, 'confirmed');
+        const fetched: Position[] = [];
+
+        for (let i = 0; i < infos.length; i++) {
+            const info = infos[i];
+            if (!info) continue;
+            try {
+                const decoded = decodeStakePosition(info.data);
+                if (decoded) {
+                    fetched.push({
+                        pda: pdas[i],
+                        index: i,
+                        amount: Number(decoded.amount),
+                        entryTradingDay: Number(decoded.entryTradingDay),
+                        lastClaimTimestamp: Number(decoded.lastClaimTimestamp),
+                        daysToUnlock: decoded.daysToUnlock ?? 0,
+                        currentWeight: decoded.currentWeight
+                            ? decoded.currentWeight.toString()
+                            : decoded.amount.toString(),
+                        rewardDebt: decoded.rewardDebt ? decoded.rewardDebt.toString() : '0',
+                    });
                 }
+            } catch (e) {
+                console.warn(`Skipping position ${i}: stale account data (pre-upgrade layout)`, e);
             }
-            setPositions(fetched);
-        } catch (e) {
-            console.error('usePositions error:', e);
-        } finally {
-            setLoading(false);
         }
-    }, [publicKey, program, mint]);
+        return fetched;
+    }, [publicKey, program, mint, connection]);
+
+    const query = useQuery({
+        queryKey: ['positions', publicKey?.toBase58() ?? '', mint?.toBase58() ?? ''],
+        queryFn: fetchPositions,
+        enabled: !!publicKey && !!program && !!mint,
+        staleTime: 15000,
+        refetchOnWindowFocus: false,
+        retry: (failureCount, error) => {
+            const msg = error instanceof Error ? error.message : String(error);
+            return /429|rate/i.test(msg) ? failureCount < 3 : failureCount < 1;
+        },
+        retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+    });
 
     useEffect(() => {
-        // Deferred to a microtask so no setState runs synchronously inside the effect
-        void Promise.resolve().then(fetchPositions);
-
         if (!connection || !publicKey) return;
 
-        // Watch this wallet's position accounts (owner pubkey sits at offset 8
-        // after the Anchor discriminator). Any stake/claim/unstake mutation
-        // fires this subscription, which re-reads the authoritative state.
         const subscriptionId = connection.onProgramAccountChange(
             STAKING_PROGRAM_ID,
             () => {
-                void fetchPositions();
+                if (document.hidden) return;
+                void query.refetch();
             },
             'confirmed',
             [{ memcmp: { offset: 8, bytes: publicKey.toBase58() } }],
@@ -113,7 +109,11 @@ export function usePositions(mint: PublicKey | null) {
         return () => {
             void connection.removeProgramAccountChangeListener(subscriptionId);
         };
-    }, [connection, publicKey, fetchPositions]);
+    }, [connection, publicKey, query]);
 
-    return { positions, loading, refresh: fetchPositions };
+    return {
+        positions: query.data ?? [],
+        loading: query.isLoading,
+        refresh: query.refetch,
+    };
 }

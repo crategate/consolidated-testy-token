@@ -37,13 +37,12 @@ pub struct DistributeStakerRewards<'info> {
     /// Staker-rewards holding vault (the 10% USDC claim share)
     #[account(mut, address = amm_state.usdc_rewards)]
     pub usdc_rewards: Box<InterfaceAccount<'info, TokenAccount>>,
-    /// Staker-rewards holding vault (the 10% SOL claim share) — funds the
-    /// swap's SOL in-leg (signed with its own seeds)
+    /// Staker-rewards holding vault (the 10% SOL claim share, now retired —
+    /// rewards are USDC-only). Vestigial: kept until the §4 state-field cleanup.
     /// CHECK: address-verified system PDA
     #[account(mut, address = amm_state.sol_rewards)]
     pub sol_rewards: AccountInfo<'info>,
-    /// CHECK: SOL/USD price oracle — converts the SOL-leg fill into USDC
-    /// units for the ratchet floor
+    /// CHECK: vestigial SOL/USD price oracle (SOL leg retired)
     #[account(address = amm_state.sol_oracle)]
     pub sol_oracle: UncheckedAccount<'info>,
     /// CHECK: live absolute spot price — the M3 slippage band for every fill

@@ -25,7 +25,7 @@ import { pubkey, writeDeploymentState } from "./deployment-state";
 // Devnet USDC faucet mint. MAINNET: use EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v.
 // const USDC_MINT = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"); // MAINNET
 const USDC_MINT = new PublicKey(
-    process.env.DEVNET_USDC_MINT || "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+    process.env.DEVNET_USDC_MINT || "USDCoctVLVnvTXBEuP9s8hntucdJokbo17RwHuNXemT"
 );
 
 async function main() {
@@ -45,7 +45,7 @@ async function main() {
     const AFHO_MINT = Keypair.fromSecretKey(
         new Uint8Array(mintKeyData)
     ).publicKey;
-    console.log("📍 AFHO mint:", AFHO_MINT.toBase58());
+    console.log(" AFHO mint:", AFHO_MINT.toBase58());
 
     // ── 2. Load AMM program ──
     const ammIdlPath = path.join(process.cwd(), "target", "idl", "amm.json");
@@ -62,7 +62,7 @@ async function main() {
         new Uint8Array(ammKeyData)
     ).publicKey;
     const ammProgram = new anchor.Program(ammIdl, provider);
-    console.log("📍 AMM program:", AMM_PROGRAM_ID.toBase58());
+    console.log(" AMM program:", AMM_PROGRAM_ID.toBase58());
 
     // ── 3. Load crank oracle program ID ──
     const crankKeyPath = path.join(
@@ -72,7 +72,7 @@ async function main() {
     const CRANK_PROGRAM_ID = Keypair.fromSecretKey(
         new Uint8Array(crankKeyData)
     ).publicKey;
-    console.log("📍 Crank oracle:", CRANK_PROGRAM_ID.toBase58());
+    console.log(" Crank oracle:", CRANK_PROGRAM_ID.toBase58());
 
     // ── 3b. DEX swap target (mock-dex-pool stub for devnet; real DEX at launch) ──
     const mockPoolKeyPath = path.join(
@@ -84,7 +84,7 @@ async function main() {
     const DEX_PROGRAM_ID = Keypair.fromSecretKey(
         new Uint8Array(JSON.parse(fs.readFileSync(mockPoolKeyPath, "utf-8")))
     ).publicKey;
-    console.log("📍 DEX program (stub):", DEX_PROGRAM_ID.toBase58());
+    console.log(" DEX program (stub):", DEX_PROGRAM_ID.toBase58());
 
     // ── 3c. Staking program + pool (offer_claim CPIs into it; run pool-init first) ──
     const stakingKeyPath = path.join(
@@ -96,7 +96,7 @@ async function main() {
     const STAKING_PROGRAM_ID = Keypair.fromSecretKey(
         new Uint8Array(JSON.parse(fs.readFileSync(stakingKeyPath, "utf-8")))
     ).publicKey;
-    console.log("📍 Staking program:", STAKING_PROGRAM_ID.toBase58());
+    console.log(" Staking program:", STAKING_PROGRAM_ID.toBase58());
 
     // ── 4. Derive all AMM PDAs ──
     const [ammStatePda] = PublicKey.findProgramAddressSync(
@@ -182,7 +182,7 @@ async function main() {
         );
         try {
             await stakingProgram.methods
-                .initializePool(CRANK_PROGRAM_ID, 30000, 500, 400, 800, 1800, AMM_PROGRAM_ID)
+                .initializePool(CRANK_PROGRAM_ID, 30000, 500, 300, 600, 1800, AMM_PROGRAM_ID)
                 .accounts({
                     authority: provider.wallet.publicKey,
                     mint: AFHO_MINT,
@@ -190,15 +190,15 @@ async function main() {
                     vault: stakingVaultPda,
                     rewardVault: stakingRewardPda,
                     penaltyVault: stakingPenaltyPda,
-                    afhoVault: stakingPosrPda,
+                    posrVault: stakingPosrPda,
                     marketStatusPda: stakingMarketStatusPda,
                     tokenProgram: TOKEN_2022_PROGRAM_ID,
                     systemProgram: anchor.web3.SystemProgram.programId,
                 })
                 .rpc();
-            console.log("  ✅ Staking pool initialized:", stakingPoolPda.toBase58());
+            console.log("   Staking pool initialized:", stakingPoolPda.toBase58());
         } catch (e) {
-            console.log("  ⚠️  Staking pool already initialized (or failed):", (e as Error).message);
+            console.log("  !! Staking pool already initialized (or failed):", (e as Error).message);
         }
         writeDeploymentState({
             pool: stakingPoolPda.toBase58(),
@@ -246,7 +246,7 @@ async function main() {
     }
     const priceOracle = new PublicKey(deployment.oracleQuoteAccount);
 
-    console.log("\n📋 Derived AMM accounts:");
+    console.log("\n Derived AMM accounts:");
     console.log("  AMM State:     ", ammStatePda.toBase58());
     console.log("  Offer List:    ", offerListPda.toBase58());
     console.log("  SOL Vault:     ", solVaultPda.toBase58());
@@ -254,7 +254,7 @@ async function main() {
     console.log("  AFHO Vault:   ", afhoVaultAta.toBase58());
     console.log("  Market Status: ", marketStatusPda.toBase58());
 
-    console.log("\n📦 Checking vault accounts...");
+    console.log("\n Checking vault accounts...");
     const preIxs = [];
 
     const afhoInfo = await provider.connection.getAccountInfo(afhoVaultAta);
@@ -282,10 +282,10 @@ async function main() {
         tx.recentBlockhash = blockhash;
         tx.feePayer = provider.wallet.publicKey;
         const sig = await provider.sendAndConfirm(tx);
-        console.log("  ✅ Vaults created:", sig);
+        console.log("   Vaults created:", sig);
     }
     //   ── 5. Initialize AMM ──
-    console.log("\n🚀 Initializing AMM accounts...");
+    console.log("\n Initializing AMM accounts...");
     try {
         const tx = await ammProgram.methods
             .initializeAmm(spotOraclePda, stakingPoolPda, solOraclePda)
@@ -325,116 +325,10 @@ async function main() {
         }
     }
 
-    // ── 5b. Mock DEX pool: state, prices, AFHO float (DEVNET STUB) ──
-    // MAINNET: delete this section — the real DEX pool replaces it and
-    // spot/sol oracles become real feeds.
-    // console.log("\n🧪 Setting up mock DEX pool (devnet stub)...");
-    // const mockIdl = JSON.parse(fs.readFileSync(
-    //     path.join(process.cwd(), "target", "idl", "mock_dex_pool.json"), "utf-8"
-    // ));
-    // const mockProgram = new anchor.Program(mockIdl, provider);
-    // const [poolStatePda] = PublicKey.findProgramAddressSync(
-    //     [Buffer.from("mock_pool"), AFHO_MINT.toBuffer()],
-    //     DEX_PROGRAM_ID
-    // );
-    // const poolAfhoAta = getAssociatedTokenAddressSync(
-    //     AFHO_MINT, poolStatePda, true, TOKEN_2022_PROGRAM_ID
-    // );
-    // const poolUsdcAta = getAssociatedTokenAddressSync(
-    //     USDC_MINT, poolStatePda, true, TOKEN_PROGRAM_ID
-    // );
-    // try {
-    //     const tx = await mockProgram.methods
-    //         .initPool()
-    //         .accounts({
-    //             payer: provider.wallet.publicKey,
-    //             afhoMint: AFHO_MINT,
-    //             usdcMint: USDC_MINT,
-    //             poolState: poolStatePda,
-    //             poolAfho: poolAfhoAta,
-    //             poolUsdc: poolUsdcAta,
-    //             associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
-    //             tokenProgram: TOKEN_PROGRAM_ID,
-    //             token2022Program: TOKEN_2022_PROGRAM_ID,
-    //             systemProgram: anchor.web3.SystemProgram.programId,
-    //         })
-    //         .rpc();
-    //     console.log("  ✅ Mock pool initialized:", tx);
-    // } catch (e: any) {
-    //     if (e.message?.includes("already in use")) {
-    //         console.log("  ⚠️  Mock pool already initialized.");
-    //     } else {
-    //         throw e;
-    //     }
-    // }
-
-    // // Mock prices, units (usdc_raw × 1e6) / afho_raw:
-    // //   AFHO spot 10 = 0.01 USDC/AFHO at 9/6 decimals (matches mock exec rate)
-    // //   SOL         200_000 = $200/SOL (200e6 usdc-raw × 1e6 / 1e9 lamports)
-    // const MOCK_AFHO_PRICE = new anchor.BN(process.env.MOCK_AFHO_PRICE || "10");
-    // const MOCK_SOL_PRICE = new anchor.BN(process.env.MOCK_SOL_PRICE || "200000");
-    // await mockProgram.methods
-    //     .setPrice(MOCK_AFHO_PRICE)
-    //     .accounts({
-    //         payer: provider.wallet.publicKey,
-    //         afhoMint: AFHO_MINT,
-    //         mockPrice: spotOraclePda,
-    //         systemProgram: anchor.web3.SystemProgram.programId,
-    //     })
-    //     .rpc();
-    // console.log(`  ✅ AFHO spot price set to ${MOCK_AFHO_PRICE}`);
-    // await mockProgram.methods
-    //     .setPrice(MOCK_SOL_PRICE)
-    //     .accounts({
-    //         payer: provider.wallet.publicKey,
-    //         afhoMint: NATIVE_MINT, // wSOL mint seeds the SOL/USD price PDA
-    //         mockPrice: solOraclePda,
-    //         systemProgram: anchor.web3.SystemProgram.programId,
-    //     })
-    //     .rpc();
-    // console.log(`  ✅ SOL price set to ${MOCK_SOL_PRICE}`);
-
-    // // Fund the pool's AFHO float so buys can be filled (top up only if empty)
-    // const poolFloatInfo = await provider.connection.getAccountInfo(poolAfhoAta);
-    // if (poolFloatInfo) {
-    //     const poolBal = await getAccount(
-    //         provider.connection, poolAfhoAta, "confirmed", TOKEN_2022_PROGRAM_ID
-    //     );
-    //     if (poolBal.amount === BigInt(0)) {
-    //         const floatWhole = new anchor.BN(process.env.MOCK_POOL_FLOAT_AFHO || "1000000");
-    //         const floatRaw = floatWhole.mul(new anchor.BN(1_000_000_000)); // 9 decimals
-    //         const authorityAfhoAta = getAssociatedTokenAddressSync(
-    //             AFHO_MINT, provider.wallet.publicKey, false, TOKEN_2022_PROGRAM_ID
-    //         );
-    //         // Cap the float at the authority's actual balance — the mint only
-    //         // has what mint-launch created (no mint authority post-revoke).
-    //         const authorityBal = await getAccount(
-    //             provider.connection, authorityAfhoAta, "confirmed", TOKEN_2022_PROGRAM_ID
-    //         );
-    //         const capped = anchor.BN.min(floatRaw, new anchor.BN(authorityBal.amount.toString()));
-    //         if (capped.isZero()) {
-    //             console.log("  ⚠️  Authority AFHO balance is zero — pool float not funded (mint more or re-run mint-launch with a fresh mint).");
-    //         } else {
-    //             const fundTx = new Transaction().add(createTransferCheckedInstruction(
-    //                 authorityAfhoAta, AFHO_MINT, poolAfhoAta,
-    //                 provider.wallet.publicKey, BigInt(capped.toString()), 9, [],
-    //                 TOKEN_2022_PROGRAM_ID
-    //             ));
-    //             const { blockhash } = await provider.connection.getLatestBlockhash("confirmed");
-    //             fundTx.recentBlockhash = blockhash;
-    //             fundTx.feePayer = provider.wallet.publicKey;
-    //             const sig = await provider.sendAndConfirm(fundTx);
-    //             console.log(`  ✅ Pool float funded with ${(Number(capped) / 1e9).toFixed(0)} AFHO (capped at balance):`, sig);
-    //         }
-    //     } else {
-    //         console.log("  ⚠️  Pool float already funded, skipping.");
-    //     }
-    // }
-
     // ── 6. Transfer AFHO from authority → AMM vault ──
-    const transferPct = parseFloat(process.argv[2] || "0.75"); // default 10%
+    const transferPct = parseFloat(process.argv[2] || "0.99"); // mainnet 1.0 for 100 percent
     if (transferPct > 0) {
-        console.log(`\n💸 Transferring ${(transferPct * 100).toFixed(0)}% of supply to AMM vault...`);
+        console.log(`\n Transferring ${(transferPct * 100).toFixed(0)}% of supply to AMM vault...`);
 
         const authorityAfhoAta = getAssociatedTokenAddressSync(
             AFHO_MINT,
@@ -474,9 +368,9 @@ async function main() {
             tx.feePayer = provider.wallet.publicKey;
 
             const sig = await provider.sendAndConfirm(tx);
-            console.log(`✅ Transferred! Tx: ${sig}`);
+            console.log(` Transferred! Tx: ${sig}`);
         } else {
-            console.log("⚠️  Nothing to transfer (balance is zero).");
+            console.log("!! Nothing to transfer (balance is zero).");
         }
     }
 
@@ -491,7 +385,7 @@ async function main() {
         ammAfhoVault: pubkey(afhoVaultAta),
     });
 
-    console.log("\n🎉 AMM setup complete!");
+    console.log("\n AMM setup complete!");
 }
 
 main().catch((err) => {

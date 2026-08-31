@@ -42,7 +42,6 @@ pub struct MakeOffers<'info> {
     pub afho_vault: AccountInfo<'info>,
     /// CHECK: pinned price-oracle account. Value is NOT read here — momentum
     /// comes from `metrics.price_changes` (sampled in update_tradeday_stats).
-    /// Kept unchecked so `amm` has no Switchboard type dependency.
     #[account(address = amm_state.price_oracle)]
     pub price_oracle: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
@@ -258,22 +257,21 @@ const MIN_LIST_STORED: u8 = 20;
 
 // Step 5 — vesting in whole trading days: base × (0.5 + stake_health/100),
 // minus 3 days per 100 bps the realized discount fell below target (clamps),
-// clamped 3–30.
+// clamped 3–25. The 25-day cap is the big tier (base 20): sml/med saturate
+// below it anyway (8/15 days max by their bases).
 fn vesting_days(base: u64, stake_health: u8, target_bps: i64, realized_bps: i64) -> u8 {
     let scaled = (base * (50 + stake_health as u64) + 50) / 100;
     let days_off = 3 * (target_bps - realized_bps).max(0) / 100;
-    (scaled as i64 - days_off).clamp(3, 30) as u8
+    (scaled as i64 - days_off).clamp(3, 25) as u8
 }
 
-// Vault SPL token balance; unreadable vault → 0 → empty sheet (fail dark).
+// Vault balance in raw units. Reads the amount field directly (u64 LE at
+// offset 64 — identical layout for classic SPL and Token-2022) because the
+// vault is a Token-2022 ATA (165 + extension bytes); the classic-SPL
+// TokenAccount deserializer rejects it on length, which silently read 0 and
+// emptied the sheet. Unreadable vault → 0 → empty sheet (fail dark).
 fn vault_token_balance(vault: &AccountInfo) -> u64 {
-    let data = match vault.try_borrow_data() {
-        Ok(d) => d,
-        Err(_) => return 0,
-    };
-    anchor_spl::token::TokenAccount::try_deserialize_unchecked(&mut &data[..])
-        .map(|ta| ta.amount)
-        .unwrap_or(0)
+    super::raydium::token_account_amount(vault).unwrap_or(0)
 }
 
 fn empty_offer() -> Offer {

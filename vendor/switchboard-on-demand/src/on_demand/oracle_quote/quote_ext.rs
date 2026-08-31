@@ -25,7 +25,7 @@ pub trait SwitchboardQuoteExt<'a> {
 
     /// Write oracle quote data from an ED25519 instruction without slot validation.
     ///
-    /// # ⚠️ WARNING ⚠️
+    /// # !! WARNING !!
     /// **This method bypasses critical security validations. See [`OracleQuote::write_from_ix_unchecked`] for detailed security warnings.**
     ///
     /// [`OracleQuote::write_from_ix_unchecked`]: crate::on_demand::oracle_quote::OracleQuote::write_from_ix_unchecked

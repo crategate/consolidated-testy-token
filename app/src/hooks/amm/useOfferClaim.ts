@@ -1,38 +1,53 @@
 import { useCallback, useState } from 'react';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { BN } from '@coral-xyz/anchor';
-import { PublicKey, Transaction } from '@solana/web3.js';
+import { PublicKey, SendTransactionError, SystemProgram, Transaction } from '@solana/web3.js';
 import {
+    ASSOCIATED_TOKEN_PROGRAM_ID,
     getAccount,
     getAssociatedTokenAddressSync,
     TOKEN_2022_PROGRAM_ID,
     TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
 import { STAKING_PROGRAM_ID, useAmmProgram } from '../../anchor/setup.ts';
-import { formatUsdc } from './offerMath.ts';
-import type { ClaimAccounts } from './useAmmData.ts';
+import { formatSol, formatUsdc, lamportsForCost } from './offerMath.ts';
+import type { ClaimAccounts, SolClaimAccounts } from './useAmmData.ts';
 
 export interface ClaimSelection {
     tier: number;   // 0 = sml, 1 = med, 2 = big
     units: number;
 }
 
+export type ClaimCurrency = 'usdc' | 'sol';
+
 export type ClaimStatus = 'idle' | 'pending' | 'success' | 'error';
 
 export interface UseOfferClaimReturn {
-    claim: (selections: ClaimSelection[], estCostRaw: bigint) => Promise<boolean>;
+    claim: (
+        selections: ClaimSelection[],
+        estCostRaw: bigint,
+        opts: { currency: ClaimCurrency; solPrice: bigint | null },
+    ) => Promise<boolean>;
     status: ClaimStatus;
     txSig: string | null;
     error: string | null;
     reset: () => void;
 }
 
-// One offerClaim instruction per selected tier, bundled into a single
-// transaction (one wallet prompt). Each claim creates a new staking position,
-// so the position index increments per instruction starting from the buyer's
+// One claim instruction per selected tier, bundled into a single transaction
+// (one wallet prompt). Each claim creates a new staking position, so the
+// position index increments per instruction starting from the buyer's
 // next_index (LE u64 at offset 8 of the user_index account; 0 if it doesn't
 // exist yet — create_amm_position inits it via CPI).
-export function useOfferClaim(accounts: ClaimAccounts | null, usdcDecimals: number): UseOfferClaimReturn {
+//
+// Payment currency: 'usdc' → offer_claim (buyer's USDC ATA). 'sol' →
+// offer_claim_sol (buyer lamports → wSOL → CPMM swap to USDC, buyer covers the
+// 0.25% swap fee; requires the pinned SOL/USDC pool = solAccounts).
+export function useOfferClaim(
+    accounts: ClaimAccounts | null,
+    solAccounts: SolClaimAccounts | null,
+    usdcDecimals: number,
+): UseOfferClaimReturn {
     const { connection } = useConnection();
     const program = useAmmProgram();
     const [status, setStatus] = useState<ClaimStatus>('idle');
@@ -45,7 +60,11 @@ export function useOfferClaim(accounts: ClaimAccounts | null, usdcDecimals: numb
         setError(null);
     }, []);
 
-    const claim = useCallback(async (selections: ClaimSelection[], estCostRaw: bigint): Promise<boolean> => {
+    const claim = useCallback(async (
+        selections: ClaimSelection[],
+        estCostRaw: bigint,
+        opts: { currency: ClaimCurrency; solPrice: bigint | null },
+    ): Promise<boolean> => {
         if (!program || !accounts) return false;
         const active = selections.filter((s) => s.units > 0);
         if (active.length === 0) return false;
@@ -58,17 +77,41 @@ export function useOfferClaim(accounts: ClaimAccounts | null, usdcDecimals: numb
             const sendAndConfirm = program.provider.sendAndConfirm?.bind(program.provider);
             if (!buyer || !sendAndConfirm) throw new Error('Wallet not connected');
 
-            const buyerUsdc = getAssociatedTokenAddressSync(accounts.usdcMint, buyer, false, TOKEN_PROGRAM_ID);
-            let balance: bigint;
-            try {
-                balance = (await getAccount(connection, buyerUsdc, 'confirmed', TOKEN_PROGRAM_ID)).amount;
-            } catch {
-                throw new Error('No USDC token account found — fund this wallet with devnet USDC first.');
+            const currency = opts.currency;
+            // Captured parameter — copy to a local so TS can narrow it below.
+            const sol = solAccounts;
+            if (currency === 'sol' && !sol) {
+                throw new Error('SOL payments need the SOL/USDC pool pinned — run anchor run set-sol-usdc-pool.');
             }
-            if (balance < estCostRaw) {
-                throw new Error(
-                    `Insufficient USDC: need ≈${formatUsdc(estCostRaw, usdcDecimals)}, have ${formatUsdc(balance, usdcDecimals)}.`
-                );
+
+            // ── balance gate ──
+            if (currency === 'usdc') {
+                const buyerUsdc = getAssociatedTokenAddressSync(accounts.usdcMint, buyer, false, TOKEN_PROGRAM_ID);
+                let balance: bigint;
+                try {
+                    balance = (await getAccount(connection, buyerUsdc, 'confirmed', TOKEN_PROGRAM_ID)).amount;
+                } catch {
+                    throw new Error('No USDC token account found — fund this wallet with devnet USDC first.');
+                }
+                if (balance < estCostRaw) {
+                    throw new Error(
+                        `Insufficient USDC: need ≈${formatUsdc(estCostRaw, usdcDecimals)}, have ${formatUsdc(balance, usdcDecimals)}.`
+                    );
+                }
+            } else {
+                if (!sol) {
+                    throw new Error('SOL payments need the SOL/USDC pool pinned — run anchor run set-sol-usdc-pool.');
+                }
+                if (!opts.solPrice || opts.solPrice <= 0n) {
+                    throw new Error('SOL price unavailable — cannot estimate the SOL cost.');
+                }
+                const lamportsEst = lamportsForCost(estCostRaw, opts.solPrice);
+                const haveLamports = await connection.getBalance(buyer);
+                if (BigInt(haveLamports) < lamportsEst) {
+                    throw new Error(
+                        `Insufficient SOL: need ≈${formatSol(lamportsEst)} SOL, have ${formatSol(BigInt(haveLamports))} SOL.`
+                    );
+                }
             }
 
             const [userIndexPda] = PublicKey.findProgramAddressSync(
@@ -82,6 +125,12 @@ export function useOfferClaim(accounts: ClaimAccounts | null, usdcDecimals: numb
             }
 
             const tx = new Transaction();
+            // Chunking: the USDC instruction is ~950 bytes, so all tiers fit in
+            // one transaction. A single SOL instruction is ~1180 bytes (+33 for
+            // the CPMM program remaining account), so two would exceed the
+            // 1232-byte packet limit — SOL claims go out as one transaction per
+            // tier (one wallet prompt each).
+            const txs: Transaction[] = currency === 'usdc' ? [tx] : [];
             for (let i = 0; i < active.length; i++) {
                 const { tier, units } = active[i];
                 const index = nextIndex + BigInt(i);
@@ -94,48 +143,147 @@ export function useOfferClaim(accounts: ClaimAccounts | null, usdcDecimals: numb
                     ],
                     STAKING_PROGRAM_ID
                 );
-                tx.add(
-                    await program.methods
-                        .offerClaim(tier, units, new BN(index.toString()))
+                if (currency === 'usdc') {
+                    const buyerUsdc = getAssociatedTokenAddressSync(accounts.usdcMint, buyer, false, TOKEN_PROGRAM_ID);
+                    tx.add(
+                        await program.methods
+                            .offerClaim(tier, units, new BN(index.toString()))
+                            .accounts({
+                                buyer,
+                                ammState: accounts.ammState,
+                                offerList: accounts.offerList,
+                                afhoMint: accounts.afhoMint,
+                                usdcMint: accounts.usdcMint,
+                                spotOracle: accounts.spotOracle,
+                                marketStatus: accounts.marketStatus,
+                                buyerUsdc,
+                                ammUsdcVault: accounts.ammUsdcVault,
+                                usdcDip: accounts.usdcDip,
+                                usdcRewards: accounts.usdcRewards,
+                                cpmmPoolState: accounts.cpmmPoolState,
+                                cpmmObservation: accounts.cpmmObservation,
+                                cpmmInputVault: accounts.cpmmInputVault,
+                                cpmmOutputVault: accounts.cpmmOutputVault,
+                                stakingProgram: STAKING_PROGRAM_ID,
+                                stakingPool: accounts.stakingPool,
+                                userIndex: userIndexPda,
+                                stakePosition: stakePositionPda,
+                                ammAfhoVault: accounts.ammAfhoVault,
+                                stakingVault: accounts.stakingVault,
+                                tokenProgram: TOKEN_PROGRAM_ID,
+                                token2022Program: TOKEN_2022_PROGRAM_ID,
+                                systemProgram: SystemProgram.programId,
+                            })
+                            .instruction()
+                    );
+                } else {
+                    if (!sol) {
+                        throw new Error('SOL payments need the SOL/USDC pool pinned — run anchor run set-sol-usdc-pool.');
+                    }
+                    const solTx = new Transaction();
+                    const solIx = await program.methods
+                        .offerClaimSol(tier, units, new BN(index.toString()))
                         .accounts({
                             buyer,
                             ammState: accounts.ammState,
                             offerList: accounts.offerList,
                             afhoMint: accounts.afhoMint,
                             usdcMint: accounts.usdcMint,
-                            spotOracle: accounts.spotOracle,
                             marketStatus: accounts.marketStatus,
-                            buyerUsdc,
-                            ammUsdcVault: accounts.ammUsdcVault,
+                            usdcVault: accounts.ammUsdcVault,
                             usdcDip: accounts.usdcDip,
                             usdcRewards: accounts.usdcRewards,
-                            cpmmPoolState: accounts.cpmmPoolState,
-                            cpmmObservation: accounts.cpmmObservation,
-                            cpmmInputVault: accounts.cpmmInputVault,
-                            cpmmOutputVault: accounts.cpmmOutputVault,
+                            wsolVault: sol.wsolVault,
+                            wrappedSolMint: sol.wrappedSolMint,
+                            solUsdcPoolState: sol.solUsdcPoolState,
+                            solUsdcAmmConfig: sol.solUsdcAmmConfig,
+                            solUsdcInputVault: sol.solUsdcInputVault,
+                            solUsdcOutputVault: sol.solUsdcOutputVault,
+                            solUsdcObservation: sol.solUsdcObservation,
+                            solUsdcAuthority: sol.solUsdcAuthority,
                             stakingProgram: STAKING_PROGRAM_ID,
                             stakingPool: accounts.stakingPool,
                             userIndex: userIndexPda,
                             stakePosition: stakePositionPda,
                             ammAfhoVault: accounts.ammAfhoVault,
                             stakingVault: accounts.stakingVault,
+                            associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
                             tokenProgram: TOKEN_PROGRAM_ID,
                             token2022Program: TOKEN_2022_PROGRAM_ID,
+                            systemProgram: SystemProgram.programId,
+                            // Pricing oracles are only used in unpinned mode;
+                            // the SOL path is only exposed when both pools are
+                            // pinned, so they are unused here. Anchor optional
+                            // accounts must still be passed, and programId is the
+                            // sentinel that means "omitted". Because they live at
+                            // the end of the account list, the sentinel does not
+                            // shift any required account.
+                            spotOracle: program.programId,
+                            solOracle: program.programId,
+                            cpmmPoolState: accounts.cpmmPoolState,
+                            cpmmObservation: accounts.cpmmObservation,
+                            cpmmInputVault: accounts.cpmmInputVault,
+                            cpmmOutputVault: accounts.cpmmOutputVault,
                         })
-                        .instruction()
-                );
+                        // The program CPIs the wSOL→USDC swap into
+                        // amm_state.cpmm_program (Raydium CPMM). Solana's
+                        // runtime refuses a CPI unless the callee program id
+                        // is itself among the caller instruction's accounts
+                        // (otherwise: "Unknown program DRay…" +
+                        // "An account required by the instruction is missing").
+                        // The deployed amm program has no struct slot for it,
+                        // so pass it as a read-only remaining account — it is
+                        // appended after the optional-account sentinels and
+                        // never consumed by Anchor's account deserializer.
+                        .remainingAccounts([
+                            {
+                                pubkey: sol.cpmmProgram,
+                                isSigner: false,
+                                isWritable: false,
+                            },
+                        ])
+                        .instruction();
+                    solTx.add(solIx);
+                    txs.push(solTx);
+                }
             }
 
-            const sig = await sendAndConfirm(tx);
-            setTxSig(sig);
+            // One wallet prompt per transaction.
+            let lastSig: string | null = null;
+            for (const t of txs) {
+                lastSig = await sendAndConfirm(t);
+            }
+            if (!lastSig) throw new Error('Claim produced no transactions');
+            setTxSig(lastSig);
             setStatus('success');
             return true;
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Claim transaction failed');
+            let message = err instanceof Error ? err.message : 'Claim transaction failed';
+            // Anchor/Solana transaction errors carry simulator logs; surface them
+            // so the UI shows the same detail the wallet would show on simulation.
+            if (err instanceof SendTransactionError) {
+                try {
+                    const logs = await err.getLogs(connection);
+                    if (logs && logs.length > 0) {
+                        message = `${message}\n\nLogs:\n${logs.join('\n')}`;
+                    }
+                } catch {
+                    // getLogs can fail if the connection is gone; keep the original message.
+                }
+            } else if (
+                err &&
+                typeof err === 'object' &&
+                'logs' in err &&
+                Array.isArray((err as { logs: string[] }).logs)
+            ) {
+                const logs = (err as { logs: string[] }).logs;
+                message = `${message}\n\nLogs:\n${logs.join('\n')}`;
+            }
+            setError(message);
             setStatus('error');
             return false;
         }
-    }, [program, accounts, connection, usdcDecimals]);
+    }, [program, accounts, solAccounts, connection, usdcDecimals]);
 
     return { claim, status, txSig, error, reset };
 }

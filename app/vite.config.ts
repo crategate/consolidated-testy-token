@@ -31,6 +31,10 @@ function bufferPolyfill(): Plugin {
 }
 
 export default defineConfig({
+    // Clean browser-router URLs need an absolute base. If you deploy to a
+    // subfolder, change this to '/subfolder/' and set BrowserRouter basename
+    // to match, and configure your server to serve index.html for all routes.
+    base: '/',
     plugins: [bufferPolyfill(), react()],
     resolve: {
         alias: {
@@ -43,10 +47,17 @@ export default defineConfig({
         global: 'globalThis',
     },
     optimizeDeps: {
-        esbuildOptions: {
-            define: {
-                global: 'globalThis',
-            },
+        rolldownOptions: {
+            output: {
+                codeSplitting: {
+                    groups: [
+                        {
+                            test: /node_modules/,
+                            name: 'vendor',
+                        },
+                    ],
+                }
+            }
         },
         include: ['buffer', '@coral-xyz/anchor', '@solana/web3.js'],
     },

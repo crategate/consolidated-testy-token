@@ -1,65 +1,75 @@
+/* Fixed top-of-page "offers available now" banner. Full-width, short,
+   dark tinted amber glass — obvious, but not a solid yellow shout. */
 .home-offer-indicator {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
     display: flex;
     align-items: center;
-    gap: 14px;
-    width: 100%;
-    padding: 16px 22px;
-    margin: 16px 0;
-    background: linear-gradient(90deg, #1a0f2e 0%, #2a1b52 100%);
-    border: 1px solid #863bff;
-    border-radius: 14px;
-    color: #ede6ff;
+    justify-content: center;
+    gap: 10px;
+    height: 40px;
+    padding: 0 16px;
+    background: rgba(255, 214, 10, 0.13);
+    backdrop-filter: blur(12px) saturate(140%);
+    -webkit-backdrop-filter: blur(12px) saturate(140%);
+    color: #ffd60a;
     text-decoration: none;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    border-bottom: 1px solid rgba(255, 214, 10, 0.35);
+    box-shadow: 0 2px 14px rgba(0, 0, 0, 0.35);
+    white-space: nowrap;
+    overflow: hidden;
 }
 
 .home-offer-indicator:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 0 24px rgba(134, 59, 255, 0.3);
+    background: rgba(255, 214, 10, 0.19);
+    border-bottom-color: rgba(255, 214, 10, 0.55);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .home-offer-indicator {
+        animation: none !important;
+    }
+}
+
+/* Reserves the banner's height in flow so page content starts below it. */
+.home-offer-indicator-spacer {
+    height: 40px;
 }
 
 .indicator-pulse {
-    width: 14px;
-    height: 14px;
-    background: #4ade80;
+    width: 9px;
+    height: 9px;
     border-radius: 50%;
-    box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.7);
-    animation: pulse-green 2.2s infinite;
+    background: #15803d;
+    box-shadow: 0 0 8px rgba(21, 128, 61, 0.7);
     flex-shrink: 0;
-}
-
-@keyframes pulse-green {
-    0% {
-        transform: scale(0.95);
-        box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.7);
-    }
-
-    70% {
-        transform: scale(1);
-        box-shadow: 0 0 0 12px rgba(74, 222, 128, 0);
-    }
-
-    100% {
-        transform: scale(0.95);
-        box-shadow: 0 0 0 0 rgba(74, 222, 128, 0);
-    }
 }
 
 .indicator-text {
     display: flex;
-    flex-direction: column;
-    gap: 2px;
-    line-height: 1.25;
+    align-items: baseline;
+    gap: 6px;
+    line-height: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .indicator-text strong {
-    font-size: 17px;
+    font-size: 14px;
     font-weight: 800;
-    color: #ffffff;
-    letter-spacing: -0.02em;
+    color: #ffd60a;
+    letter-spacing: -0.01em;
 }
 
 .indicator-text span {
     font-size: 13px;
-    color: #b8a6e0;
+    font-weight: 500;
+    color: rgba(255, 214, 10, 0.72);
+    overflow: hidden;
+    text-overflow: ellipsis;
 }

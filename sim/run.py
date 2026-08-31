@@ -367,9 +367,9 @@ def check_v3(results, scenarios):
                 viol.append(f"{n} d{r['day']} neg-count")
             if r["sheet"]["sheet_tokens"] > r["vault_pre"] * 0.05 + 1e-6:
                 viol.append(f"{n} d{r['day']} cap")
-            if any(not (3 <= x["vesting_days"] <= 30) for x in t.values()):
+            if any(not (3 <= x["vesting_days"] <= 25) for x in t.values()):
                 viol.append(f"{n} d{r['day']} vest-range")
-    _report(out, "v3.6 hard constraints: sml<med<big, disc big>med>sml, counts>=0, sheet<=5%, vest 3..30",
+    _report(out, "v3.6 hard constraints: sml<med<big, disc big>med>sml, counts>=0, sheet<=5%, vest 3..25",
             not viol, f"violations: {viol[:5]}" if viol else "every listed day, all scenarios")
 
     lo, hi = results["bull-low-demand"], results["bull-high-demand"]
