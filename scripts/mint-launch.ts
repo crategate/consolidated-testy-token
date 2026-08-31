@@ -33,7 +33,7 @@ import * as dotenv from "dotenv";
 // real USDC mint and uncomment it.
 dotenv.config();
 
-const USDC_MINT = new PublicKey("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"); // devnet
+const USDC_MINT = new PublicKey("USDCoctVLVnvTXBEuP9s8hntucdJokbo17RwHuNXemT"); // devnet (Raydium devnet faucet)
 // const USDC_MINT = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"); // MAINNET
 
 const crankKeypairPath = path.join(process.cwd(), "target", "deploy", "crank_oracle-keypair.json");
@@ -81,9 +81,9 @@ async function main() {
     // 4. Token Metadata Configuration
     const metadata: TokenMetadata = {
         mint: mint.publicKey,
-        name: 'nitenite',
-        symbol: '8-29999',
-        uri: 'https://copper-quick-koi-488.mypinata.cloud/ipfs/bafkreiblskodz5bwtelz4id437rnhsndtq3rfh7jjsgaj72wb55cgnbbea',
+        name: 'After Hours',
+        symbol: 'AFHO31',
+        uri: 'https://copper-quick-koi-488.mypinata.cloud/ipfs/bafkreibzpsjq7c2hqogq2ukdz4wbadv75v5rdy2xgzgo56iie6agef5xhe',
         additionalMetadata: [['description', 'a token bound by the hours of Wall Street']],
     };
     const metadataLen = pack(metadata).length + TYPE_SIZE + LENGTH_SIZE;
@@ -136,10 +136,12 @@ async function main() {
     }
 
     // MINT & POOL CONFIG
-    const FULL_MINT_AMOUNT = 10000;
-    const AFHO_TO_LP = 1000;
-    const USDC_TO_LP = 10;
-    const AFHO_TO_VAULT = 1000;
+    const FULL_MINT_AMOUNT = 1000000000;
+    // NOTE: wallet AFHO balance after amm-init's 75% vault sweep is 249,999,978,
+    // so the LP leg must stay below that when re-running on an existing mint.
+    const AFHO_TO_LP = 249000000;
+    const USDC_TO_LP = 1200;
+    const AFHO_TO_VAULT = 745000000;  // change in amm-init
 
     /// MINT TOKENS & TEST TRANSFER
     // ==========================================
@@ -237,8 +239,11 @@ async function main() {
 
         // Small devnet seed amounts — tune as needed. MAINNET: these become
         // the 25% LP leg (AFHO side) + the matching USDC quote side.
-        const seedAfho = new anchor.BN(AFHO_TO_LP * 10 ** decimals);
-        const seedUsdc = new anchor.BN(USDC_TO_LP * 1_000_000); // 10 USDC raw (6 dec)
+        // Multiply inside BN — the raw amounts (2.49e17) exceed the JS
+        // safe-integer range and bn.js asserts on numbers >= 2^53
+        // (bare "Assertion failed").
+        const seedAfho = new anchor.BN(AFHO_TO_LP).mul(new anchor.BN(10).pow(new anchor.BN(decimals)));
+        const seedUsdc = new anchor.BN(USDC_TO_LP).mul(new anchor.BN(1_000_000)); // USDC raw (6 dec)
 
         const { execute, extInfo } = await raydium.cpmm.createPool({
             programId: DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_PROGRAM,

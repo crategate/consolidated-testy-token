@@ -48,7 +48,7 @@ export function StakeForm({ mint, marketStatusPda, onStakeSuccess }: StakeFormPr
             data-step={step}
             style={{ '--shadow-delay': '0.4s' } as React.CSSProperties}
         >
-            <h3>Stake AFHO</h3>
+            <h3>Lock & Earn AFHO</h3>
             <div className="mint-display">
                 Mint: <br /><code>{mint.toBase58().slice(0, 8)}…{mint.toBase58().slice(-8)}</code>
             </div>
@@ -57,7 +57,7 @@ export function StakeForm({ mint, marketStatusPda, onStakeSuccess }: StakeFormPr
             </div>
             <p className="custodial-note">
                 <GlitchText
-                    text="Tokens move into the program vault and no longer appear in your wallet. Your stake is tracked by an on-chain position account."
+                    text="Tokens move into the program vault and no longer appear in your wallet. You can see your positions below. Rewards from bond sales & unlock penalties."
                     variant="light"
                     split="word"
                     step={0.3}
@@ -71,6 +71,16 @@ export function StakeForm({ mint, marketStatusPda, onStakeSuccess }: StakeFormPr
                 disabled={loading}
                 max={balance || undefined}
             />
+            {amount !== '' && Number(amount) > 0 && (
+                <p className="stake-penalty-note" role="alert">
+                    <span aria-hidden="true">⚠</span>
+                    <span>
+                        Penalty: unlocking your position outside NYSE trading hours
+                        (after-hours, closed, or halted) penalizes your principal.
+                        Exit while the market is open to avoid it.
+                    </span>
+                </p>
+            )}
             <button onClick={handleStake} disabled={loading || !amount || (balance !== null && Number(amount) > balance)}>
                 {loading ? 'Staking…' : 'Stake'}
             </button>

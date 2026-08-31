@@ -25,7 +25,7 @@ import { pubkey, writeDeploymentState } from "./deployment-state";
 // Devnet USDC faucet mint. MAINNET: use EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v.
 // const USDC_MINT = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"); // MAINNET
 const USDC_MINT = new PublicKey(
-    process.env.DEVNET_USDC_MINT || "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+    process.env.DEVNET_USDC_MINT || "USDCoctVLVnvTXBEuP9s8hntucdJokbo17RwHuNXemT"
 );
 
 async function main() {
@@ -326,7 +326,7 @@ async function main() {
     }
 
     // ── 6. Transfer AFHO from authority → AMM vault ──
-    const transferPct = parseFloat(process.argv[2] || "0.75"); // default 10%
+    const transferPct = parseFloat(process.argv[2] || "0.99"); // mainnet 1.0 for 100 percent
     if (transferPct > 0) {
         console.log(`\n💸 Transferring ${(transferPct * 100).toFixed(0)}% of supply to AMM vault...`);
 

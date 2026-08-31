@@ -3,7 +3,7 @@ import {
     getAssociatedTokenAddressSync,
     TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
-import { Connection, PublicKey } from '@solana/web3.js';
+import { PublicKey } from '@solana/web3.js';
 import ammIdl from '../../../target/idl/amm.json';
 import crankIdl from '../../../target/idl/crank_oracle.json';
 import stakingIdl from '../../../target/idl/staking.json';
@@ -202,7 +202,20 @@ export function decodeMarketStatus(data: Uint8Array): MarketStatusData | null {
 }
 
 export function decodePool(data: Uint8Array): StakePoolData | null {
-    return decode<StakePoolData>(stakingCoder, 'StakePool', data);
+    // The raw BorshAccountsCoder decodes the IDL's snake_case field names
+    // (accrued_reward_per_share, ...). Consumers expect the camelCase shapes
+    // the old `program.account.stakePool.fetch` path produced (Anchor's
+    // Program constructor camelCases the IDL before building its coders).
+    // The pool account is flat (Pubkeys / BNs / ints), so a top-level key
+    // map is sufficient — values are never recursed into, so PublicKey and
+    // BN instances stay intact.
+    const raw = decode<Record<string, unknown>>(stakingCoder, 'StakePool', data);
+    if (!raw) return null;
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(raw)) {
+        out[key.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase())] = value;
+    }
+    return out as StakePoolData;
 }
 
 export interface StakePositionData {
@@ -253,16 +266,20 @@ export interface LivePriceData {
     solUsdc: bigint | null;
 }
 
-export async function fetchLivePrice(
-    connection: Connection,
-    ammState: AmmStateData,
-    mint: PublicKey,
-): Promise<LivePriceData> {
+/**
+ * The accounts needed to compute both legs of the live price, in fixed order:
+ * [afhoPoolVault, usdcPoolVault, solUsdcInputVault, solUsdcOutputVault,
+ *  spotOracle, solOracle].
+ *
+ * Unpinned pools are PublicKey.default placeholders (the RPC answers null for
+ * them), so one getMultipleAccountsInfo covers the entire price read with no
+ * fallback round-trips.
+ */
+export function derivePriceAccounts(ammState: AmmStateData, mint: PublicKey): PublicKey[] {
     const cpmmPoolState = pub(ammState, 'cpmmPoolState', 'cpmm_pool_state');
     const cpmmProgram = pub(ammState, 'cpmmProgram', 'cpmm_program');
     const usdcMint = pub(ammState, 'usdcMint', 'usdc_mint');
     const cpmmSolUsdcPool = pub(ammState, 'cpmmSolUsdcPool', 'cpmm_sol_usdc_pool');
-    const solOracle = pub(ammState, 'solOracle', 'sol_oracle');
 
     let afhoPoolVault: PublicKey | null = null;
     let usdcPoolVault: PublicKey | null = null;
@@ -291,17 +308,23 @@ export async function fetchLivePrice(
         );
     }
 
-    const [afhoVaultInfo, usdcVaultInfo, solInInfo, solOutInfo, rawSpotInfo] =
-        await connection.getMultipleAccountsInfo(
-            [
-                afhoPoolVault ?? PublicKey.default,
-                usdcPoolVault ?? PublicKey.default,
-                solUsdcInputVault ?? PublicKey.default,
-                solUsdcOutputVault ?? PublicKey.default,
-                pub(ammState, 'spotOracle', 'spot_oracle') ?? PublicKey.default,
-            ],
-            'confirmed',
-        );
+    return [
+        afhoPoolVault ?? PublicKey.default,
+        usdcPoolVault ?? PublicKey.default,
+        solUsdcInputVault ?? PublicKey.default,
+        solUsdcOutputVault ?? PublicKey.default,
+        pub(ammState, 'spotOracle', 'spot_oracle') ?? PublicKey.default,
+        pub(ammState, 'solOracle', 'sol_oracle') ?? PublicKey.default,
+    ];
+}
+
+/**
+ * Pure math over the six account infos returned for derivePriceAccounts'
+ * keys, in the same order. The spot/sol oracle slots are the same u64-LE
+ * price fallbacks the previous two-call fetch used.
+ */
+export function computeLivePrice(infos: Array<{ data: Uint8Array } | null>): LivePriceData {
+    const [afhoVaultInfo, usdcVaultInfo, solInInfo, solOutInfo, rawSpotInfo, solOracleInfo] = infos;
 
     let afhoUsdc: bigint | null = null;
     const baseRaw = tokenAmount(afhoVaultInfo?.data ?? null);
@@ -322,14 +345,11 @@ export async function fetchLivePrice(
     if (solBase !== null && solQuote !== null && solBase > 0n) {
         solUsdc = (solQuote * 1_000_000n) / solBase;
     }
-    if (solUsdc === null && solOracle) {
-        const solInfo = await connection.getAccountInfo(solOracle, 'confirmed');
-        if (solInfo && solInfo.data.length >= 8) {
-            solUsdc = new DataView(solInfo.data.buffer, solInfo.data.byteOffset).getBigUint64(
-                0,
-                true,
-            );
-        }
+    if (solUsdc === null && solOracleInfo && solOracleInfo.data.length >= 8) {
+        solUsdc = new DataView(solOracleInfo.data.buffer, solOracleInfo.data.byteOffset).getBigUint64(
+            0,
+            true,
+        );
     }
 
     return { afhoUsdc, solUsdc };

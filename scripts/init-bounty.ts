@@ -4,7 +4,8 @@ import * as path from "path";
 import { PublicKey } from "@solana/web3.js";
 
 // Devnet USDC. MAINNET: swap in the real USDC mint.
-const USDC_MINT = new PublicKey("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU");
+const USDC_MINT = new PublicKey("USDCoctVLVnvTXBEuP9s8hntucdJokbo17RwHuNXemT");
+// const USDC_MINT = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"); // MAINNET
 // $0.50 per crank, +5% per calendar year after the base year.
 const BOUNTY_USD_RAW = 500_000n; // 0.50 USDC (6 dp)
 const BASE_YEAR = 2026;

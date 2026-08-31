@@ -1,4 +1,5 @@
 import { GlitchText } from '../GlitchText';
+import { SplitDonut } from './SplitDonut';
 
 const EXPLAINERS = [
     {
@@ -21,12 +22,6 @@ const EXPLAINERS = [
         title: 'Bond Offer Desk',
         body: 'After closing bell, the offer desk sells vested AFHO bonds. This bond vault starts as 75% of total minted tokens.',
     },
-];
-
-const SPLIT = [
-    { label: 'Buybacks', value: 80, color: 'var(--neon-cyan)' },
-    { label: 'Dip Reserve', value: 10, color: 'var(--neon-pink)' },
-    { label: 'to Stakers', value: 10, color: 'var(--neon-purple)' },
 ];
 
 export function ExplainerSection() {
@@ -62,20 +57,7 @@ export function ExplainerSection() {
                     style={{ '--glitch-delay': '1.4s', '--shadow-delay': '2s' } as React.CSSProperties}
                 >
                     <h4 className="split-title">Bond Offer Proceeds:</h4>
-                    <div className="split-bars">
-                        {SPLIT.map((s) => (
-                            <div key={s.label} className="split-bar-wrap">
-                                <div className="split-bar-track">
-                                    <div
-                                        className="split-bar-fill"
-                                        style={{ height: `${s.value}%`, backgroundColor: s.color }}
-                                    />
-                                </div>
-                                <span className="split-value">{s.value}%</span>
-                                <span className="split-label">{s.label}</span>
-                            </div>
-                        ))}
-                    </div>
+                    <SplitDonut />
                 </div>
             </div>
         </section >

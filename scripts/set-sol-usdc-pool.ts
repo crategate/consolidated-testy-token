@@ -31,7 +31,7 @@ import { writeDeploymentState } from "./deployment-state";
 
 const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
 // Devnet USDC. MAINNET: swap in the real USDC mint and uncomment it.
-const USDC_MINT = new PublicKey("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"); // devnet
+const USDC_MINT = new PublicKey("USDCoctVLVnvTXBEuP9s8hntucdJokbo17RwHuNXemT"); // devnet (Raydium devnet faucet)
 // const USDC_MINT = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"); // MAINNET
 
 // 200 USDC/SOL — matches the mock sol_oracle (200000) that amm-init seeds on

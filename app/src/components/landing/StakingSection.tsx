@@ -51,7 +51,7 @@ export function StakingSection({ mint, marketStatusPda }: StakingSectionProps) {
         <section className="landing-section staking-section alt">
             <div className="landing-section-inner">
                 <div className="staking-toolbar">
-                    <h2><GlitchText text="Active Staking Positions" variant="streetlight" step={0.05} /></h2>
+                    <h2><GlitchText text="Active Positions" variant="streetlight" step={0.05} /></h2>
                     <div className="staking-actions">
                         {connected && hasPositions && (
                             <>

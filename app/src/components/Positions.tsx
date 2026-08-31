@@ -92,7 +92,6 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
 
     return (
         <div className="positions-list">
-            <h3>Your Positions</h3>
 
             <div className="claims-header neon-glitch glass-pane">
                 <button
@@ -120,63 +119,63 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
                     const isVesting = daysRemaining > 0;
                     const isBond = pos.daysToUnlock > 0;
                     return (
-                    <div key={pos.index} className={`position-card neon-glitch glass-pane ${isVesting ? 'vesting' : ''}`}>
-                        <div className="position-row">
-                            <span><strong>{(pos.amount / 1e9).toFixed(2)} </strong> AFHO</span>
-                            <div className="position-badges">
-                                {isBond && (
-                                    <span className="bond-badge" title="Purchased via night-desk bond offer">
-                                        Bond
-                                    </span>
-                                )}
-                                {'multiplierDisplay' in pos && pos.multiplierDisplay !== '—' && (
-                                    <span className="multiplier-badge">{pos.multiplierDisplay}x</span>
-                                )}
-                            </div>
-                        </div>
-                        {isVesting && (
-                            <div className="vesting-countdown">
-                                <span className="countdown-number">{daysRemaining}</span>
-                                <span className="countdown-label">
-                                    trading day{daysRemaining === 1 ? '' : 's'} to unlock
-                                </span>
-                            </div>
-                        )}
-                        <div><strong>Entry Day:</strong> #{pos.entryTradingDay}</div>
-                        {'tradingDays' in pos && pos.tradingDays > 0 && (
-                            <div><strong>Trading Days Elapsed:</strong> {pos.tradingDays}</div>
-                        )}
-                        {'netRewardDisplay' in pos && pos.netRewardDisplay !== '—' ? (
-                            <>
-                                <div className="reward-line">
-                                    <strong>Available Reward:</strong> {pos.netRewardDisplay}
+                        <div key={pos.index} className={`position-card neon-glitch glass-pane ${isVesting ? 'vesting' : ''}`}>
+                            <div className="position-row">
+                                <span><strong>{(pos.amount / 1e9).toFixed(2)} </strong> AFHO</span>
+                                <div className="position-badges">
+                                    {isBond && (
+                                        <span className="bond-badge" title="Purchased via night-desk bond offer">
+                                            Bond
+                                        </span>
+                                    )}
+                                    {'multiplierDisplay' in pos && pos.multiplierDisplay !== '—' && (
+                                        <span className="multiplier-badge">{pos.multiplierDisplay}x</span>
+                                    )}
                                 </div>
-                                {'penaltyRaw' in pos && pos.penaltyRaw > 0 && (
-                                    <div className="penalty-warning">
-                                        ⚠️ Market penalty: –{pos.penaltyRaw.toFixed(4)} AFHO
+                            </div>
+                            {isVesting && (
+                                <div className="vesting-countdown">
+                                    <span className="countdown-number">{daysRemaining}</span>
+                                    <span className="countdown-label">
+                                        trading day{daysRemaining === 1 ? '' : 's'} to unlock
+                                    </span>
+                                </div>
+                            )}
+                            <div><strong>Entry Day:</strong> #{pos.entryTradingDay}</div>
+                            {'tradingDays' in pos && pos.tradingDays > 0 && (
+                                <div><strong>Trading Days Elapsed:</strong> {pos.tradingDays}</div>
+                            )}
+                            {'netRewardDisplay' in pos && pos.netRewardDisplay !== '—' ? (
+                                <>
+                                    <div className="reward-line">
+                                        <strong>Available Reward:</strong> {pos.netRewardDisplay}
                                     </div>
-                                )}
-                                {'posrTaxRaw' in pos && pos.posrTaxRaw > 0 && (
-                                    <div className="posr-line">
-                                        Protocol tax: –{pos.posrTaxRaw.toFixed(4)} AFHO
-                                    </div>
-                                )}
-                            </>
-                        ) : (
-                            <div>Calculating rewards…</div>
-                        )}
-                        <div><strong>Last Claim:</strong> {new Date(pos.lastClaimTimestamp * 1000).toLocaleDateString()}</div>
+                                    {'penaltyRaw' in pos && pos.penaltyRaw > 0 && (
+                                        <div className="penalty-warning">
+                                            ⚠️ Market penalty: –{pos.penaltyRaw.toFixed(4)} AFHO
+                                        </div>
+                                    )}
+                                    {'posrTaxRaw' in pos && pos.posrTaxRaw > 0 && (
+                                        <div className="posr-line">
+                                            Protocol tax: –{pos.posrTaxRaw.toFixed(4)} AFHO
+                                        </div>
+                                    )}
+                                </>
+                            ) : (
+                                <div>Calculating rewards…</div>
+                            )}
+                            <div><strong>Last Claim:</strong> {new Date(pos.lastClaimTimestamp * 1000).toLocaleDateString()}</div>
 
-                        <button
-                            className="unstake"
-                            onClick={() => handleUnstake(pos)}
-                            disabled={unstakeLoadingIndex === pos.index}
-                        >
-                            {unstakeLoadingIndex === pos.index
-                                ? 'Exiting…'
-                                : `Exit Position (${exitPenaltyPct}% penalty)`}
-                        </button>
-                    </div>
+                            <button
+                                className="unstake"
+                                onClick={() => handleUnstake(pos)}
+                                disabled={unstakeLoadingIndex === pos.index}
+                            >
+                                {unstakeLoadingIndex === pos.index
+                                    ? 'Exiting…'
+                                    : `Exit Position (${exitPenaltyPct}% penalty)`}
+                            </button>
+                        </div>
                     );
                 })}
             </div>

@@ -219,6 +219,23 @@
     line-height: 1.5;
 }
 
+/* Bright amber penalty warning — appears only once an amount is typed. */
+.stake-penalty-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    line-height: 1.5;
+    color: var(--neon-amber);
+    background: rgba(255, 170, 0, 0.1);
+    border: 1px solid rgba(255, 170, 0, 0.6);
+    border-radius: var(--radius-sm);
+    padding: 0.65rem 0.8rem;
+    margin: -0.25rem 0 1rem;
+    box-shadow: 0 0 16px rgba(255, 170, 0, 0.15);
+}
+
 .mint-display {
     font-family: var(--font-mono);
     font-size: 0.75rem;
@@ -316,7 +333,7 @@
 }
 
 .grand-total {
-    font-size: 0.9rem;
+    font-size: 0.6rem;
     color: var(--text-secondary);
     font-family: var(--font-mono);
 }
@@ -324,6 +341,7 @@
 .grand-total strong {
     color: var(--neon-green);
     font-size: 1.1rem;
+    font-weight: 400;
 }
 
 /* ─── Position Cards ─── */
@@ -659,60 +677,143 @@
     color: var(--text-primary);
 }
 
-.split-bars {
-    margin-top: 60px;
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-around;
-    gap: 1rem;
-    height: 160px;
-}
-
-.split-bar-wrap {
+.split-donut {
+    --donut-rotation: 0deg;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.5rem;
-    flex: 1;
-    max-width: 100px;
+    gap: 1.25rem;
+    margin-top: 1.5rem;
 }
 
-.split-bar-track {
+.donut-svg {
     width: 100%;
-    height: 120px;
-    background: var(--bg-elevated);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-    position: relative;
-    border: 1px solid var(--border-subtle);
+    max-width: 280px;
+    height: auto;
+    overflow: visible;
 }
 
-.split-bar-fill {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    transition: height 0.8s ease;
-    box-shadow: 0 0 12px currentColor;
-    background-image: linear-gradient(105deg, transparent 40%, rgba(255, 255, 255, 0.18) 50%, transparent 60%);
-    background-size: 250% 100%;
-    background-position: -200% 0;
-    background-repeat: no-repeat;
+.donut-rotate {
+    transform-origin: 120px 120px;
+    transform: rotate(calc(-90deg + var(--donut-rotation)));
+    will-change: transform;
 }
 
-.split-value {
+.donut-segment {
+    filter: drop-shadow(0 0 7px var(--seg-color));
+    animation: donutPop 21s ease-in-out infinite;
+    animation-delay: var(--seg-delay, 0s);
+    transform-origin: 120px 120px;
+    will-change: filter, stroke-width;
+}
+
+.donut-label {
+    transform: translate(var(--label-x), var(--label-y)) rotate(calc(90deg - var(--donut-rotation)));
+    transform-origin: 0 0;
+    pointer-events: none;
+}
+
+.donut-label-dot {
+    filter: drop-shadow(0 0 4px var(--seg-color));
+}
+
+.donut-label-text {
+    text-anchor: middle;
+    dominant-baseline: middle;
+    fill: var(--text-primary);
     font-family: var(--font-mono);
-    font-size: 0.9rem;
-    font-weight: 700;
-    color: var(--text-primary);
+    text-shadow: 0 0 8px rgba(0, 0, 0, 0.8);
 }
 
-.split-label {
+.donut-label-value {
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+
+.donut-label-name {
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    fill: var(--text-secondary);
+}
+
+.donut-legend {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.75rem 1rem;
+}
+
+.donut-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
     font-size: 0.7rem;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.06em;
     color: var(--text-secondary);
-    text-align: center;
+}
+
+.donut-legend-swatch {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    box-shadow: 0 0 8px currentColor;
+}
+
+@keyframes donutPop {
+
+    0%,
+    91%,
+    100% {
+        filter: drop-shadow(0 0 7px var(--seg-color));
+        stroke-width: 34;
+    }
+
+    92% {
+        filter: drop-shadow(0 0 28px var(--seg-color)) brightness(1.7) saturate(1.4);
+        stroke-width: 41;
+    }
+
+    93%,
+    96% {
+        filter: drop-shadow(0 0 7px var(--seg-color));
+        stroke-width: 34;
+    }
+
+    97% {
+        filter: drop-shadow(0 0 34px var(--seg-color)) brightness(2) saturate(1.6);
+        stroke-width: 43;
+    }
+
+    98% {
+        filter: drop-shadow(0 0 9px var(--seg-color));
+        stroke-width: 34;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .split-donut {
+        --donut-rotation: 0deg;
+    }
+
+    .donut-rotate,
+    .donut-segment,
+    .donut-label {
+        animation: none !important;
+    }
+
+    .donut-segment {
+        filter: drop-shadow(0 0 7px var(--seg-color));
+    }
+
+    .donut-rotate {
+        transform: rotate(-90deg);
+    }
+
+    .donut-label {
+        transform: translate(var(--label-x), var(--label-y)) rotate(90deg);
+    }
 }
 
 /* ─── Built With Section ─── */
@@ -720,10 +821,6 @@
     display: grid;
     gap: 1rem;
     grid-template-columns: 1fr;
-}
-
-.built-with-grid .built-with-tile:nth-child(3) img {
-    width: 75%;
 }
 
 @media (min-width: 640px) {
@@ -736,7 +833,15 @@
     background: var(--bg-card);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
-    padding: 2rem 1.5rem;
+    /* Identical tiles: every tile fills its grid cell and flex-centers the
+       logo, so the three lockups (different aspect ratios) always sit in the
+       same-size box, vertically centered — no per-logo margin hacks. */
+    height: 100%;
+    min-height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
     text-align: center;
     transition: border-color 0.2s, box-shadow 0.2s;
     position: relative;
@@ -748,9 +853,12 @@
 }
 
 .built-with-logo {
+    /* Uniform logo rendering: every lockup gets the same 56px height and its
+       natural width (no per-logo width overrides), with contain letterboxing
+       if a tile ever gets narrower than the lockup. */
+    height: 56px;
+    width: auto;
     max-width: 100%;
-    max-height: 56px;
-    height: auto;
     object-fit: contain;
     filter: grayscale(0.15) brightness(1.05) drop-shadow(0 0 6px rgba(0, 240, 255, 0.15));
     transition: filter 0.2s;
