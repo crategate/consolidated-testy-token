@@ -75,8 +75,8 @@ pub struct BuyTheDip<'info> {
     /// price source adapter at mainnet). Address pinned at init.
     #[account(address = amm_state.spot_oracle)]
     pub spot_oracle: UncheckedAccount<'info>,
-    /// CHECK: SOL/USD price oracle — SOL-leg fills are converted to USDC
-    /// units with this before ratcheting the floor
+    /// CHECK: vestigial SOL/USD price oracle (SOL legs retired — USDC-only
+    /// swaps; kept in the account list until the §4 state-field cleanup)
     #[account(address = amm_state.sol_oracle)]
     pub sol_oracle: UncheckedAccount<'info>,
 
@@ -119,7 +119,8 @@ pub struct BuyTheDip<'info> {
         associated_token::token_program = token_program,
     )]
     pub pool_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
-    /// CHECK: lamport destination for the SOL leg — the pool PDA itself
+    /// CHECK: vestigial lamport destination from the retired SOL leg (mock
+    /// topology pinned to the pool PDA; unused by the USDC-only swap paths)
     #[account(mut, address = pool_state.key())]
     pub pool_sol: AccountInfo<'info>,
     /// CHECK: configured swap target program

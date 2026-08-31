@@ -89,8 +89,8 @@ pub mod amm {
     }
 
     // Same desk, SOL payment: the USDC-terms cost (same floor, same discount)
-    // is converted to lamports at the sol_oracle rate and splits 80/10/10
-    // into the SOL buyback / dip / staker-rewards holding vaults.
+    // is charged in lamports and swapped to USDC on the pinned SOL/USDC pool,
+    // then splits 80/10/10 into the USDC buyback / dip / staker-rewards vaults.
     pub fn offer_claim_sol(
         ctx: Context<OfferClaimSol>,
         tier: u8,

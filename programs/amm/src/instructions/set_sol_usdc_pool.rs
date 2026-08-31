@@ -16,8 +16,10 @@ pub struct SetSolUsdcPool<'info> {
 
 pub fn handler(ctx: Context<SetSolUsdcPool>, pool_state: Pubkey, amm_config: Pubkey) -> Result<()> {
     let caller = ctx.accounts.cranker.key();
+    // Authority-only: same rationale as set_cpmm_pool — the SOL/USDC pool
+    // decides offer_claim_sol pricing and the bounty top-up route.
     require!(
-        caller == ctx.accounts.amm_state.authority || caller == ctx.accounts.amm_state.keeper,
+        caller == ctx.accounts.amm_state.authority,
         ErrorCode::UnauthorizedCaller
     );
     ctx.accounts.amm_state.cpmm_sol_usdc_pool = pool_state;

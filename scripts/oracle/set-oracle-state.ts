@@ -155,7 +155,7 @@ async function main() {
     );
     console.log(`Tx: ${tx}`);
     console.log(
-        `\n⚠️  DEVNET/TEST-ONLY instruction — remove test_set_state (and this script) before mainnet.`
+        `\n!! DEVNET/TEST-ONLY instruction — remove test_set_state (and this script) before mainnet.`
     );
 }
 

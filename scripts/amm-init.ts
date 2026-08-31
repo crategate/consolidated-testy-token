@@ -45,7 +45,7 @@ async function main() {
     const AFHO_MINT = Keypair.fromSecretKey(
         new Uint8Array(mintKeyData)
     ).publicKey;
-    console.log("📍 AFHO mint:", AFHO_MINT.toBase58());
+    console.log(" AFHO mint:", AFHO_MINT.toBase58());
 
     // ── 2. Load AMM program ──
     const ammIdlPath = path.join(process.cwd(), "target", "idl", "amm.json");
@@ -62,7 +62,7 @@ async function main() {
         new Uint8Array(ammKeyData)
     ).publicKey;
     const ammProgram = new anchor.Program(ammIdl, provider);
-    console.log("📍 AMM program:", AMM_PROGRAM_ID.toBase58());
+    console.log(" AMM program:", AMM_PROGRAM_ID.toBase58());
 
     // ── 3. Load crank oracle program ID ──
     const crankKeyPath = path.join(
@@ -72,7 +72,7 @@ async function main() {
     const CRANK_PROGRAM_ID = Keypair.fromSecretKey(
         new Uint8Array(crankKeyData)
     ).publicKey;
-    console.log("📍 Crank oracle:", CRANK_PROGRAM_ID.toBase58());
+    console.log(" Crank oracle:", CRANK_PROGRAM_ID.toBase58());
 
     // ── 3b. DEX swap target (mock-dex-pool stub for devnet; real DEX at launch) ──
     const mockPoolKeyPath = path.join(
@@ -84,7 +84,7 @@ async function main() {
     const DEX_PROGRAM_ID = Keypair.fromSecretKey(
         new Uint8Array(JSON.parse(fs.readFileSync(mockPoolKeyPath, "utf-8")))
     ).publicKey;
-    console.log("📍 DEX program (stub):", DEX_PROGRAM_ID.toBase58());
+    console.log(" DEX program (stub):", DEX_PROGRAM_ID.toBase58());
 
     // ── 3c. Staking program + pool (offer_claim CPIs into it; run pool-init first) ──
     const stakingKeyPath = path.join(
@@ -96,7 +96,7 @@ async function main() {
     const STAKING_PROGRAM_ID = Keypair.fromSecretKey(
         new Uint8Array(JSON.parse(fs.readFileSync(stakingKeyPath, "utf-8")))
     ).publicKey;
-    console.log("📍 Staking program:", STAKING_PROGRAM_ID.toBase58());
+    console.log(" Staking program:", STAKING_PROGRAM_ID.toBase58());
 
     // ── 4. Derive all AMM PDAs ──
     const [ammStatePda] = PublicKey.findProgramAddressSync(
@@ -196,9 +196,9 @@ async function main() {
                     systemProgram: anchor.web3.SystemProgram.programId,
                 })
                 .rpc();
-            console.log("  ✅ Staking pool initialized:", stakingPoolPda.toBase58());
+            console.log("   Staking pool initialized:", stakingPoolPda.toBase58());
         } catch (e) {
-            console.log("  ⚠️  Staking pool already initialized (or failed):", (e as Error).message);
+            console.log("  !! Staking pool already initialized (or failed):", (e as Error).message);
         }
         writeDeploymentState({
             pool: stakingPoolPda.toBase58(),
@@ -246,7 +246,7 @@ async function main() {
     }
     const priceOracle = new PublicKey(deployment.oracleQuoteAccount);
 
-    console.log("\n📋 Derived AMM accounts:");
+    console.log("\n Derived AMM accounts:");
     console.log("  AMM State:     ", ammStatePda.toBase58());
     console.log("  Offer List:    ", offerListPda.toBase58());
     console.log("  SOL Vault:     ", solVaultPda.toBase58());
@@ -254,7 +254,7 @@ async function main() {
     console.log("  AFHO Vault:   ", afhoVaultAta.toBase58());
     console.log("  Market Status: ", marketStatusPda.toBase58());
 
-    console.log("\n📦 Checking vault accounts...");
+    console.log("\n Checking vault accounts...");
     const preIxs = [];
 
     const afhoInfo = await provider.connection.getAccountInfo(afhoVaultAta);
@@ -282,10 +282,10 @@ async function main() {
         tx.recentBlockhash = blockhash;
         tx.feePayer = provider.wallet.publicKey;
         const sig = await provider.sendAndConfirm(tx);
-        console.log("  ✅ Vaults created:", sig);
+        console.log("   Vaults created:", sig);
     }
     //   ── 5. Initialize AMM ──
-    console.log("\n🚀 Initializing AMM accounts...");
+    console.log("\n Initializing AMM accounts...");
     try {
         const tx = await ammProgram.methods
             .initializeAmm(spotOraclePda, stakingPoolPda, solOraclePda)
@@ -328,7 +328,7 @@ async function main() {
     // ── 6. Transfer AFHO from authority → AMM vault ──
     const transferPct = parseFloat(process.argv[2] || "0.99"); // mainnet 1.0 for 100 percent
     if (transferPct > 0) {
-        console.log(`\n💸 Transferring ${(transferPct * 100).toFixed(0)}% of supply to AMM vault...`);
+        console.log(`\n Transferring ${(transferPct * 100).toFixed(0)}% of supply to AMM vault...`);
 
         const authorityAfhoAta = getAssociatedTokenAddressSync(
             AFHO_MINT,
@@ -368,9 +368,9 @@ async function main() {
             tx.feePayer = provider.wallet.publicKey;
 
             const sig = await provider.sendAndConfirm(tx);
-            console.log(`✅ Transferred! Tx: ${sig}`);
+            console.log(` Transferred! Tx: ${sig}`);
         } else {
-            console.log("⚠️  Nothing to transfer (balance is zero).");
+            console.log("!! Nothing to transfer (balance is zero).");
         }
     }
 
@@ -385,7 +385,7 @@ async function main() {
         ammAfhoVault: pubkey(afhoVaultAta),
     });
 
-    console.log("\n🎉 AMM setup complete!");
+    console.log("\n AMM setup complete!");
 }
 
 main().catch((err) => {

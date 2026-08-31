@@ -62,7 +62,7 @@ export function useStake(mint: PublicKey | null, marketStatusPda?: PublicKey) {
         const stakeAmount = new BN(Number(amount) * 1e9);
 
         // ─── DEBUG LOGS ───
-        console.group('🔍 STAKE DEBUG');
+        console.group('STAKE DEBUG');
         console.log('STAKING_PROGRAM_ID :', STAKING_PROGRAM_ID.toBase58());
         console.log('program.programId  :', program.programId.toBase58());
         console.log('CRANK_PROGRAM_ID   :', CRANK_PROGRAM_ID.toBase58());

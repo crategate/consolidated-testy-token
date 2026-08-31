@@ -10,7 +10,7 @@ const VIEWBOX = 240;
 const CENTER = VIEWBOX / 2;
 const RADIUS = 72;
 const STROKE = 34;
-const LABEL_RADIUS = 98;
+const LABEL_RADIUS = 112;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 export function SplitDonut() {

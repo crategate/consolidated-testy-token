@@ -344,6 +344,26 @@
     font-weight: 400;
 }
 
+/* Locked-total header — centered sum of staked principal above the list */
+.locked-total-header {
+    text-align: center;
+    margin-bottom: 1.25rem;
+}
+
+.locked-total-label {
+    font-size: 0.6rem;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+}
+
+.locked-total-balance {
+    margin-left: 0.5rem;
+    color: var(--neon-cyan);
+    font-size: 1.1rem;
+    font-weight: 400;
+    font-family: var(--font-mono);
+}
+
 /* ─── Position Cards ─── */
 .position-card {
     margin-bottom: 1rem;

@@ -213,7 +213,7 @@ mod tests {
         assert_eq!(feed_info.feed_id()[0], 0x42);
 
         println!(
-            "✅ Test passed! Feed value reads correctly: {}",
+            " Test passed! Feed value reads correctly: {}",
             decimal_value
         );
     }

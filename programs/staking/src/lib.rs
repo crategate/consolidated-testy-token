@@ -19,8 +19,8 @@ pub use amm_stake::*;
 // REWARD MODEL: Pure Multiplier-Weighted Distribution (No Time-Based Yield)
 // ------------------------------------------------------------------------
 // There is NO automatic yield accrual over time. Rewards come exclusively from:
-//   1. Penalties paid by users who claim during non-market-open hours
-//   2. External deposits (AMM revenue)
+//   1. Unstake principal penalties during non-market-open hours
+//   2. External deposits (AMM revenue, deposit_rewards / deposit_rewards_from_amm)
 //
 // The multiplier (1.0x → 3.0x logarithmic) determines your SHARE of rewards.
 // Longer lock = higher multiplier = bigger slice of the penalty/AMM pie.
@@ -35,7 +35,10 @@ pub use amm_stake::*;
 //   weight = staked_amount * multiplier / 10_000
 //   multiplier = 10_000 + (trading_days * (max_multiplier - 10_000)) / (trading_days + 60)
 //
-// PENALTY TIERS (applied when claiming/unstaking during non-open hours):
+// CLAIMS: market-open only (ClaimsClosed otherwise) — no tiered claim
+// penalty; every claim pays the flat posr_tax (5% default) to the AMM bond vault.
+//
+// UNSTAKE PENALTY TIERS (principal, by market state):
 //   - State 0 (Open):      0 bps — no penalty
 //   - State 1 (After):     configurable (e.g., 300 = 3%)
 //   - State 2 (Closed):    configurable (e.g., 600 = 6%)
@@ -752,7 +755,7 @@ pub struct DepositRewards<'info> {
     pub mint: InterfaceAccount<'info, Mint>,
     #[account(mut, has_one = authority, has_one = mint)]
     pub pool: Account<'info, StakePool>,
-    #[account(mut, token::mint = mint, token::authority = pool)]
+    #[account(mut, address = pool.reward_vault)]
     pub reward_vault: InterfaceAccount<'info, TokenAccount>,
     #[account(mut, token::mint = mint, token::authority = authority)]
     pub authority_token: InterfaceAccount<'info, TokenAccount>,
@@ -765,7 +768,7 @@ pub struct Stake<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,
     pub mint: InterfaceAccount<'info, Mint>,
-    #[account(mut)]
+    #[account(mut, has_one = mint)]
     pub pool: Account<'info, StakePool>,
     #[account(
         init_if_needed,
@@ -790,7 +793,7 @@ pub struct Stake<'info> {
     pub position: Account<'info, StakePosition>,
     #[account(mut, token::mint = mint, token::authority = owner)]
     pub owner_token: InterfaceAccount<'info, TokenAccount>,
-    #[account(mut, token::mint = mint, token::authority = pool)]
+    #[account(mut, address = pool.vault)]
     pub vault: InterfaceAccount<'info, TokenAccount>,
     /// CHECK: Address verified by pool.market_status_pda constraint
     #[account(address = pool.market_status_pda)]
@@ -820,7 +823,7 @@ pub struct Claim<'info> {
     pub pool: Box<Account<'info, StakePool>>,
     #[account(mut, has_one = owner, has_one = pool)]
     pub position: Box<Account<'info, StakePosition>>,
-    #[account(mut, token::mint = mint, token::authority = pool)]
+    #[account(mut, address = pool.reward_vault)]
     pub reward_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     /// AMM bond vault — the AFHO ATA of the AMM state PDA. Destination of
     /// the 5% POSR legs (refills bond-sale supply). Pinned in the handler
@@ -844,11 +847,11 @@ pub struct Unstake<'info> {
     pub pool: Box<Account<'info, StakePool>>,
     #[account(mut, has_one = owner, has_one = pool, close = owner)]
     pub position: Box<Account<'info, StakePosition>>,
-    #[account(mut, token::mint = mint, token::authority = pool)]
+    #[account(mut, address = pool.vault)]
     pub vault: Box<InterfaceAccount<'info, TokenAccount>>,
-    #[account(mut, token::mint = mint, token::authority = pool)]
+    #[account(mut, address = pool.reward_vault)]
     pub reward_vault: Box<InterfaceAccount<'info, TokenAccount>>,
-    #[account(mut, token::mint = mint, token::authority = pool)]
+    #[account(mut, address = pool.penalty_vault)]
     pub penalty_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     /// AMM bond vault — see Claim.
     #[account(mut, token::mint = mint)]

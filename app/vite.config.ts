@@ -48,7 +48,16 @@ export default defineConfig({
     },
     optimizeDeps: {
         rolldownOptions: {
-
+            output: {
+                codeSplitting: {
+                    groups: [
+                        {
+                            test: /node_modules/,
+                            name: 'vendor',
+                        },
+                    ],
+                }
+            }
         },
         include: ['buffer', '@coral-xyz/anchor', '@solana/web3.js'],
     },

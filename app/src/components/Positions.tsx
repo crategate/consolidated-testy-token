@@ -90,8 +90,22 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
 
     const grandTotalDisplay = (grandTotal).toFixed(4);
 
+    // Sum of all staked principal — the user's total balance locked in staking.
+    const lockedTotal = positions.reduce((sum, pos) => sum + pos.amount, 0) / 1e9;
+    const lockedTotalDisplay = lockedTotal.toFixed(2);
+
     return (
         <div className="positions-list">
+            <div className="locked-total-header">
+                <span className="locked-total-label text-glitch-light">Total locked:</span>
+                <strong
+                    className="locked-total-balance text-glitch"
+                    style={{ '--glitch-delay': '0.9s' } as React.CSSProperties}
+                >
+                    {lockedTotalDisplay} AFHO
+                </strong>
+            </div>
+
 
             <div className="claims-header neon-glitch glass-pane">
                 <button
@@ -152,7 +166,7 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
                                     </div>
                                     {'penaltyRaw' in pos && pos.penaltyRaw > 0 && (
                                         <div className="penalty-warning">
-                                            ⚠️ Market penalty: –{pos.penaltyRaw.toFixed(4)} AFHO
+                                            !! Market penalty: –{pos.penaltyRaw.toFixed(4)} AFHO
                                         </div>
                                     )}
                                     {'posrTaxRaw' in pos && pos.posrTaxRaw > 0 && (

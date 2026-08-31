@@ -890,7 +890,7 @@ export const DEFAULT_FEED_ID = "4cd1cad962425681af07b9254b7d804de3ca3446fbfd1371
  */
 export function logFeedId(feedId: string): void {
     if (!process.argv.includes("--feedId")) {
-        console.log("ℹ️  No --feedId flag passed, using default BTC/USD Surge feed:");
+        console.log("  No --feedId flag passed, using default BTC/USD Surge feed:");
         console.log(`   Feed ID: ${feedId}`);
         console.log(`   Explorer: https://explorer.switchboardlabs.xyz/`);
     } else {
@@ -912,12 +912,12 @@ export async function handleSimulationError(
     connection: Connection,
     payer: PublicKey
 ): Promise<void> {
-    console.error("❌ Simulation failed:", error);
+    console.error("!! Simulation failed:", error);
 
     // Check if it's an AccountNotFound error (likely insufficient balance)
     const errStr = JSON.stringify(error);
     if (errStr.includes("AccountNotFound")) {
-        console.error("\n💡 Tip: This error usually means your payer account has no SOL balance.");
+        console.error("\n Tip: This error usually means your payer account has no SOL balance.");
         console.error(`   Payer: ${payer.toBase58()}`);
         console.error("   Please fund your account with SOL and try again.");
 

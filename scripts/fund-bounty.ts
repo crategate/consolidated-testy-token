@@ -28,7 +28,7 @@ async function main() {
             systemProgram: anchor.web3.SystemProgram.programId,
         })
         .rpc();
-    console.log("✅ Bounty vault funded:", tx);
+    console.log(" Bounty vault funded:", tx);
 }
 
 main();

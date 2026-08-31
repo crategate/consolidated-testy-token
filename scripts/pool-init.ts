@@ -140,13 +140,13 @@ async function main() {
             })
             .rpc();
 
-        console.log("\n✅ Pool initialized successfully!");
+        console.log("\n Pool initialized successfully!");
         console.log("Transaction:", tx);
     } catch (e: any) {
         if (e.message?.includes("already in use")) {
-            console.log("\n⚠️  Pool already initialized (this is fine).");
+            console.log("\n!! Pool already initialized (this is fine).");
         } else {
-            console.error("\n❌ Failed to initialize pool:", e);
+            console.error("\n!! Failed to initialize pool:", e);
             process.exit(1);
         }
     }

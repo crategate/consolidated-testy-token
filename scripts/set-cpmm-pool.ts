@@ -31,7 +31,7 @@ async function main() {
         .setCpmmPool(cpmmProgram, poolState, ammConfig)
         .accounts({ cranker: provider.wallet.publicKey, ammState: ammStatePda })
         .rpc();
-    console.log(`✅ CPMM pool pinned: ${poolState.toBase58()} (program ${cpmmProgram.toBase58()}, tx ${tx})`);
+    console.log(` CPMM pool pinned: ${poolState.toBase58()} (program ${cpmmProgram.toBase58()}, tx ${tx})`);
 }
 
 main().catch((err) => {

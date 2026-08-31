@@ -3,22 +3,22 @@ import { SplitDonut } from './SplitDonut';
 
 const EXPLAINERS = [
     {
-        icon: '🌙',
+        icon: 'N',
         title: 'NYSE Hours',
         body: 'When the market is open, after-hours, closed, and halted decides rewards, penalties, and the bond sales.',
     },
     {
-        icon: '⚡',
+        icon: 'x',
         title: 'Stake & Multiply',
         body: 'Lock AFHO to earn your cut of 10% from bond sales, and impatient weekend panickers. Exit after hours and penalties apply.',
     },
     {
-        icon: '📉',
+        icon: 'v',
         title: 'Buy the Dip',
         body: '10% of bond proceeds fuel an always active dip sniper, refilling the offer desk and buffering market turbulence',
     },
     {
-        icon: '🏦',
+        icon: '$',
         title: 'Bond Offer Desk',
         body: 'After closing bell, the offer desk sells vested AFHO bonds. This bond vault starts as 75% of total minted tokens.',
     },

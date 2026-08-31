@@ -80,7 +80,7 @@ async function main() {
         })
         .rpc();
 
-    console.log("✅ Test data loaded:", sig);
+    console.log(" Test data loaded:", sig);
     console.log("   price_changes: +0.30% -> +2.20% daily over 20 days");
     console.log("   accepted offers rising (big 10→50, med 20→70, sml 30→75)");
     console.log("   stake health steady at 40%");

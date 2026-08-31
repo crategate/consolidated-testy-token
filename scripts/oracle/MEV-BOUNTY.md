@@ -64,12 +64,11 @@ does `queue.fetchManagedUpdateIxs(crossbar, feedIds, { payer })` then appends
 the crank instruction to the same transaction, so a new quote + the crank land
 atomically (quote fee and your tx fee are on you; the bounty is the profit).
 
-The market-status feed needs no API keys. The combined quote's price feed
-(`priceChange24h`) reads third-party price APIs and only resolves with the
-`variableOverrides` keys (`MASSIVE_API_KEY`, `EARNINGS_API_KEY`, `JUP_API_KEY`)
-used by the protocol's own keeper. A status-only bot can skip the price feed
-entirely and crank with just the status feed. Feed IDs and the quote account
-are in `deployment.json`.
+The market-status feed needs no API keys. The canonical quote is
+status-only — the JUP `priceChange24h` feed was removed from the protocol's
+quote (momentum now comes from the on-chain self-sampled pool price), so a
+bot cranks with just the status feed. Feed IDs and the quote account are in
+`deployment.json`.
 
 Reference implementation: `scripts/oracle/mev-keeper.ts` (the protocol's own
 keeper competes in the same race).

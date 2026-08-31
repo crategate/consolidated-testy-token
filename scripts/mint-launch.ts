@@ -48,7 +48,7 @@ async function main() {
     const wallet = provider.wallet as anchor.Wallet;
     const connection = provider.connection;
 
-    console.log("🚀 Starting Token Deployment...");
+    console.log(" Starting Token Deployment...");
 
     // 2. Load or Generate Mint Keypair
     const mintKeypairPath = path.join(process.cwd(), "target", "deploy", "afho_token-keypair.json");
@@ -57,11 +57,11 @@ async function main() {
     if (fs.existsSync(mintKeypairPath)) {
         const keyData = JSON.parse(fs.readFileSync(mintKeypairPath, "utf-8"));
         mint = Keypair.fromSecretKey(new Uint8Array(keyData));
-        console.log(`✅ Loaded existing Mint: ${mint.publicKey.toBase58()}`);
+        console.log(` Loaded existing Mint: ${mint.publicKey.toBase58()}`);
     } else {
         mint = Keypair.generate();
         fs.writeFileSync(mintKeypairPath, JSON.stringify(Array.from(mint.secretKey)));
-        console.log(`✨ Generated new Mint: ${mint.publicKey.toBase58()}`);
+        console.log(` Generated new Mint: ${mint.publicKey.toBase58()}`);
     }
 
     const decimals = 9;
@@ -94,7 +94,7 @@ async function main() {
     // ==========================================
     // STEP 1: INITIALIZE MINT & EXTENSIONS
     // ==========================================
-    console.log("📝 Initializing Mint and Extensions...");
+    console.log(" Initializing Mint and Extensions...");
     const initMintTx = new Transaction().add(
         SystemProgram.createAccount({
             fromPubkey: wallet.publicKey,
@@ -130,7 +130,7 @@ async function main() {
 
     try {
         const sig1 = await sendAndConfirmTransaction(connection, initMintTx, [wallet.payer, mint], { skipPreflight: true, commitment: "confirmed" });
-        console.log(`✅ Mint initialized! Signature: ${sig1}`);
+        console.log(` Mint initialized! Signature: ${sig1}`);
     } catch (e) {
         console.log("Mint already initialized or failed:   ", e);
     }
@@ -145,12 +145,12 @@ async function main() {
 
     /// MINT TOKENS & TEST TRANSFER
     // ==========================================
-    console.log("📝 Minting tokens and running test transfer...");
+    console.log(" Minting tokens and running test transfer...");
     const sourceTokenAccount = getAssociatedTokenAddressSync(mint.publicKey, wallet.publicKey, false, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
     const recipient = Keypair.generate();
     const destinationTokenAccount = getAssociatedTokenAddressSync(mint.publicKey, recipient.publicKey, false, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
 
-    // ⚠️ MAINNET LAUNCH SPLIT — see MAINNET_CHECKLIST.md §5:
+    // !! MAINNET LAUNCH SPLIT — see MAINNET_CHECKLIST.md §5:
     //   25% of total supply → Raydium LP seed (AFHO leg; matching USDC quote
     //   from the raise), 75% → protocol vault. Replace the devnet amounts below
     //   (1.2M to wallet) with the real split at launch.
@@ -165,12 +165,12 @@ async function main() {
 
     try {
         const sig3 = await sendAndConfirmTransaction(connection, transferTx, [wallet.payer], { skipPreflight: true });
-        console.log(`✅ Minted ${(amountToMint / 10 ** decimals).toLocaleString()} AFHO to source wallet! Signature: ${sig3}`);
+        console.log(` Minted ${(amountToMint / 10 ** decimals).toLocaleString()} AFHO to source wallet! Signature: ${sig3}`);
 
-        console.log(`✅ Hook Transfer Successful! Signature: ${sig3}`);
+        console.log(` Hook Transfer Successful! Signature: ${sig3}`);
 
     } catch (e) {
-        console.error("❌ Transfer Failed:", e);
+        console.error("!! Transfer Failed:", e);
     }
 
     // ── Revoke mint authority: supply is permanently capped. ────────────────
@@ -187,9 +187,9 @@ async function main() {
             )
         );
         const revokeSig = await sendAndConfirmTransaction(connection, revokeTx, [wallet.payer], { skipPreflight: true });
-        console.log(`✅ Mint authority revoked: ${revokeSig}`);
+        console.log(` Mint authority revoked: ${revokeSig}`);
     } catch (e) {
-        console.error("❌ Mint authority revoke failed:", e);
+        console.error("!! Mint authority revoke failed:", e);
     }
 
     // ── Revoke metadata update authority: name/symbol/URI become immutable. ─
@@ -261,7 +261,7 @@ async function main() {
         const { txId } = await execute({ sendAndConfirm: true });
         const poolId = extInfo.address.poolId;
         const configId = extInfo.address.configId;
-        console.log(`✅ Raydium CPMM pool created: ${poolId.toBase58()} (tx ${txId})`);
+        console.log(` Raydium CPMM pool created: ${poolId.toBase58()} (tx ${txId})`);
         writeDeploymentState({
             raydiumPool: poolId.toBase58(),
             raydiumAmmConfig: configId.toBase58(),
@@ -283,19 +283,19 @@ async function main() {
                 burnTx.recentBlockhash = blockhash;
                 burnTx.feePayer = wallet.publicKey;
                 const burnSig = await sendAndConfirmTransaction(connection, burnTx, [wallet.payer], { skipPreflight: true });
-                console.log(`✅ LP burn smoke test (1 raw LP): ${burnSig}`);
+                console.log(` LP burn smoke test (1 raw LP): ${burnSig}`);
             }
         } catch (e) {
-            console.warn("⚠️ LP burn skipped:", e instanceof Error ? e.message : e);
+            console.warn("!! LP burn skipped:", e instanceof Error ? e.message : e);
         }
     } catch (e) {
         console.warn(
-            "⚠️ Raydium pool creation skipped (install @raydium-io/raydium-sdk-v2 and fund devnet USDC):",
+            "!! Raydium pool creation skipped (install @raydium-io/raydium-sdk-v2 and fund devnet USDC):",
             e instanceof Error ? e.message : e
         );
     }
 
-    console.log("🎉 Deployment Complete!");
+    console.log(" Deployment Complete!");
 }
 
 main().catch((err) => {

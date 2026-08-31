@@ -96,7 +96,7 @@ async function main() {
 
     const sig = await ammProgram.methods.loadOffers().accounts(accounts).rpc();
 
-    console.log("✅ Offer sheet loaded:", sig);
+    console.log(" Offer sheet loaded:", sig);
     console.log("   big 3 lots @ tier 6 (500 AFHO) · 9.0% off · 18-day vest");
     console.log("   med 5 lots @ tier 4 (100 AFHO) · 7.5% off ·  9-day vest");
     console.log("   sml 10 lots @ tier 2 ( 25 AFHO) · 6.0% off ·  5-day vest");

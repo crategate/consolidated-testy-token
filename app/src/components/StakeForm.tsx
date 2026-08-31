@@ -73,7 +73,6 @@ export function StakeForm({ mint, marketStatusPda, onStakeSuccess }: StakeFormPr
             />
             {amount !== '' && Number(amount) > 0 && (
                 <p className="stake-penalty-note" role="alert">
-                    <span aria-hidden="true">⚠</span>
                     <span>
                         Penalty: unlocking your position outside NYSE trading hours
                         (after-hours, closed, or halted) penalizes your principal.

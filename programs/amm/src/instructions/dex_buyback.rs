@@ -41,12 +41,12 @@ pub struct DexBuyback<'info> {
     pub usdc_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, address = amm_state.afho_vault)]
     pub afho_vault: Box<InterfaceAccount<'info, TokenAccount>>,
-    /// CHECK: SOL buyback funds (system PDA, seeds [b"amm_sol_vault", mint])
+    /// CHECK: vestigial SOL buyback PDA (SOL legs retired — USDC-only swaps;
+    /// kept in the account list until the §4 state-field cleanup lands)
     #[account(mut, address = amm_state.sol_vault)]
     pub sol_vault: AccountInfo<'info>,
-    /// CHECK: SOL/USD price oracle — SOL-leg fills are converted to USDC
-    /// units with this before ratcheting the floor (raw-u64 mock PDA on
-    /// devnet; real SOL/USD feed at mainnet)
+    /// CHECK: vestigial SOL/USD oracle (SOL legs retired; kept until the §4
+    /// state-field cleanup lands)
     #[account(address = amm_state.sol_oracle)]
     pub sol_oracle: UncheckedAccount<'info>,
     /// CHECK: live absolute spot price — the M3 slippage band for every fill
@@ -85,8 +85,8 @@ pub struct DexBuyback<'info> {
         associated_token::token_program = token_program,
     )]
     pub pool_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
-    /// CHECK: lamport destination for the SOL leg — the pool PDA itself
-    /// (mock topology; the real-DEX adapter re-pins this)
+    /// CHECK: vestigial lamport destination from the retired SOL leg (mock
+    /// topology pinned to the pool PDA; unused by the USDC-only swap paths)
     #[account(mut, address = pool_state.key())]
     pub pool_sol: AccountInfo<'info>,
     /// CHECK: configured swap target program
@@ -120,9 +120,9 @@ pub struct DexBuyback<'info> {
 
 // AccountInfo clones handed to the swap adapter, collected before amm_state
 // is mutably borrowed (avoids whole-struct borrow conflicts). Shared with
-// distribute_staker_rewards — the `usdc_vault`/`sol_vault` slots hold
-// whichever vaults fund the swap (buyback vaults or staker-rewards holding
-// vaults).
+// distribute_staker_rewards — the `usdc_vault` slot holds whichever vault
+// funds the swap (buyback vault or staker-rewards holding vault). The
+// `sol_vault` slot is vestigial (SOL legs retired; kept until the §4 cleanup).
 pub(crate) struct SwapInfos<'info> {
     pub amm_state: AccountInfo<'info>,
     pub usdc_vault: AccountInfo<'info>,
@@ -315,13 +315,12 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
     Ok(())
 }
 
-// Swap adapter — THE function to replace when plugging in the real DEX pool.
-// In-leg: amm pays from its own vaults (USDC token transfer signed by
-// amm_state, or SOL lamport transfer signed by the sol_vault PDA).
-// Out-leg: CPI send_afho on the configured dex_program (mock fixed-rate
-// dispenser today). Everything else in this file is swap-agnostic.
-// `sol_vault_seed`/`sol_vault_bump` name the system PDA funding a SOL in-leg:
-// b"amm_sol_vault" for buybacks, b"amm_sol_rewards" for the staker share.
+// Swap adapter: USDC → AFHO only (SOL legs retired).
+// Pinned path: raw invoke_signed into Raydium CPMM swap_base_input (typed CPI
+// avoided — raydium-cpmm-cpi pins anchor 1.0, incompatible with anchor 0.31).
+// Unpinned path (localnet only): USDC transfer into the mock pool + CPI
+// send_afho on the configured dex_program. Everything else in this file is
+// swap-agnostic.
 pub(crate) fn execute_swap(
     swap: &SwapInfos,
     mint_key: Pubkey,
@@ -412,9 +411,8 @@ pub(crate) fn execute_swap(
 // make_offers may never price a lot below the highest realized buyback price,
 // so when the live price falls to the floor the desk goes dark on its own.
 // It therefore only ever moves UP — call once per executed buyback fill.
-// NOTE: units are (input raw × 1e6) / afho raw — the SOL leg is NOT in the
-// same units as the USDC leg; the real-DEX adapter must report USDC-
-// denominated execution price. Fine for the stub era.
+// Units: (input raw × 1e6) / afho raw — USDC-denominated for both swap paths.
+// buy_the_dip and distribute_staker_rewards ratchet through the same helper.
 pub(crate) fn ratchet_buyback_basis(amm_state: &mut AmmState, executed_price: u64) {
     if executed_price > amm_state.highest_buyback_basis {
         amm_state.highest_buyback_basis = executed_price;

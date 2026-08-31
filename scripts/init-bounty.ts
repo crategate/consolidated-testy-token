@@ -57,7 +57,7 @@ async function main() {
                 systemProgram: anchor.web3.SystemProgram.programId,
             })
             .rpc();
-        console.log("✅ Bounty initialized:", tx);
+        console.log(" Bounty initialized:", tx);
     } catch (e) {
         console.error("Failed (maybe already initialized?):", e);
     }

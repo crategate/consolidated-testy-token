@@ -107,25 +107,27 @@ pub struct AmmState {
     pub _pad: [u8; 6],
     // --- align 1 (Pubkey) block ---
     pub authority: Pubkey,
-    // Hot wallet allowed to fire daily crank-gated instructions (make_offers,
-    // calc_completed_offers). Cannot move funds — those check authority only.
+    // Hot wallet allowed to fire the daily crank-gated instructions
+    // (make_offers, calc_completed_offers, dex_buyback, buy_the_dip,
+    // distribute_staker_rewards). Pool pinning is authority-only.
     pub keeper: Pubkey,
     pub afho_mint: Pubkey,
     pub usdc_mint: Pubkey,
     // big main vault, initial supply and where fees/buybacks go
     pub afho_vault: Pubkey,
-    // used for buybacks executed every trading day (following successful Offer Takes at night)
+    // Vestigial SOL buyback PDA (SOL legs retired — USDC-only swaps; kept
+    // until the §4 state-field cleanup lands).
     pub sol_vault: Pubkey,
     pub usdc_vault: Pubkey,
-    // buyback balances for dips (10% allocated from each Offer sale/completion)
+    // Vestigial SOL dip PDA (10% SOL dip leg retired; §4 cleanup).
     pub sol_dip: Pubkey,
     pub usdc_dip: Pubkey,
     pub offer_list: Pubkey,
     pub accepted_offers: Pubkey,
     pub market_status_pda: Pubkey,
     pub crank_program: Pubkey,
-    // Canonical Switchboard quote account covering [market_status, price] feeds.
-    // Only the AMM consumes the price feed, so the address lives here.
+    // Legacy Switchboard quote slot — pinned but never read (momentum comes
+    // from the self-sampled pool-price ring). §4 cleanup candidate.
     pub price_oracle: Pubkey,
     // Pool program dex_buyback CPIs for buybacks. Stub/mock on devnet;
     // point at the real DEX pool program at launch.
@@ -146,9 +148,9 @@ pub struct AmmState {
     pub staking_pool: Pubkey,
     // Holding vault for the stakers' 10% share of USDC proceeds.
     pub usdc_rewards: Pubkey,
-    // SOL/USD price oracle (same raw-u64 mock-PDA pattern as spot_oracle).
+    // Vestigial SOL/USD price oracle (SOL legs retired; §4 cleanup).
     pub sol_oracle: Pubkey,
-    // Holding vault (system PDA) for the stakers' 10% share of SOL proceeds.
+    // Vestigial holding PDA for the stakers' 10% SOL share (retired; §4 cleanup).
     pub sol_rewards: Pubkey,
 }
 
@@ -176,7 +178,7 @@ pub struct MarketMetrics {
     // High-frequency spot-price ring (floor units: usdc_raw x 1e6 / afho_raw),
     // self-sampled by buy_the_dip (throttled to one sample per SPOT_SAMPLE_SLOTS).
     pub spot_prices: [u64; 32],
-    // Daily priceChange24h, centi-percent (1.29% -> 129), written once per
+    // Daily close→close change, centi-percent (1.29% -> 129), written once per
     // trading day by update_tradeday_stats. Ring buffer, 20 trading days.
     pub price_changes: [i16; 20],
     pub sample_head: u8, // next write index into price_changes

@@ -111,9 +111,9 @@ pub fn handler(
     metrics.spot_last_slot = 0;
 
     // Fund the three space-0 SOL holding PDAs with the rent-exempt minimum.
-    // The system transfer creates them system-owned with NO data — outbound
-    // system transfers (dex_buyback / distribute_staker_rewards SOL legs)
-    // fail from data-carrying or program-owned accounts.
+    // The system transfer creates them system-owned with NO data. The SOL
+    // legs these PDAs once funded are retired (USDC-only swaps) — the PDAs
+    // remain until the §4 state-field cleanup lands.
     let sol_rent = Rent::get()?.minimum_balance(0);
     for info in [
         ctx.accounts.sol_dip.to_account_info(),
@@ -242,7 +242,8 @@ pub struct InitializeAmm<'info> {
 
     /// CHECK: stored for verification in makeOffers
     pub crank_program: AccountInfo<'info>,
-    /// CHECK: canonical Switchboard quote account for [market_status, price] feeds
+    /// CHECK: legacy Switchboard quote slot — pinned in state but no longer
+    /// read (momentum comes from the self-sampled pool price ring)
     pub price_oracle: AccountInfo<'info>,
     /// CHECK: swap target for dex_buyback (mock-dex-pool stub on devnet; the
     /// real DEX pool program at launch)

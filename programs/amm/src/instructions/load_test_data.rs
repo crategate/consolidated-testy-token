@@ -28,7 +28,7 @@ pub struct LoadTestData<'info> {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct TestMetrics {
-    // Ring of daily priceChange24h in centi-percent, oldest -> newest.
+    // Ring of daily close→close changes in centi-percent, oldest -> newest.
     pub price_changes: [i16; 20],
     pub sample_head: u8, // next write slot = oldest entry; 0 with a full ring
     pub trailing_stake_health: [u8; 5],

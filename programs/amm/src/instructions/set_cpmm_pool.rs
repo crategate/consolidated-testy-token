@@ -22,8 +22,10 @@ pub fn handler(
     amm_config: Pubkey,
 ) -> Result<()> {
     let caller = ctx.accounts.cranker.key();
+    // Authority-only: pool pinning decides where every swap routes, so the
+    // hot-wallet keeper must not be able to re-pin it to a pool it controls.
     require!(
-        caller == ctx.accounts.amm_state.authority || caller == ctx.accounts.amm_state.keeper,
+        caller == ctx.accounts.amm_state.authority,
         ErrorCode::UnauthorizedCaller
     );
     ctx.accounts.amm_state.cpmm_program = cpmm_program;

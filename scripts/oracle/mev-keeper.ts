@@ -151,7 +151,7 @@ async function main() {
         };
     }
 
-    console.log("🔍 Keeper started");
+    console.log(" Keeper started");
     console.log("Program ID:", programId.toBase58());
     console.log("Market Status:", marketStatusPda.toBase58());
     console.log("Bounty Config:", bountyConfigPda.toBase58());
@@ -190,7 +190,7 @@ async function main() {
             const quoteSlot = new BN(quoteAccountInfo.data.readBigUInt64LE(40).toString());
 
             if (quoteSlot.gt(bountyConfig.lastCrankSlot)) {
-                console.log(`🚀 Stale crank! Oracle slot ${quoteSlot} > last ${bountyConfig.lastCrankSlot}`);
+                console.log(` Stale crank! Oracle slot ${quoteSlot} > last ${bountyConfig.lastCrankSlot}`);
 
                 const overrides = {
                     MASSIVE_API_KEY: process.env.MASSIVE_API_KEY!,
@@ -251,7 +251,7 @@ async function main() {
 
                 const sig = await connection.sendTransaction(tx);
                 await connection.confirmTransaction(sig, "confirmed");
-                console.log(`✅ Cranked! ${sig}`);
+                console.log(` Cranked! ${sig}`);
 
                 // Trading day ends on 0→1 (open→after-hours), 0→2 (open→closed, holiday),
                 // or 3→2 (halted→closed). Fire update_tradeday_stats FIRST (it owns all
@@ -262,7 +262,7 @@ async function main() {
                     (prevState === 0 && (newStatus.currentState === 1 || newStatus.currentState === 2)) ||
                     (prevState === 3 && newStatus.currentState === 2);
                 if (dayEnded) {
-                    console.log(`📈 Day ended (${prevState} → ${newStatus.currentState}). Firing update_tradeday_stats + make_offers...`);
+                    console.log(` Day ended (${prevState} → ${newStatus.currentState}). Firing update_tradeday_stats + make_offers...`);
                     try {
                         const ammStateForStats = await (ammProgram.account as any).ammState.fetch(ammStatePda);
                         const statsUsdcMint = new PublicKey(ammStateForStats.usdcMint);
@@ -299,7 +299,7 @@ async function main() {
                         } else {
                             const statsSig = await connection.sendTransaction(statsTx);
                             await connection.confirmTransaction(statsSig, "confirmed");
-                            console.log(`✅ update_tradeday_stats fired! ${statsSig}`);
+                            console.log(` update_tradeday_stats fired! ${statsSig}`);
                         }
 
                         const makeOffersIx = await ammProgram.methods
@@ -330,18 +330,18 @@ async function main() {
                         } else {
                             const offersSig = await connection.sendTransaction(offersTx);
                             await connection.confirmTransaction(offersSig, "confirmed");
-                            console.log(`✅ make_offers fired! ${offersSig}`);
+                            console.log(` make_offers fired! ${offersSig}`);
                         }
                     } catch (e) {
                         // Never let an offer-sheet failure kill the crank loop
-                        console.error("❌ end-of-day AMM sequence failed:", e);
+                        console.error("!! end-of-day AMM sequence failed:", e);
                     }
                 }
 
                 // Trading day STARTS on any →0 transition: score yesterday's sheet fills.
                 const dayStarted = prevState !== 0 && newStatus.currentState === 0;
                 if (dayStarted) {
-                    console.log(`📉 Day started (${prevState} → 0). Firing calc_completed_offers...`);
+                    console.log(` Day started (${prevState} → 0). Firing calc_completed_offers...`);
                     try {
                         // Live price for ratchet decay: mock_price PDA of the
                         // configured dex_program (devnet stub; MAINNET: the real
@@ -385,10 +385,10 @@ async function main() {
                         } else {
                             const calcSig = await connection.sendTransaction(calcTx);
                             await connection.confirmTransaction(calcSig, "confirmed");
-                            console.log(`✅ calc_completed_offers fired! ${calcSig}`);
+                            console.log(` calc_completed_offers fired! ${calcSig}`);
                         }
                     } catch (e) {
-                        console.error("❌ calc_completed_offers failed:", e);
+                        console.error("!! calc_completed_offers failed:", e);
                     }
 
                     // Staker distribution: swap yesterday's 10% USDC share to
@@ -451,10 +451,10 @@ async function main() {
                         } else {
                             const distSig = await connection.sendTransaction(distTx);
                             await connection.confirmTransaction(distSig, "confirmed");
-                            console.log(`✅ distribute_staker_rewards fired! ${distSig}`);
+                            console.log(` distribute_staker_rewards fired! ${distSig}`);
                         }
                     } catch (e) {
-                        console.error("❌ distribute_staker_rewards failed:", (e as Error).message);
+                        console.error("!! distribute_staker_rewards failed:", (e as Error).message);
                     }
                 }
             } else {
@@ -514,12 +514,12 @@ async function main() {
                     } else {
                         const bbSig = await connection.sendTransaction(bbTx);
                         await connection.confirmTransaction(bbSig, "confirmed");
-                        console.log(`✅ dex_buyback slice fired! ${bbSig}`);
+                        console.log(` dex_buyback slice fired! ${bbSig}`);
                     }
                 }
             } catch (e) {
                 // Never let a buyback attempt kill the crank loop
-                console.error("❌ dex_buyback attempt failed:", (e as Error).message);
+                console.error("!! dex_buyback attempt failed:", (e as Error).message);
             }
 
             // buy_the_dip: attempt EVERY loop, any market state — the dip
@@ -577,11 +577,11 @@ async function main() {
                     await connection.confirmTransaction(dipSig, "confirmed");
                     // NB: a successful tx is usually a no-op (ring sampling / no dip
                     // / pacing) — the on-chain trigger decides whether a slice is spent.
-                    console.log(`✅ buy_the_dip called (slice only on a real ≥3% dip): ${dipSig}`);
+                    console.log(` buy_the_dip called (slice only on a real ≥3% dip): ${dipSig}`);
                 }
             } catch (e) {
                 // Never let a dip attempt kill the crank loop
-                console.error("❌ buy_the_dip attempt failed:", (e as Error).message);
+                console.error("!! buy_the_dip attempt failed:", (e as Error).message);
             }
 
             // bounty_top_up: attempt every loop — permissionless, and the
@@ -635,14 +635,14 @@ async function main() {
                     } else {
                         const topupSig = await connection.sendTransaction(topupTx);
                         await connection.confirmTransaction(topupSig, "confirmed");
-                        console.log(`✅ bounty_top_up fired: ${topupSig}`);
+                        console.log(` bounty_top_up fired: ${topupSig}`);
                     }
                 }
             } catch (e) {
-                console.error("❌ bounty_top_up attempt failed:", (e as Error).message);
+                console.error("!! bounty_top_up attempt failed:", (e as Error).message);
             }
         } catch (e) {
-            console.error("❌ Crank attempt failed:", e);
+            console.error("!! Crank attempt failed:", e);
         }
 
         await sleep(sleepMs);
