@@ -37,7 +37,7 @@ export function ExplainerSection() {
                 <p className="section-subtitle">
                     <GlitchText text="AFHO ties token incentives to the tradFi market pulse." variant="light" split="word" step={0.35} />
                 </p>
-                <p className="section-subtitle" style={{ '--glitch-delay': '1.4s' } as React.CSSProperties}>
+                <p className="section-subtitle" style={{} as React.CSSProperties}>
                     <GlitchText text="staking, buybacks, and bond sales change with Wall St's market status" variant="light" split="word" step={0.4} />
                 </p>
                 <div className="explainer-grid">
