@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useStake } from '../hooks/stake/useStake';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import { useTokenBalance } from '../hooks/useTokenBalance';
+import { useChainData } from '../context/useChainData';
 import { GlitchText } from './GlitchText.tsx';
 
 interface StakeFormProps {
@@ -15,6 +17,8 @@ export function StakeForm({ mint, marketStatusPda, onStakeSuccess }: StakeFormPr
     const { stake } = useStake(mint, marketStatusPda);
     const { connected, publicKey } = useWallet();
     const { balance, refresh: refreshBalance } = useTokenBalance(mint, publicKey, 9);
+    const queryClient = useQueryClient();
+    const { refresh: refreshChainData } = useChainData();
     const [amount, setAmount] = useState('');
     const [loading, setLoading] = useState(false);
 
@@ -26,7 +30,17 @@ export function StakeForm({ mint, marketStatusPda, onStakeSuccess }: StakeFormPr
             alert(`Staked successfully! Tx: ${tx}`);
             setAmount('');
             void refreshBalance();
-            setTimeout(() => onStakeSuccess?.(), 2000);
+            // The new position appears immediately — no page refresh needed.
+            // Invalidate the shared positions query (all mounted list
+            // instances) and the chain snapshot (pool totalStaked), then
+            // repeat once shortly after to cover devnet RPC lag on the fresh
+            // account.
+            onStakeSuccess?.();
+            void queryClient.invalidateQueries({ queryKey: ['positions'] });
+            void refreshChainData('pool');
+            setTimeout(() => {
+                void queryClient.invalidateQueries({ queryKey: ['positions'] });
+            }, 1500);
         } catch (e) {
             alert('Stake failed: ' + (e as Error).message);
         } finally {

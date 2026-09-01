@@ -157,6 +157,62 @@ async function main() {
     console.log("Bounty Config:", bountyConfigPda.toBase58());
     console.log("Bounty Vault:", bountyVaultPda.toBase58());
 
+    // ── TEST-STATE MODE (devnet/localnet only) ─────────────────────────────
+    // `--test-state` drives the market-status PDA through a scripted state
+    // cycle via crank test_set_state INSTEAD of cranking the real Switchboard
+    // feed, then runs the exact same transition sequences (end-of-day stats +
+    // make_offers, start-of-day calc_completed_offers, dex_buyback slices,
+    // buy_the_dip, bounty_top_up) as the real keeper loop. For exercising the
+    // offer desk without waiting for NYSE hours.
+    //   --test-day <n>          start trading-day index (default: on-chain)
+    //   --test-interval-ms <n>  ms per scripted state (default: 15000)
+    //   TEST_STATE_SEQUENCE     env override, e.g. "0,1,2,0" (default cycle)
+    // DEVNET/TEST ONLY — remove before mainnet together with crank
+    // test_set_state and scripts/oracle/set-oracle-state.ts.
+    const DEVNET_GENESIS_HASH = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
+    const TEST_STATE = process.argv.includes("--test-state");
+    const testStateIdx = process.argv.indexOf("--test-state");
+    const TEST_STATE_MODE: "cycle" | "watch" =
+        TEST_STATE && process.argv[testStateIdx + 1] === "watch" ? "watch" : "cycle";
+    let lastSeenState: number | null = null;
+    const testDayArg = process.argv.indexOf("--test-day");
+    const TEST_DAY = testDayArg !== -1 ? parseInt(process.argv[testDayArg + 1], 10) : null;
+    const testIntervalArg = process.argv.indexOf("--test-interval-ms");
+    const TEST_INTERVAL_MS =
+        testIntervalArg !== -1 ? parseInt(process.argv[testIntervalArg + 1], 10) : 15_000;
+    const TEST_SEQUENCE = (process.env.TEST_STATE_SEQUENCE ?? "0,1,2,0")
+        .split(",")
+        .map((s) => parseInt(s.trim(), 10));
+    let testCursor = 0;
+    let testDay: number | null = TEST_DAY;
+
+    if (TEST_STATE) {
+        const endpoint = connection.rpcEndpoint;
+        const genesisHash = await connection.getGenesisHash();
+        const host = (() => {
+            try {
+                return new URL(endpoint).hostname;
+            } catch {
+                return "";
+            }
+        })();
+        const isLocalnet = ["localhost", "127.0.0.1", "::1", "[::1]"].includes(host);
+        if (!isLocalnet && genesisHash !== DEVNET_GENESIS_HASH) {
+            throw new Error(
+                `REFUSING: --test-state is a DEVNET/LOCALNET test mode ` +
+                    `(endpoint ${endpoint}, genesis ${genesisHash.slice(0, 8)}…). ` +
+                    `Run the real keeper without --test-state.`
+            );
+        }
+        console.log(
+            TEST_STATE_MODE === "watch"
+                ? ` TEST WATCH MODE: idle + react to external state changes, polling every ${TEST_INTERVAL_MS}ms. ` +
+                      `Drive transitions with \`anchor run set-oracle -- <state> [day]\` ` +
+                      `(0=open 1=after-hours 2=closed 3=halted). Pause = don't change the state.`
+                : ` TEST-STATE MODE: cycle ${TEST_SEQUENCE.join(" → ")} every ${TEST_INTERVAL_MS}ms`
+        );
+    }
+
     function getSleepDuration(): number {
         const now = new Date();
         const etHour = now.getUTCHours() - (now.getTimezoneOffset() === 240 ? 4 : 5);
@@ -174,23 +230,87 @@ async function main() {
     }
 
     while (true) {
-        const sleepMs = getSleepDuration();
+        const sleepMs = TEST_STATE ? TEST_INTERVAL_MS : getSleepDuration();
         try {
             const marketStatus = await program.account.marketStatus.fetch(marketStatusPda);
             const bountyConfig = await program.account.bountyConfig.fetch(bountyConfigPda);
-            let quoteAccountInfo = await connection.getAccountInfo(quoteAccount);
+            let prevState: number = marketStatus.currentState as number;
+            let newStatus: any = null;
+            let quoteAccountInfo: any = null;
+            if (!TEST_STATE) {
+                quoteAccountInfo = await connection.getAccountInfo(quoteAccount);
 
-            if (!quoteAccountInfo) {
-                console.log("Quote account not found, sleeping...");
-                await sleep(sleepMs);
-                continue;
+                if (!quoteAccountInfo) {
+                    console.log("Quote account not found, sleeping...");
+                    await sleep(sleepMs);
+                    continue;
+                }
             }
 
             // Switchboard quote layout: discriminator(8) + queue(32) + slot(8) ...
-            const quoteSlot = new BN(quoteAccountInfo.data.readBigUInt64LE(40).toString());
+            const quoteSlot = quoteAccountInfo
+                ? new BN(quoteAccountInfo.data.readBigUInt64LE(40).toString())
+                : new BN(0);
 
-            if (quoteSlot.gt(bountyConfig.lastCrankSlot)) {
-                console.log(` Stale crank! Oracle slot ${quoteSlot} > last ${bountyConfig.lastCrankSlot}`);
+            if (TEST_STATE || quoteSlot.gt(bountyConfig.lastCrankSlot)) {
+                if (TEST_STATE && TEST_STATE_MODE === "watch") {
+                    // Watch mode: the keeper never writes the market status.
+                    // The loop-start fetch IS the (possibly new) on-chain
+                    // state; compare with the previous loop and react to any
+                    // change exactly like the real keeper reacts to the feed.
+                    if (
+                        lastSeenState !== null &&
+                        marketStatus.currentState !== lastSeenState
+                    ) {
+                        prevState = lastSeenState;
+                        newStatus = marketStatus;
+                        console.log(
+                            ` watch: ${lastSeenState} -> ${marketStatus.currentState} (day ${marketStatus.tradingDayIndex})`
+                        );
+                    }
+                    lastSeenState = marketStatus.currentState as number;
+                } else if (TEST_STATE) {
+                    // Scripted fake crank: advance the test cycle via crank
+                    // test_set_state (devnet-only) instead of the Switchboard
+                    // managed update. The transition handlers below (end of
+                    // day / start of day) run identically to the real path.
+                    if (testDay === null) testDay = marketStatus.tradingDayIndex.toNumber();
+                    const state = TEST_SEQUENCE[testCursor % TEST_SEQUENCE.length];
+                    testCursor++;
+                    if (
+                        state === 0 &&
+                        (marketStatus.currentState === 1 || marketStatus.currentState === 2)
+                    ) {
+                        testDay++; // mirror the crank: 1/2 → 0 rolls the day forward
+                    }
+                    const ts = Math.floor(Date.now() / 1000);
+                    const setTx = await sb.asV0Tx({
+                        connection,
+                        ixs: [
+                            await program.methods
+                                .testSetState(state, new BN(testDay), new BN(ts))
+                                .accounts({ marketStatus: marketStatusPda })
+                                .instruction(),
+                        ],
+                        signers: [keypair],
+                        computeUnitPrice: 20_000,
+                    });
+                    const setSim = await connection.simulateTransaction(setTx);
+                    if (setSim.value.err) {
+                        console.error("test_set_state simulation failed:", setSim.value.err);
+                        await sleep(sleepMs);
+                        continue;
+                    }
+                    const setSig = await connection.sendTransaction(setTx);
+                    await connection.confirmTransaction(setSig, "confirmed");
+                    console.log(
+                        ` TEST crank ${marketStatus.currentState} -> ${state} (day ${testDay}) [${setSig}]`
+                    );
+                    newStatus = await program.account.marketStatus.fetch(marketStatusPda);
+                } else if (TEST_STATE) {
+                    console.log(
+                        ` Stale crank! Oracle slot ${quoteSlot} > last ${bountyConfig.lastCrankSlot}`
+                    );
 
                 const overrides = {
                     MASSIVE_API_KEY: process.env.MASSIVE_API_KEY!,
@@ -252,12 +372,16 @@ async function main() {
                 const sig = await connection.sendTransaction(tx);
                 await connection.confirmTransaction(sig, "confirmed");
                 console.log(` Cranked! ${sig}`);
+                newStatus = await program.account.marketStatus.fetch(marketStatusPda);
+                }
 
                 // Trading day ends on 0→1 (open→after-hours), 0→2 (open→closed, holiday),
                 // or 3→2 (halted→closed). Fire update_tradeday_stats FIRST (it owns all
                 // end-of-day metric writes), then make_offers (read-only + posts sheet).
-                const prevState = marketStatus.currentState;
-                const newStatus = await program.account.marketStatus.fetch(marketStatusPda);
+                if (newStatus === null) {
+                    // watch mode, no state change this loop — skip the transition
+                    // handlers; the always-on loops below still run.
+                } else {
                 const dayEnded =
                     (prevState === 0 && (newStatus.currentState === 1 || newStatus.currentState === 2)) ||
                     (prevState === 3 && newStatus.currentState === 2);
@@ -456,6 +580,7 @@ async function main() {
                     } catch (e) {
                         console.error("!! distribute_staker_rewards failed:", (e as Error).message);
                     }
+                }
                 }
             } else {
                 console.log("Oracle fresh, nothing to do.");

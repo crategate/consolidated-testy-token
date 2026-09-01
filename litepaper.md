@@ -1,20 +1,21 @@
-# AFHO — The Token With Market Hours
+# AFHO — defi on Market Hours
 
 > Litepaper v0.1 · devnet stage
 > A plain-language description of how AFHO works, what it costs, and what it
-> is built on. Not a formal whitepaper, not investment advice.
+> is built on. not investment advice.
 
 ---
 
-## The idea in one paragraph
+## Narrative through mechanics
 
-Most crypto markets never close. Wall Street does. AFHO is an SPL token whose
-mechanics are driven by the **NYSE trading calendar**: while the market is
+AFHO is an SPL token with features driven by the NYSE market status: while the market is
 open, the protocol buys its own token back from the market. When the bell
 closes, a nightly "offer desk" sells discounted, vesting bond lots straight
-into staking positions. If the market halts, so does the protocol. The result
-is a token with a daily rhythm — a schedule you can watch, and receipts for
-everything it does.
+into staking positions.
+
+### a ticker that knows its being watched
+The bonds' size, discount rate, and vesting period are determined by the
+performance of the token's staking and price.
 
 ## The market clock
 

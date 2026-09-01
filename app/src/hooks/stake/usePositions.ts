@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import { useQuery } from '@tanstack/react-query';
@@ -93,23 +93,43 @@ export function usePositions(_mint?: PublicKey | null) {
         retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
     });
 
+    // Stable subscription handle: `query` changes identity on every fetch, so
+    // putting it in the effect deps churned the listeners (unsubscribe +
+    // resubscribe per update, plus StrictMode double-subscription) — events
+    // landing in those gaps were lost. Register once per wallet/connection and
+    // route events through a ref instead.
+    const refetchRef = useRef<() => Promise<unknown>>(async () => {});
+    refetchRef.current = () => query.refetch();
+
     useEffect(() => {
         if (!connection || !publicKey) return;
 
-        const subscriptionId = connection.onProgramAccountChange(
-            STAKING_PROGRAM_ID,
-            () => {
-                if (document.hidden) return;
-                void query.refetch();
-            },
-            'confirmed',
-            [{ memcmp: { offset: 8, bytes: publicKey.toBase58() } }],
-        );
+        // One stake fires BOTH the user-index write (next_index++) and the new
+        // position account, so debounce the refetch briefly to collapse them.
+        let lastRefetchAt = 0;
+        const refetchSoon = () => {
+            const now = Date.now();
+            if (now - lastRefetchAt < 400) return;
+            lastRefetchAt = now;
+            void refetchRef.current();
+        };
+
+        const userIndexPda = deriveUserIndexPda(publicKey);
+        const subs: number[] = [
+            connection.onAccountChange(userIndexPda, refetchSoon, 'confirmed'),
+            connection.onProgramAccountChange(
+                STAKING_PROGRAM_ID,
+                refetchSoon,
+                'confirmed',
+                [{ memcmp: { offset: 8, bytes: publicKey.toBase58() } }],
+            ),
+        ];
 
         return () => {
-            void connection.removeProgramAccountChangeListener(subscriptionId);
+            void connection.removeAccountChangeListener(subs[0]);
+            void connection.removeProgramAccountChangeListener(subs[1]);
         };
-    }, [connection, publicKey, query]);
+    }, [connection, publicKey]);
 
     return {
         positions: query.data ?? [],
