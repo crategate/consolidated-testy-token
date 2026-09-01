@@ -226,6 +226,14 @@
     }
 }
 
+/* Slowly rotating rainbow shadow — a constant, unhurried spin of the
+   conic gradient angle. Only the color layout moves; nothing strobes. */
+@keyframes fxRotorSpin {
+    to {
+        --fx-rotor-angle: 360deg;
+    }
+}
+
 /* Blue/pink ring (connected stake form, active order pane): sparse
    glitch stages across the cycle, never a constant glow. */
 @keyframes bluePinkGlitch {
@@ -364,8 +372,10 @@
     mask-composite: exclude;
 }
 
+/* Connected: the wallet tile stays on the slow rainbow rhythm — it never
+   switches to the faster keyframe pattern. */
 .app-shell[data-connected='true'] .connect-prompt::before {
-    animation-name: rainbowGlitchFast;
+    animation-duration: calc(var(--fx-shadow-cycle) * 1.0);
 }
 
 /* Stake form — rainbow while disconnected, blue/pink once connected.
@@ -377,7 +387,7 @@
     inset: -3px;
     border-radius: calc(var(--radius-md) + 3px);
     padding: 3px;
-    background: conic-gradient(from 0deg at 50% 50%,
+    background: conic-gradient(from var(--fx-rotor-angle, 0deg) at 50% 50%,
             var(--neon-purple) 0deg,
             var(--neon-amber) 70deg,
             var(--neon-pink) 130deg,
@@ -386,7 +396,8 @@
     z-index: -1;
     filter: blur(14px) saturate(var(--fx-sat, 1));
     opacity: 0;
-    animation: rainbowGlitch calc(var(--fx-shadow-cycle) * 0.85 / var(--fx-step, 1)) infinite;
+    animation: rainbowGlitch calc(var(--fx-shadow-cycle) * 2 / var(--fx-step, 1)) infinite,
+        fxRotorSpin var(--fx-rotor-cycle, 48s) linear infinite;
     animation-delay: var(--shadow-delay, 0.4s);
     -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
@@ -395,13 +406,39 @@
 }
 
 .stake-form.rainbow-glow.connected::before {
-    background: conic-gradient(from 0deg at 50% 50%,
+    background: conic-gradient(from var(--fx-rotor-angle, 0deg) at 50% 50%,
             var(--neon-blue) 0deg,
             var(--neon-pink) 120deg,
             var(--neon-blue) 240deg,
             var(--neon-pink) 360deg);
-    animation-name: bluePinkGlitch;
-    animation-duration: calc(var(--fx-shadow-cycle) * 1.1 / var(--fx-step, 1));
+    animation-name: bluePinkGlitch, fxRotorSpin;
+    animation-duration: calc(var(--fx-shadow-cycle) * 1.6 / var(--fx-step, 1)),
+        var(--fx-rotor-cycle, 48s);
+}
+
+/* ─── Wallet connect buttons: rainbow ring, sparse and slow ─── */
+.wallet-button-wrapper::before {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: calc(var(--radius-sm) + 3px);
+    padding: 3px;
+    background: conic-gradient(from 0deg at 50% 50%,
+            var(--neon-purple) 0deg,
+            var(--neon-amber) 70deg,
+            var(--neon-pink) 130deg,
+            var(--neon-cyan) 230deg,
+            var(--neon-purple) 360deg);
+    z-index: -1;
+    filter: blur(10px) saturate(var(--fx-sat, 1));
+    opacity: 0;
+    animation: rainbowGlitch calc(var(--fx-shadow-cycle) * 2.2) infinite;
+    animation-delay: var(--shadow-delay, 0.5s);
+    pointer-events: none;
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask-composite: exclude;
 }
 
 /* ─── Shadow palettes: different colors in different places ─── */
@@ -679,7 +716,7 @@
             var(--neon-purple) 360deg);
     filter: blur(14px);
     opacity: 0;
-    animation: rainbowGlitch var(--fx-shadow-cycle) infinite;
+    animation: rainbowGlitch calc(var(--fx-shadow-cycle) * 2) infinite;
     animation-delay: var(--shadow-delay, 0.3s);
     -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;

@@ -48,10 +48,17 @@ export default function OfferLists() {
     useEffect(() => {
         setQuantities((prev) => {
             const next = { ...prev };
+            let changed = false;
             for (const t of data.tiers) {
-                if ((next[t.key] ?? 0) > t.remaining) next[t.key] = t.remaining;
+                if ((next[t.key] ?? 0) > t.remaining) {
+                    next[t.key] = t.remaining;
+                    changed = true;
+                }
             }
-            return next;
+            // Return `prev` (same reference) when nothing changed, otherwise
+            // the new object re-renders forever — data.tiers is a fresh array
+            // while offerList is loading → "Maximum update depth exceeded".
+            return changed ? next : prev;
         });
     }, [data.tiers]);
 

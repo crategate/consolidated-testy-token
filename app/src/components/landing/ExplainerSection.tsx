@@ -3,22 +3,51 @@ import { SplitDonut } from './SplitDonut';
 
 const EXPLAINERS = [
     {
-        icon: 'N',
+        // Market-hours clock
+        icon: (
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" />
+                <polyline points="12 7 12 12 15 14" />
+            </svg>
+        ),
         title: 'NYSE Hours',
         body: 'When the market is open, after-hours, closed, and halted decides rewards, penalties, and the bond sales.',
     },
     {
-        icon: 'x',
+        // Stacked layers — stake & multiply
+        icon: (
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                <polyline points="2 17 12 22 22 17" />
+                <polyline points="2 12 12 17 22 12" />
+            </svg>
+        ),
         title: 'Stake & Multiply',
         body: 'Lock AFHO to earn your cut of 10% from bond sales, and impatient weekend panickers. Exit after hours and penalties apply.',
     },
     {
-        icon: 'v',
+        // Downtrend — buy the dip
+        icon: (
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <polyline points="22 17 13.5 8.5 8.5 13.5 2 7" />
+                <polyline points="16 17 22 17 22 11" />
+            </svg>
+        ),
         title: 'Buy the Dip',
         body: '10% of bond proceeds fuel an always active dip sniper, refilling the offer desk and buffering market turbulence',
     },
     {
-        icon: '$',
+        // Bank — the bond desk
+        icon: (
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <line x1="3" y1="22" x2="21" y2="22" />
+                <line x1="6" y1="18" x2="6" y2="11" />
+                <line x1="10" y1="18" x2="10" y2="11" />
+                <line x1="14" y1="18" x2="14" y2="11" />
+                <line x1="18" y1="18" x2="18" y2="11" />
+                <polygon points="12 2 20 7 4 7" />
+            </svg>
+        ),
         title: 'Bond Offer Desk',
         body: 'After closing bell, the offer desk sells vested AFHO bonds. This bond vault starts as 75% of total minted tokens.',
     },

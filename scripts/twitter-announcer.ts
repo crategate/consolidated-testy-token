@@ -25,18 +25,13 @@
 //   token pair (X_ACCESS_TOKEN + X_ACCESS_TOKEN_SECRET) in addition to the app
 //   consumer key/secret. Generate them from the same portal page.
 //
-// Telegram credentials — MTProto userbot via gramjs (the "telegram" package):
-//   TG_API_ID        numeric api_id from https://my.telegram.org → API
-//                    development tools (this is NOT the api_hash)
-//   TG_API_HASH      api_hash from the same page
-//   TG_PHONE         account phone number (only needed for the first login)
-//   TG_SESSION       string session; auto-saved to .env after the first login
-//   TG_CHANNEL       channel/group to post into: @username or -100… numeric id
-//   TG_TEST_SERVER   "true" = Telegram test DCs instead of production
+// Telegram credentials — Bot API (no SDK, no login flow):
+//   TELEGRAM_BOT_TOKEN     token from @BotFather (/newbot → copy the token)
+//   TELEGRAM_CHANNEL_ID    channel to post into: @username or -100… numeric id
 //
-//   The logged-in account must be an admin of TG_CHANNEL with post rights.
-//   DC IPs/ports are resolved by the client automatically — you never
-//   configure them.
+//   The bot must be an ADMIN of that channel with "Post messages" enabled.
+//   Setup takes ~2 minutes: @BotFather → /newbot → name it → copy the token,
+//   create the channel, add the bot as an admin, set the two env vars.
 //
 // Flags:
 //   X_ENABLED / TG_ENABLED  channel switches (X on by default, TG off by default)
@@ -44,7 +39,7 @@
 //   DRY_RUN      "true" logs the post text instead of hitting X / Telegram
 //   POLL_INTERVAL_MS  poll cadence (default 60000)
 //
-// Run: yarn add telegram && npx ts-node scripts/twitter-announcer.ts
+// Run: npx ts-node scripts/twitter-announcer.ts
 //
 // This is a read-only observer. It does NOT hold a signer and does NOT move
 // any funds — it only watches account state and posts announcements.
@@ -56,7 +51,6 @@ import * as https from "https";
 import * as dotenv from "dotenv";
 import * as fs from "fs";
 import * as path from "path";
-import * as readline from "readline";
 
 dotenv.config();
 
@@ -300,20 +294,9 @@ const X_ACCESS_TOKEN = process.env.X_ACCESS_TOKEN ?? "";
 const X_ACCESS_TOKEN_SECRET = process.env.X_ACCESS_TOKEN_SECRET ?? "";
 const X_API_BASE = process.env.X_API_BASE ?? "https://api.twitter.com";
 
-// Telegram MTProto (userbot) config. TG_API_ID is the INTEGER id from
-// my.telegram.org (not the api_hash). TG_SESSION is auto-saved to .env
-// after the first interactive login.
-const TG_API_ID = Number(process.env.TG_API_ID ?? 0);
-const TG_API_HASH = process.env.TG_API_HASH ?? "";
-const TG_SESSION = process.env.TG_SESSION ?? "";
-const TG_PHONE = process.env.TG_PHONE ?? "";
-const TG_CHANNEL = process.env.TG_CHANNEL ?? "";
-const TG_TEST_SERVER = ["true", "1", "yes"].includes(
-    (process.env.TG_TEST_SERVER ?? "").toLowerCase()
-);
-const TG_DEVICE_MODEL = process.env.TG_DEVICE_MODEL ?? "AFHO Announcer";
-const TG_APP_VERSION = process.env.TG_APP_VERSION ?? "1.0.0";
-const TG_SYSTEM_VERSION = process.env.TG_SYSTEM_VERSION ?? process.platform;
+// Telegram Bot API config.
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? "";
+const TELEGRAM_CHANNEL_ID = process.env.TELEGRAM_CHANNEL_ID ?? "";
 
 const DEVNET_MODE = ["true", "1", "yes"].includes(
     (process.env.DEVNET_MODE ?? "").toLowerCase()
@@ -455,109 +438,99 @@ async function announce(text: string): Promise<void> {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// TELEGRAM CLIENT (MTProto userbot via gramjs). Lazily required so the
-// 'telegram' package is only needed when TG_ENABLED=true. DC IPs/ports are
-// resolved by the client — TG_TEST_SERVER switches to the test DCs.
+// TELEGRAM SENDER (Bot API) — no SDK, no login flow, one HTTPS call per post.
+//
+// One-time setup (do this once, then it just works):
+//   1. In Telegram, message @BotFather: /newbot → pick a name → copy the
+//      token (looks like 123456789:AA…).
+//   2. Create the announcement channel, add the bot as an ADMIN with
+//      "Post messages" enabled.
+//   3. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL_ID (@username or -100…)
+//      in .env, then TG_ENABLED=true.
+//
+// Posts go out as HTML — the copy carries no markup, so & < > are escaped
+// and newlines survive. Bots may only post to channels/groups where they
+// are admins; they can never message a user who hasn't opened the bot.
 // ════════════════════════════════════════════════════════════════════════════
 
-let tgClient: any = null;
-
-function loadTelegram(): any {
-    try {
-        return require("telegram");
-    } catch {
-        throw new Error(
-            "TG_ENABLED=true but the 'telegram' (gramjs) package is not " +
-                "installed. Run: yarn add telegram"
-        );
-    }
+function escapeHtml(s: string): string {
+    return s
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
 }
 
-function promptLine(question: string): Promise<string> {
-    return new Promise((resolve) => {
-        const rl = readline.createInterface({
-            input: process.stdin,
-            output: process.stdout,
-        });
-        rl.question(question, (answer) => {
-            rl.close();
-            resolve(answer.trim());
-        });
+function telegramApi(
+    method: string,
+    params: Record<string, unknown>
+): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const payload = JSON.stringify(params);
+        const req = https.request(
+            {
+                method: "POST",
+                host: "api.telegram.org",
+                port: 443,
+                path: `/bot${TELEGRAM_BOT_TOKEN}/${method}`,
+                headers: {
+                    "Content-Type": "application/json",
+                    "Content-Length": Buffer.byteLength(payload),
+                    "User-Agent": "afho-announcer",
+                },
+            },
+            (res) => {
+                let data = "";
+                res.on("data", (chunk) => (data += chunk));
+                res.on("end", () => {
+                    if (
+                        res.statusCode &&
+                        res.statusCode >= 200 &&
+                        res.statusCode < 300
+                    ) {
+                        resolve();
+                    } else {
+                        reject(
+                            new Error(
+                                `Telegram API ${res.statusCode}: ${data.slice(0, 300)}`
+                            )
+                        );
+                    }
+                });
+            }
+        );
+        req.on("error", reject);
+        req.write(payload);
+        req.end();
     });
 }
 
-// Persist the string session into .env so later runs skip the login flow.
-function upsertEnv(key: string, value: string): void {
-    const envPath = path.join(process.cwd(), ".env");
-    const content = fs.existsSync(envPath)
-        ? fs.readFileSync(envPath, "utf-8")
-        : "";
-    const line = `${key}="${value.replace(/"/g, '\\"')}"`;
-    const re = new RegExp(`^${key}=.*$`, "m");
-    const next = re.test(content)
-        ? content.replace(re, () => line)
-        : content.replace(/\s*$/, "") + "\n" + line + "\n";
-    fs.writeFileSync(envPath, next);
-}
-
-// Connect once at startup; on a fresh session run the interactive phone
-// login (code + optional 2FA) and save the resulting session to .env.
+// Validate the token once at startup — getMe fails fast with a readable
+// error ("Unauthorized" = bad token) before the poll loop starts.
 async function initTelegram(): Promise<void> {
     if (!TG_ENABLED || DRY_RUN) return; // dry run never touches Telegram
-
-    if (TG_API_ID === 0 || TG_API_HASH === "") {
+    if (TELEGRAM_BOT_TOKEN === "" || TELEGRAM_CHANNEL_ID === "") {
         throw new Error(
-            "TG_ENABLED=true but TG_API_ID / TG_API_HASH are missing. Get " +
-                "the numeric api_id and the api_hash from https://my.telegram.org " +
-                "→ API development tools, then set both in .env."
+            "TG_ENABLED=true but TELEGRAM_BOT_TOKEN / TELEGRAM_CHANNEL_ID " +
+                "are missing. Create a bot with @BotFather and add it as an " +
+                "admin of your channel, then set both in .env."
         );
     }
-    if (TG_CHANNEL === "") {
+    try {
+        await telegramApi("getMe", {});
+    } catch (e) {
         throw new Error(
-            "TG_ENABLED=true but TG_CHANNEL is not set. Use the channel " +
-                "username (@your_channel) or numeric id (-100…)."
+            `Telegram startup check failed: ${(e as Error).message}`
         );
-    }
-
-    const telegram = loadTelegram();
-    const { StringSession } = require("telegram/sessions");
-    tgClient = new telegram.TelegramClient(
-        new StringSession(TG_SESSION),
-        TG_API_ID,
-        TG_API_HASH,
-        {
-            connectionRetries: 5,
-            deviceModel: TG_DEVICE_MODEL,
-            appVersion: TG_APP_VERSION,
-            systemVersion: TG_SYSTEM_VERSION,
-            testServers: TG_TEST_SERVER,
-        }
-    );
-    await tgClient.connect();
-    if (!(await tgClient.checkAuthorization())) {
-        console.log(" Telegram first login — a code will arrive in Telegram.");
-        await tgClient.start({
-            phoneNumber: async () =>
-                TG_PHONE ||
-                (await promptLine("Telegram phone (e.g. +15551234567): ")),
-            password: async () =>
-                await promptLine("Telegram 2FA password (blank if none): "),
-            phoneCode: async () => await promptLine("Telegram login code: "),
-            onError: (err: any) =>
-                console.error(" telegram login error:", err),
-        });
-        const saved = tgClient.session.save();
-        if (typeof saved === "string" && saved.length > 0) {
-            upsertEnv("TG_SESSION", saved);
-            console.log(
-                " telegram session saved to .env (TG_SESSION) — future runs skip login."
-            );
-        }
     }
 }
 
 async function sendTelegram(text: string): Promise<void> {
-    await tgClient.sendMessage(TG_CHANNEL, { message: text });
+    await telegramApi("sendMessage", {
+        chat_id: TELEGRAM_CHANNEL_ID,
+        text: escapeHtml(text),
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+    });
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -578,11 +551,28 @@ function loadIdl(name: string): anchor.Idl {
     return JSON.parse(fs.readFileSync(p, "utf-8"));
 }
 
-function programFor(name: string, provider: anchor.Provider): anchor.Program {
-    return new anchor.Program(loadIdl(name), provider);
+function programFor(
+    name: string,
+    programId: PublicKey,
+    provider: anchor.Provider
+): anchor.Program {
+    const idl = loadIdl(name);
+    // Pin the program id from deployment.json — deployed programs can be
+    // rotated to new ids without an IDL regen. anchor 0.31 reads `idl.address`
+    // in the constructor and exposes programId as a getter, so the id must be
+    // set here rather than assigned after construction.
+    (idl as any).address = programId.toBase58();
+    return new anchor.Program(idl, provider);
 }
 
-const num = (x: any): number => (x as anchor.BN).toNumber();
+// BN/u64-safe number coercion. Several u64 state fields use u64::MAX as
+// their "uninitialized day" sentinel (bb_day_index, etc.), which BN.toNumber()
+// rejects outright (it throws above 2^53). Converting via toString keeps big
+// values at double precision and the sentinel still compares unequal to any
+// real trading day.
+function num(x: any): number {
+    return anchor.BN.isBN(x) ? Number(x.toString()) : Number(x);
+}
 
 function lotSize(tier: number): number {
     return LOT_SIZER[tier] ?? 0;
@@ -674,14 +664,9 @@ async function main(): Promise<void> {
     const crankProgramId = new PublicKey(deployment.crankProgram);
     const stakingProgramId = new PublicKey(deployment.stakingProgram);
 
-    const ammProgram = programFor("amm", provider);
-    const crankProgram = programFor("crank_oracle", provider);
-    const stakingProgram = programFor("staking", provider);
-    // Override program ids — IDL files carry the correct declared ids already,
-    // but pin them from deployment.json to match the deployed programs.
-    (ammProgram as any).programId = ammProgramId;
-    (crankProgram as any).programId = crankProgramId;
-    (stakingProgram as any).programId = stakingProgramId;
+    const ammProgram = programFor("amm", ammProgramId, provider);
+    const crankProgram = programFor("crank_oracle", crankProgramId, provider);
+    const stakingProgram = programFor("staking", stakingProgramId, provider);
 
     const [ammStatePda] = PublicKey.findProgramAddressSync(
         [Buffer.from("amm_state"), afhoMint.toBuffer()],
@@ -703,7 +688,7 @@ async function main(): Promise<void> {
     );
     const usdcDecimals = usdcMintInfo.value.decimals;
 
-    console.log(" AFHO announcer started");
+    console.log("AFHO announcer started");
     console.log("  cluster:", RPC_URL);
     console.log("  ammState:", ammStatePda.toBase58());
     console.log("  marketStatus:", marketStatusPda.toBase58());
@@ -713,7 +698,7 @@ async function main(): Promise<void> {
             .filter(Boolean)
             .join(" + ")
     );
-    if (TG_ENABLED && !DRY_RUN) console.log("  telegram target:", TG_CHANNEL);
+    if (TG_ENABLED && !DRY_RUN) console.log("  telegram target:", TELEGRAM_CHANNEL_ID);
     console.log("  devnet mode:", DEVNET_MODE);
     console.log("  dry run:", DRY_RUN);
     console.log("  poll interval (ms):", POLL_INTERVAL_MS);

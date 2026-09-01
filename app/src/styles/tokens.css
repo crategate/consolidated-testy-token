@@ -4,6 +4,15 @@
    from the variables at the bottom; retune the whole page here.
    ═══════════════════════════════════════════════════════════════════ */
 
+/* Animated gradient angle for the slowly rotating rainbow shadows
+   (buy bonds / stake buttons). Browsers without @property support keep
+   the static gradient — the glitch animation still runs. */
+@property --fx-rotor-angle {
+    syntax: '<angle>';
+    inherits: true;
+    initial-value: 0deg;
+}
+
 :root {
     /* ── Core palette: dark nightlife. Slightly lifted so the tinted
           glass panes read against the space between them. ── */
@@ -71,6 +80,9 @@
     --fx-border-cycle: calc(var(--fx-base) / var(--fx-excite));
     --fx-text-cycle: calc(var(--fx-base) * 1.1 / var(--fx-excite));
     --fx-span-cycle: calc(var(--fx-base) * 1.25 / var(--fx-excite));
+
+    /* Slowly rotating rainbow shadow (buy bonds / stake buttons) */
+    --fx-rotor-cycle: 48s;
 
     /* Typography */
     --font-mono: 'SF Mono', 'Fira Code', ui-monospace, monospace;
@@ -149,8 +161,10 @@
     .offer-card::after,
     .order-bar[data-order='active']::after,
     .buy-button.ready::after,
+    .wallet-button-wrapper::before,
     .amm-controls .wallet-button-wrapper::before,
     .wallet-adapter-modal-container::after,
+    .desk-banner::after,
     /* text shadows */
     .text-glitch,
     .text-glitch-rgb,

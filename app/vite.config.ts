@@ -16,7 +16,8 @@ function bufferPolyfill(): Plugin {
         load(id) {
             if (id === resolvedVirtualModuleId) {
                 return `
-                    import { Buffer } from 'buffer';
+                    import bufferPkg from 'buffer';
+                    const Buffer = bufferPkg.Buffer ?? bufferPkg;
                     if (typeof window !== 'undefined' && !window.Buffer) {
                         window.Buffer = Buffer;
                     }
@@ -38,6 +39,11 @@ export default defineConfig({
     plugins: [bufferPolyfill(), react()],
     resolve: {
         alias: {
+            // Force every bare `import 'buffer'` to the npm package's filesystem
+            // entry. Otherwise the rolldown optimizer treats `buffer` as a node
+            // builtin, externalizes it (browser stub), and bn.js inside
+            // @solana/web3.js crashes with "Buffer is not defined" → blank page.
+            buffer: 'buffer/',
             '@idl': path.resolve(__dirname, '../target/idl'),
             '@types': path.resolve(__dirname, '../target/types'),
             '@': path.resolve(__dirname, '../')
@@ -49,15 +55,12 @@ export default defineConfig({
     optimizeDeps: {
         rolldownOptions: {
             output: {
-                codeSplitting: {
-                    groups: [
-                        {
-                            test: /node_modules/,
-                            name: 'vendor',
-                        },
-                    ],
-                }
-            }
+                // No codeSplitting groups here: sharing one vendor chunk
+                // merges `buffer` with @solana/* packages, so importing the
+                // polyfill chunk evaluates spl-token-metadata's top-level
+                // `Buffer.from()` before window.Buffer exists → blank page.
+                // Per-entry chunks keep main.tsx's import order intact.
+            },
         },
         include: ['buffer', '@coral-xyz/anchor', '@solana/web3.js'],
     },

@@ -151,6 +151,13 @@
    the homepage connect tile), blue/pink once connected. */
 .amm-controls .wallet-button-wrapper {
     position: relative;
+    /* Raise the wrapper's isolated context (set by the generic
+       .wallet-button-wrapper rule) above the desk's later-DOM panes,
+       cards and the order bar — those create their own stacking contexts
+       (backdrop-filter/transform) and would otherwise paint over the
+       open wallet dropdown. 40 clears every desk element (max z-index 30)
+       and stays below the wallet modal (1040, portaled to body). */
+    z-index: 40;
     border-radius: var(--radius-sm);
 }
 
@@ -174,7 +181,7 @@
             var(--neon-purple) 360deg);
     filter: blur(10px);
     opacity: 0;
-    animation: rainbowGlitch calc(var(--fx-shadow-cycle) * 0.9) infinite;
+    animation: rainbowGlitch calc(var(--fx-shadow-cycle) * 1.8) infinite;
     animation-delay: var(--shadow-delay, 0.2s);
     pointer-events: none;
     /* ring-only mask: the glow renders around the button, never through it */
@@ -191,7 +198,7 @@
             var(--neon-blue) 240deg,
             var(--neon-pink) 360deg);
     animation-name: bluePinkGlitch;
-    animation-duration: calc(var(--fx-shadow-cycle) * 1.2);
+    animation-duration: calc(var(--fx-shadow-cycle) * 1.8);
 }
 
 .amm-updated {
@@ -209,6 +216,7 @@
     font-size: 14px;
     margin-bottom: 12px;
     line-height: 1.4;
+    isolation: isolate;
 }
 
 /* Faint broken-neon border, drifting on the desk clock */
@@ -221,6 +229,32 @@
     pointer-events: none;
     animation: neonFlickerBroken calc(var(--fx-desk-cycle) * 1.1) infinite;
     animation-delay: var(--glitch-delay, 0.4s);
+}
+
+/* Rainbow backlit shadow behind the banner — sparse ticks on the slow
+   desk clock, never a constant glow */
+.desk-banner::after {
+    content: '';
+    position: absolute;
+    inset: -5px;
+    border-radius: inherit;
+    z-index: -1;
+    padding: 5px;
+    background: conic-gradient(from 0deg at 50% 50%,
+            var(--neon-purple) 0deg,
+            var(--neon-amber) 70deg,
+            var(--neon-pink) 130deg,
+            var(--neon-cyan) 230deg,
+            var(--neon-purple) 360deg);
+    filter: blur(12px) saturate(var(--fx-sat, 1));
+    opacity: 0;
+    pointer-events: none;
+    animation: rainbowGlitch calc(var(--fx-desk-shadow-cycle) * 1.2) infinite;
+    animation-delay: var(--shadow-delay, 0.6s);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask-composite: exclude;
 }
 
 .desk-banner.open {
@@ -491,8 +525,10 @@
     mask-composite: exclude;
 }
 
+/* Connected: the selected tier keeps the slow rainbow keyframes — the
+   cycle only eases slightly tighter, it never starts strobing. */
 .amm-page-shell[data-connected='true'] .offer-card.selected::after {
-    animation-name: rainbowGlitchFast;
+    animation-duration: calc(var(--fx-desk-shadow-cycle) * 1.0 / var(--tier-excite, 1));
 }
 
 /* Hover: gently quicken the border rhythm, no strobe */
@@ -666,8 +702,8 @@
 }
 
 .order-bar[data-order='active']::before {
-    animation-name: neonFlickerFast;
-    animation-duration: calc(var(--fx-desk-cycle) * 0.9 / var(--order-excite, 1));
+    animation-name: neonFlickerSlow;
+    animation-duration: calc(var(--fx-desk-cycle) * 1.4 / var(--order-excite, 1));
 }
 
 /* Active order pane: sparse blue/pink edge glow behind the bar */
@@ -904,7 +940,7 @@
     border-radius: 16px;
     z-index: -1;
     padding: 6px;
-    background: conic-gradient(from 0deg at 50% 50%,
+    background: conic-gradient(from var(--fx-rotor-angle, 0deg) at 50% 50%,
             var(--neon-purple) 0deg,
             var(--neon-amber) 70deg,
             var(--neon-pink) 130deg,
@@ -913,7 +949,8 @@
     filter: blur(14px) saturate(calc(var(--fx-sat, 1) + (var(--order-excite, 1) - 1) * 0.5));
     opacity: 0;
     pointer-events: none;
-    animation: rainbowGlitch calc(var(--fx-desk-shadow-cycle) * 1.0 / var(--order-excite, 1)) infinite;
+    animation: rainbowGlitch calc(var(--fx-desk-shadow-cycle) * 1.4 / var(--order-excite, 1)) infinite,
+        fxRotorSpin var(--fx-rotor-cycle, 48s) linear infinite;
     animation-delay: 0.4s;
     -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
@@ -921,8 +958,11 @@
     mask-composite: exclude;
 }
 
+/* Connected: the glitch cycle only tightens slightly; the rotor stays on
+   its own slow, constant spin. */
 .amm-page-shell[data-connected='true'] .buy-button.ready::after {
-    animation-name: rainbowGlitchFast;
+    animation-duration: calc(var(--fx-desk-shadow-cycle) * 1.0 / var(--order-excite, 1)),
+        var(--fx-rotor-cycle, 48s);
 }
 
 .order-note {
@@ -942,7 +982,8 @@
 .amm-page-shell[data-glitch-burst='true'] .order-bar::after,
 .amm-page-shell[data-glitch-burst='true'] .buy-button.ready::after,
 .amm-page-shell[data-glitch-burst='true'] .amm-controls .wallet-button-wrapper::before {
-    animation-duration: calc(var(--fx-desk-shadow-cycle) * 0.35) !important;
+    animation-duration: calc(var(--fx-desk-shadow-cycle) * 0.35),
+        var(--fx-rotor-cycle, 48s) !important;
 }
 
 /* Hovering a tier dims its siblings' glitches so the hovered tile pops */

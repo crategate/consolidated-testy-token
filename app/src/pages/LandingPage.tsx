@@ -4,6 +4,7 @@ import { StakingSection } from '../components/landing/StakingSection';
 import { StatsSection } from '../components/landing/StatsSection';
 import { ExplainerSection } from '../components/landing/ExplainerSection';
 import { BuiltWithSection } from '../components/landing/BuiltWithSection';
+import { SiteFooter } from '../components/landing/SiteFooter';
 import type { ResolvedDeployment } from '../config';
 
 interface LandingPageProps {
@@ -28,6 +29,7 @@ export default function LandingPage({ deployment }: LandingPageProps) {
             )}
             <ExplainerSection />
             <BuiltWithSection />
+            <SiteFooter />
         </div>
     );
 }

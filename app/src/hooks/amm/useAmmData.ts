@@ -240,13 +240,24 @@ export function useAmmData(): OfferDeskData {
         refresh,
     } = useChainData();
 
-    const ammProgram = deployment?.ammProgram
-        ? new PublicKey(deployment.ammProgram)
-        : AMM_PROGRAM_ID;
+    const ammProgram = useMemo(
+        () => (deployment?.ammProgram ? new PublicKey(deployment.ammProgram) : AMM_PROGRAM_ID),
+        [deployment?.ammProgram],
+    );
 
     const mint = deployment?.mintKey;
-    const ammStatePda = mint ? deriveAmmStatePda(mint, ammProgram) : null;
-    const offerListPda = mint ? deriveOfferListPda(mint, ammProgram) : null;
+    // Derived keys must be referentially stable: a fresh PublicKey instance
+    // every render cascades through `accounts` (memo deps) into OfferLists'
+    // balance effect → setBalances every render → "Maximum update depth
+    // exceeded" → blank offer desk.
+    const ammStatePda = useMemo(
+        () => (mint ? deriveAmmStatePda(mint, ammProgram) : null),
+        [mint, ammProgram],
+    );
+    const offerListPda = useMemo(
+        () => (mint ? deriveOfferListPda(mint, ammProgram) : null),
+        [mint, ammProgram],
+    );
     const marketStatusPda = deployment?.marketStatusKey ?? null;
 
     // Fetch static mint decimals once per session. Everything else is derived
