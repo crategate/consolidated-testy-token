@@ -29,9 +29,9 @@ use super::raydium::read_cpmm_price_floor;
 // `discount_bps` is tenths of a percent (90 = 9.0%); `lot_size` is an index
 // into `lot_sizer`. Tiers ride the vault-scaled ladder (see
 // make_offers::lot_tiers): for a ~750M-token devnet vault the chop/flat sheet
-// lands at tiers 18/15/12 (500k / 50k / 10k AFHO per lot).
+// lands at tiers 19/16/13 (1M / 100k / 15k AFHO per lot).
 const SML_OFFER: Offer = Offer {
-    lot_size: 12,
+    lot_size: 13,
     vesting_days: 5,
     discount_bps: 60, // 6.0%
     _pad: 0,
@@ -39,7 +39,7 @@ const SML_OFFER: Offer = Offer {
     total_offered: 10,
 };
 const MED_OFFER: Offer = Offer {
-    lot_size: 15,
+    lot_size: 16,
     vesting_days: 9,
     discount_bps: 75, // 7.5%
     _pad: 0,
@@ -47,7 +47,7 @@ const MED_OFFER: Offer = Offer {
     total_offered: 5,
 };
 const BIG_OFFER: Offer = Offer {
-    lot_size: 18,
+    lot_size: 19,
     vesting_days: 18,
     discount_bps: 90, // 9.0%
     _pad: 0,

@@ -148,7 +148,7 @@ pub fn handler(ctx: Context<BountyTopUp>) -> Result<()> {
     let clock = Clock::get()?;
     let now = clock.unix_timestamp as u64;
 
-    // Both prices in floor units: (quote_raw × 1e6) / base_raw.
+    // Both prices in floor units: (quote_raw × 1e12) / base_raw.
     let sol_price = super::raydium::read_cpmm_price_floor(
         &ctx.accounts.sol_usdc_pool_state.to_account_info(),
         &ctx.accounts.sol_usdc_observation.to_account_info(),
@@ -265,12 +265,12 @@ pub fn handler(ctx: Context<BountyTopUp>) -> Result<()> {
     // ── Leg 2: USDC → wSOL (into wsol_vault) ──
     // 98% min-out (2% drift tolerance, same as the claim path): a manipulated
     // SOL/USDC pool must not be able to eat the whole conversion.
-    // NOTE: the leg-1 afho_in uses the ×1e12 form (correct); this factor was
-    // 1e9 pre-scale-change where the matching form would be 1e6 — the min-out
-    // here is 1000× off the fair output either way. Flagged for review; kept
-    // behavior-identical by scaling the existing factor.
+    // lamports = usdc_raw × 1e12 / sol_price — the same ×1e12 form as the
+    // claim path's lamports math (sol_price = price per whole SOL × 1e9).
+    // Pre-scale-change this was 1e9 where the matching form was 1e6 — a 1000×
+    // min-out that no real swap could meet; fixed to the fair 1e12 form.
     let wsol_min_out = (usdc_got as u128)
-        .checked_mul(1_000_000_000_000_000u128)
+        .checked_mul(1_000_000_000_000u128)
         .ok_or(ErrorCode::MathOverflow)?
         .checked_div(sol_price as u128)
         .ok_or(ErrorCode::MathOverflow)?

@@ -94,7 +94,7 @@ pub fn handler(ctx: Context<MakeOffers>) -> Result<()> {
     // Step 2 — lot tiers ← vault abundance (caps the ladder) + excitement
     // (climbs it); spacing widens with momentum. The ladder window also RIDES
     // THE VAULT'S MAGNITUDE (tier_shift below): a 750M-token vault lists
-    // hundred-thousand-token lots, a ~400k-token vault keeps the original
+    // million-token lots, a ~400k-token vault keeps the original
     // small ladder. Uses totals step's vault read.
     let mom_x = momentum.saturating_sub(3_500).min(6_500) * 10_000 / 6_500;
     let excitement = (6 * mom_x + 4 * offer_aggression as u64) / 10;
@@ -193,11 +193,15 @@ fn daily_totals_pct_bps(momentum: u64) -> u64 {
 //
 // VAULT-SCALE SHIFT (devnet-big fix): the ladder window rides the vault's
 // absolute magnitude so lots stay a meaningful fraction of the sheet on any
-// vault size. t_hat = highest tier with lot ≤ vault/200 whole tokens (0.5% of
-// vault); shift = t_hat − ceiling, floored at 0 (vaults below ~500k tokens
-// keep the original tuned ladder — the sim/test regime) and clamped so the
-// window stays inside tiers 0–21. A 749M-token vault at ceiling 9 → t_hat 20
-// → shift 11 → big/med/sml land at tiers ~18/15/12 (500k/50k/10k tokens).
+// vault size. t_hat = highest tier with lot ≤ vault/100 whole tokens (1% of
+// vault); shift = t_hat − ceiling, floored at 0 (vaults below ~900k tokens
+// keep the original tuned ladder — the sim/test regime). The ladder now
+// extends to tier 25 (100M tokens), so the window climbs as high as the
+// vault demands instead of pinning at a ceiling: a 749M-token vault at
+// ceiling 9 → t_hat 21 → shift 12 → big/med/sml land at tiers ~19/16/13
+// (1M/100k/15k tokens). A full 1B vault sits its ceiling at tier 22 (10M)
+// with headroom to 25 — no clamp engages below a ~10B-token vault, well
+// beyond the capped 1B supply.
 fn lot_tiers(vault_balance: u64, total_supply: u64, unit: u64, mom_x: u64, excitement: u64) -> [u8; 3] {
     let abundance = if total_supply == 0 {
         0
@@ -217,19 +221,19 @@ fn lot_tiers(vault_balance: u64, total_supply: u64, unit: u64, mom_x: u64, excit
     };
     // Vault-scale shift: ride the ladder window up with the vault's magnitude.
     let vault_tokens = vault_balance / unit.max(1); // whole tokens
-    let target = vault_tokens / 200; // ceiling tier targets 0.5% of vault
+    let target = vault_tokens / 100; // ceiling tier targets 1% of vault
     let mut t_hat: i64 = 0;
     if target > 0 {
-        for t in (1..=21u8).rev() {
+        for t in (1..=25u8).rev() {
             if lot_sizer(t) as u64 <= target {
                 t_hat = t as i64;
                 break;
             }
         }
     }
-    let shift = (t_hat - ceiling).clamp(0, 21 - ceiling);
+    let shift = (t_hat - ceiling).clamp(0, 25 - ceiling);
     let climb = ((10_000 - excitement) * 4 + 5_000) / 10_000; // 0..4
-    let big = (ceiling + shift - climb as i64).clamp(3, 21);
+    let big = (ceiling + shift - climb as i64).clamp(3, 25);
     let spacing = (2 + (2 * mom_x + 5_000) / 10_000) as i64; // 2..4
     let med = (big - spacing).clamp(2, big - 1);
     let sml = (med - spacing).clamp(1, med - 1);

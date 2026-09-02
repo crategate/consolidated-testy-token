@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { formatTokens, pricePerToken, effectivePrice } from '../../hooks/amm/offerMath.ts';
 import type { OfferTierData } from '../../hooks/amm/useAmmData.ts';
 
@@ -24,6 +25,19 @@ export default function SingleOffer({
 }: SingleOfferProps) {
     const soldOut = offer.remaining === 0;
     const selected = qty > 0;
+
+    // Local draft while the quantity input is focused: typing lands in the
+    // draft, and the committed quantity updates on blur / Enter, clamped to
+    // the tier's remaining lots. Clicking +/- blurs the input first, so the
+    // buttons always operate on the committed value.
+    const [draft, setDraft] = useState<string | null>(null);
+    const commitDraft = () => {
+        if (draft === null) return;
+        setDraft(null);
+        const parsed = Number.parseInt(draft, 10);
+        if (Number.isNaN(parsed)) return; // revert to the committed qty
+        onQtyChange(Math.min(Math.max(parsed, 0), offer.remaining));
+    };
 
     // Approximate per-lot price in USDC — the final price is fixed on-chain
     // at claim time from the same oracle read this estimate uses.
@@ -80,7 +94,20 @@ export default function SingleOffer({
                 >
                     −
                 </button>
-                <span className="qty-value">{qty}</span>
+                <input
+                    type="number"
+                    className="qty-input"
+                    min={0}
+                    max={offer.remaining}
+                    value={draft ?? qty}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onBlur={commitDraft}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
+                    }}
+                    disabled={disabled || soldOut}
+                    aria-label={`${offer.label} quantity input`}
+                />
                 <button
                     type="button"
                     onClick={() => onQtyChange(qty + 1)}

@@ -662,11 +662,40 @@
     box-shadow: 0 0 16px rgba(0, 240, 255, 0.3);
 }
 
-.qty-value {
-    min-width: 36px;
+/* editable quantity input between the stepper buttons */
+.qty-input {
+    min-width: 72px;
+    width: 72px;
+    height: 48px;
+    padding: 0 8px;
     text-align: center;
     font-size: 18px;
     font-weight: 700;
+    font-family: inherit;
+    color: var(--text-primary);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+
+.qty-input::-webkit-outer-spin-button,
+.qty-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.qty-input:focus {
+    border-color: rgba(0, 240, 255, 0.5);
+    box-shadow: 0 0 12px rgba(0, 240, 255, 0.18);
+}
+
+.qty-input:disabled {
+    opacity: 0.35;
+    cursor: default;
 }
 
 .offer-soldout {
@@ -1003,7 +1032,7 @@
     animation: textShadowGlitch calc(5s / var(--tier-excite, 1)) infinite;
 }
 
-.offer-card.selected .qty-value {
+.offer-card.selected .qty-input {
     animation: textShadowShiver 1.8s infinite;
 }
 

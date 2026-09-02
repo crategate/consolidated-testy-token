@@ -24,6 +24,13 @@ pub fn lot_sizer(tier: u8) -> u32 {
         19 => 1000000,
         20 => 2500000,
         21 => 5000000,
+        // devnet-big: the ladder keeps climbing so the vault-scale window
+        // never pins against the top — a 1B-token vault places its ceiling
+        // tier (1% of vault = 10M) at tier 22, with headroom to 25.
+        22 => 10_000_000,
+        23 => 25_000_000,
+        24 => 50_000_000,
+        25 => 100_000_000,
         _ => 0,
     }
 }
