@@ -45,8 +45,10 @@ pub struct Offer {
     pub vesting_days: u8, // how many trading days to unlock
     pub discount_bps: u8, // % bps discount from live DEX prices,
     //                      (tenth percent resolution so 115 = 11.5%)
-    pub remaining: u8,     // how how many units remained offered today
-    pub total_offered: u8, // how many total of this offer to start with
+    pub _pad: u8, // explicit pad: keeps the u32 fields 4-aligned with no
+    //              implicit padding (bytemuck rejects implicit padding)
+    pub remaining: u32, // how how many units remained offered today
+    pub total_offered: u32, // how many total of this offer to start with
 }
 
 #[account(zero_copy)]
@@ -58,9 +60,14 @@ pub struct OfferList {
     pub day_index: u64,
     pub total_complete: u32, // total whole AFHO tokens sold
     pub bump: u8,
+    // pad: big_offer must start 4-aligned (Offer holds u32s; bytemuck rejects
+    // implicit padding, so this is explicit).
+    pub _align: [u8; 3],
     pub big_offer: Offer,
     pub med_offer: Offer,
     pub sml_offer: Offer,
+    // tail pad: struct stays a multiple of 8 for the zero-copy memcpy layout
+    // (disc(8) + 96-byte struct = 104-byte account).
     pub _pad: [u8; 4],
 }
 

@@ -28,6 +28,9 @@ pub use bounty_top_up::*;
 pub mod load_test_data;
 pub use load_test_data::*;
 
+pub mod migrate_offer_list;
+pub use migrate_offer_list::*;
+
 pub mod load_offers;
 pub use load_offers::*;
 

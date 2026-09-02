@@ -178,8 +178,8 @@ fn pct_accepted(offer: &Offer) -> u8 {
     if offer.total_offered == 0 {
         return 0;
     }
-    let cleared = (offer.total_offered - offer.remaining) as u16;
-    (cleared * 100 / offer.total_offered as u16) as u8
+    let cleared = (offer.total_offered - offer.remaining) as u64;
+    (cleared * 100 / offer.total_offered as u64).min(100) as u8
 }
 
 // Update percentages of the AcceptedOffers account

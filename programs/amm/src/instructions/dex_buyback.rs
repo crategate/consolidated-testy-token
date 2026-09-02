@@ -274,9 +274,9 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
         )
         .ok_or(ErrorCode::InvalidOracle)?;
         // min-out for the CPMM swap: bound the realized price inside the same
-        // M3 band used post-swap.
+        // M3 band used post-swap. (usdc_raw × 1e12 / afho_raw = floor units.)
         let min_out = if spot > 0 {
-            (slice_usdc as u128 * 1_000_000u128 * 10_000u128
+            (slice_usdc as u128 * 1_000_000_000_000u128 * 10_000u128
                 / (spot as u128 * (10_000 + MAX_SLIPPAGE_BPS) as u128)) as u64
         } else {
             0
@@ -296,7 +296,7 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
         if out > 0 {
             ratchet_within_band(
                 amm_state,
-                (slice_usdc as u128 * 1_000_000 / out as u128) as u64,
+                (slice_usdc as u128 * 1_000_000_000_000 / out as u128) as u64,
                 spot,
             )?;
         }

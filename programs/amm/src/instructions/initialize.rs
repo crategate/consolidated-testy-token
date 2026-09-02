@@ -85,6 +85,7 @@ pub fn handler(
         lot_size: 0,
         vesting_days: 0,
         discount_bps: 0,
+        _pad: 0,
         remaining: 0,
         total_offered: 0,
     };

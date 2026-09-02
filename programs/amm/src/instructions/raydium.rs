@@ -290,7 +290,11 @@ pub const TWAP_MAX_AGE_SECONDS: u64 = 600;
 /// floor-units price: floor = (quote_raw × 1e6) / base_raw. With both the
 /// AFHO/USDC and SOL/USDC pools using 9-dp base / 6-dp quote tokens, a Q32
 /// quote-per-base price × 1000 == floor units.
-pub const FLOOR_UNITS_PER_Q32: u128 = 1_000;
+/// Floor units = USDC price per whole token × 1e9 (nano-dollar). This scale
+/// must represent sub-cent launch prices (a $1,300 LP against 250M AFHO is
+/// $5.2e-6 → 5,200 floor units) while keeping headroom: u64 holds up to
+/// ~$1.8e10 per token.
+pub const FLOOR_UNITS_PER_Q32: u128 = 1_000_000_000;
 
 /// Latest observation timestamp (the ring's `observation_index` points at the
 /// most recently written entry).
@@ -339,7 +343,7 @@ fn q32_to_floor(twap_q32: u128, token_0: Pubkey, token_1: Pubkey, base: Pubkey, 
         return None;
     }
     let floor = price_q32.checked_mul(FLOOR_UNITS_PER_Q32)?.checked_div(Q32 as u128)?;
-    Some(floor as u64)
+    Some(u64::try_from(floor).ok()?)
 }
 
 /// Floor-units price of `base_mint` quoted in `quote_mint` from a pinned CPMM
@@ -380,7 +384,7 @@ pub fn read_cpmm_price_floor(
     if base_raw == 0 {
         return None;
     }
-    Some((quote_raw as u128 * 1_000_000u128 / base_raw as u128) as u64)
+    Some(u64::try_from(quote_raw as u128 * 1_000_000_000_000u128 / base_raw as u128).ok()?)
 }
 
 /// Unified price reader for the whole AMM. When the CPMM pool is pinned in

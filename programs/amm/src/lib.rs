@@ -71,6 +71,14 @@ pub mod amm {
         load_test_data::handler(ctx, data)
     }
 
+    // DEVNET/TEST ONLY — one-time offer_list resize for the devnet-big u8→u32
+    // count widening. Must run once after upgrading a deployment whose
+    // offer_list account predates the widening (the zero-copy load rejects the
+    // undersized account everywhere else). Idempotent. Remove before mainnet.
+    pub fn migrate_offer_list(ctx: Context<MigrateOfferList>) -> Result<()> {
+        migrate_offer_list::handler(ctx)
+    }
+
     // DEVNET/TEST ONLY — remove before mainnet. Posts a realistic, claimable
     // three-tier offer sheet (day_index = today) with the floor anchored to
     // the live pool price, for UI/claim development without a real make_offers run.
@@ -84,7 +92,7 @@ pub mod amm {
     // directly into a vesting StakePosition via CPI — it never sits in the
     // buyer's wallet. Claims only while the market is after-hours/closed,
     // against the current day's sheet.
-    pub fn offer_claim(ctx: Context<OfferClaim>, tier: u8, units: u8, index: u64) -> Result<()> {
+    pub fn offer_claim(ctx: Context<OfferClaim>, tier: u8, units: u32, index: u64) -> Result<()> {
         offer_claim::handler(ctx, tier, units, index)
     }
 
@@ -94,7 +102,7 @@ pub mod amm {
     pub fn offer_claim_sol(
         ctx: Context<OfferClaimSol>,
         tier: u8,
-        units: u8,
+        units: u32,
         index: u64,
     ) -> Result<()> {
         offer_claim::handler_sol(ctx, tier, units, index)

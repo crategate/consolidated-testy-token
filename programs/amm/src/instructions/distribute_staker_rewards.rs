@@ -222,7 +222,7 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
         .ok_or(ErrorCode::InvalidOracle)?;
         let before = ctx.accounts.afho_vault.amount;
         let min_out = if spot > 0 {
-            (usdc_in as u128 * 1_000_000u128 * 10_000u128
+            (usdc_in as u128 * 1_000_000_000_000u128 * 10_000u128
                 / (spot as u128 * (10_000 + MAX_SLIPPAGE_BPS) as u128)) as u64
         } else {
             0
@@ -239,11 +239,11 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
         ctx.accounts.afho_vault.reload()?;
         let out = ctx.accounts.afho_vault.amount.saturating_sub(before);
         if out > 0 {
-            // USDC leg: (usdc_raw × 1e6) / afho_raw — already floor units.
+            // USDC leg: (usdc_raw × 1e12) / afho_raw — already floor units.
             // M3: band-checked against the spot oracle.
             ratchet_within_band(
                 amm_state,
-                (usdc_in as u128 * 1_000_000 / out as u128) as u64,
+                (usdc_in as u128 * 1_000_000_000_000 / out as u128) as u64,
                 spot,
             )?;
         }

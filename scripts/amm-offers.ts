@@ -94,12 +94,26 @@ async function main() {
         console.log("   pool not pinned — using mock spot oracle as the price source");
     }
 
+    // One-time offer_list resize (devnet-big u8→u32 count widening): the
+    // zero-copy account grew 80 → 104 bytes; resize a pre-widening account in
+    // place first (idempotent no-op once current).
+    const migrateSig = await ammProgram.methods
+        .migrateOfferList()
+        .accountsStrict({
+            authority: provider.wallet.publicKey,
+            ammState: ammStatePda,
+            offerList: pda("offer_list"),
+            systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .rpc();
+    console.log(" offer_list migrated/resized if needed:", migrateSig);
+
     const sig = await ammProgram.methods.loadOffers().accounts(accounts).rpc();
 
     console.log(" Offer sheet loaded:", sig);
-    console.log("   big 3 lots @ tier 6 (500 AFHO) · 9.0% off · 18-day vest");
-    console.log("   med 5 lots @ tier 4 (100 AFHO) · 7.5% off ·  9-day vest");
-    console.log("   sml 10 lots @ tier 2 ( 25 AFHO) · 6.0% off ·  5-day vest");
+    console.log("   big 3 lots @ tier 18 (500k AFHO) · 9.0% off · 18-day vest");
+    console.log("   med 5 lots @ tier 15 ( 50k AFHO) · 7.5% off ·  9-day vest");
+    console.log("   sml 10 lots @ tier 12 ( 10k AFHO) · 6.0% off ·  5-day vest");
     console.log("   day_index stamped to today → claimable tonight via offer_claim");
 }
 

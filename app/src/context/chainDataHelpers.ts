@@ -330,7 +330,7 @@ export function computeLivePrice(infos: Array<{ data: Uint8Array } | null>): Liv
     const baseRaw = tokenAmount(afhoVaultInfo?.data ?? null);
     const quoteRaw = tokenAmount(usdcVaultInfo?.data ?? null);
     if (baseRaw !== null && quoteRaw !== null && baseRaw > 0n) {
-        afhoUsdc = (quoteRaw * 1_000_000n) / baseRaw;
+        afhoUsdc = (quoteRaw * 1_000_000_000_000n) / baseRaw;
     }
     if (afhoUsdc === null && rawSpotInfo && rawSpotInfo.data.length >= 8) {
         afhoUsdc = new DataView(rawSpotInfo.data.buffer, rawSpotInfo.data.byteOffset).getBigUint64(
@@ -343,7 +343,7 @@ export function computeLivePrice(infos: Array<{ data: Uint8Array } | null>): Liv
     const solBase = tokenAmount(solInInfo?.data ?? null);
     const solQuote = tokenAmount(solOutInfo?.data ?? null);
     if (solBase !== null && solQuote !== null && solBase > 0n) {
-        solUsdc = (solQuote * 1_000_000n) / solBase;
+        solUsdc = (solQuote * 1_000_000_000_000n) / solBase;
     }
     if (solUsdc === null && solOracleInfo && solOracleInfo.data.length >= 8) {
         solUsdc = new DataView(solOracleInfo.data.buffer, solOracleInfo.data.byteOffset).getBigUint64(

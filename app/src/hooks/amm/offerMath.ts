@@ -15,7 +15,8 @@ export function lotTokens(lotTier: number): number {
 }
 
 // Price units (both the spot oracle and the ratchet floor):
-//   (usdc_raw × 1e6) / afho_raw   — "floor units"
+//   (usdc_raw × 1e12) / afho_raw   — "floor units" = price per whole token
+//   × 1e9 (nano-dollar). Represents sub-cent launch prices ($5.2e-6 → 5,200).
 // discount_bps is stored in tenths of a percent (115 = 11.5%) → ×10 = bps.
 export function effectivePrice(livePrice: bigint, discountTenths: number, floor: bigint): bigint {
     const bps = BigInt(discountTenths) * 10n;
@@ -43,7 +44,7 @@ export function quoteCostRaw(
     if (units <= 0 || livePrice <= 0n) return 0n;
     const unit = 10n ** BigInt(afhoDecimals);
     const totalRaw = BigInt(lotTokens(lotTier)) * BigInt(units) * unit;
-    return (totalRaw * effectivePrice(livePrice, discountTenths, floor)) / 1_000_000n;
+    return (totalRaw * effectivePrice(livePrice, discountTenths, floor)) / 1_000_000_000_000n;
 }
 
 export function formatUsdc(raw: bigint, usdcDecimals = 6): string {
@@ -53,10 +54,10 @@ export function formatUsdc(raw: bigint, usdcDecimals = 6): string {
     return `${whole.toLocaleString('en-US')}.${frac}`;
 }
 
-// Price of one whole AFHO in USDC, from floor units.
+// Price of one whole AFHO in USDC, from floor units (price × 1e9).
 export function pricePerToken(floorUnits: bigint, afhoDecimals: number, usdcDecimals = 6): number {
     if (floorUnits <= 0n) return 0;
-    return Number(floorUnits) * 10 ** (afhoDecimals - 6 - usdcDecimals);
+    return Number(floorUnits) * 10 ** (afhoDecimals - 9 - usdcDecimals);
 }
 
 export function formatTokens(n: number): string {
@@ -65,14 +66,14 @@ export function formatTokens(n: number): string {
 
 // ── SOL payment path (offer_claim_sol) ───────────────────────────────────
 // sol_price uses the same floor-unit convention as the AFHO spot oracle:
-//   (usdc_raw × 1e6) / lamports
+//   (usdc_raw × 1e12) / lamports
 // The buyer covers the CPMM 0.25% input fee on the wSOL→USDC swap, so the
 // on-chain lamports charge mirrors:
-//   lamports = cost_usdc × 1e6 × 10_025 / sol_price / 10_000
+//   lamports = cost_usdc × 1e12 × 10_025 / sol_price / 10_000
 // (the pool nets the protocol the full USDC cost; min-out tolerates 2%).
 export function lamportsForCost(costUsdcRaw: bigint, solPrice: bigint): bigint {
     if (costUsdcRaw <= 0n || solPrice <= 0n) return 0n;
-    return (costUsdcRaw * 1_000_000n * 10_025n) / solPrice / 10_000n;
+    return (costUsdcRaw * 1_000_000_000_000n * 10_025n) / solPrice / 10_000n;
 }
 
 // Lamports → human SOL, up to 4 decimal places (trailing zeros trimmed).

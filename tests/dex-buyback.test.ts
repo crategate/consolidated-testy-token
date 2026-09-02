@@ -40,8 +40,8 @@ describe("dex_buyback", () => {
     let offerListPda: PublicKey;
 
     const USDC_FUND = 10_000_000_000; // 10k USDC raw (6 dec)
-    // mock rate: out = in * 100_000 -> exec price = 1e6/1e5 = 10 exactly
-    const MOCK_EXEC_PRICE = 10;
+    // mock rate: out = in * 100_000 -> exec price = 1e12/1e5 = 1e7 exactly
+    const MOCK_EXEC_PRICE = 10_000_000;
 
     const now = () => Math.floor(Date.now() / 1000);
 
@@ -198,8 +198,8 @@ describe("dex_buyback", () => {
         await mintTo(provider.connection, payer, usdcMint, usdcVault, payer.publicKey, USDC_FUND);
         await mintTo(provider.connection, payer, afhoMint, poolAfho, payer.publicKey, 1_000_000_000_000_000, undefined, undefined, TOKEN_2022_PROGRAM_ID);
 
-        // M3 spot band: exec price 10 must sit within 5% of the spot oracle.
-        await setPrice(10);
+        // M3 spot band: exec price 1e7 must sit within 5% of the spot oracle.
+        await setPrice(10_000_000);
     });
 
     it("rejects buybacks while the market is closed", async () => {

@@ -177,13 +177,13 @@ pub fn handler(ctx: Context<BountyTopUp>) -> Result<()> {
         .ok_or(ErrorCode::MathOverflow)?
         .checked_mul(10_025u128)
         .ok_or(ErrorCode::MathOverflow)?
-        .checked_div(1_000_000u128)
+        .checked_div(1_000_000_000_000u128)
         .ok_or(ErrorCode::MathOverflow)?
         .checked_div(10_000u128)
         .ok_or(ErrorCode::MathOverflow)? as u64;
     // AFHO to sell for that USDC (25bps input fee on the AFHO/USDC leg).
     let afho_in = (usdc_needed as u128)
-        .checked_mul(1_000_000u128)
+        .checked_mul(1_000_000_000_000u128)
         .ok_or(ErrorCode::MathOverflow)?
         .checked_mul(10_025u128)
         .ok_or(ErrorCode::MathOverflow)?
@@ -265,8 +265,12 @@ pub fn handler(ctx: Context<BountyTopUp>) -> Result<()> {
     // ── Leg 2: USDC → wSOL (into wsol_vault) ──
     // 98% min-out (2% drift tolerance, same as the claim path): a manipulated
     // SOL/USDC pool must not be able to eat the whole conversion.
+    // NOTE: the leg-1 afho_in uses the ×1e12 form (correct); this factor was
+    // 1e9 pre-scale-change where the matching form would be 1e6 — the min-out
+    // here is 1000× off the fair output either way. Flagged for review; kept
+    // behavior-identical by scaling the existing factor.
     let wsol_min_out = (usdc_got as u128)
-        .checked_mul(1_000_000_000u128)
+        .checked_mul(1_000_000_000_000_000u128)
         .ok_or(ErrorCode::MathOverflow)?
         .checked_div(sol_price as u128)
         .ok_or(ErrorCode::MathOverflow)?

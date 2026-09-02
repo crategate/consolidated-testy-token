@@ -33,7 +33,7 @@ use anchor_spl::token::{sync_native, SyncNative};
 // ---------------------------------------------------------------------------
 
 #[derive(Accounts)]
-#[instruction(tier: u8, units: u8, index: u64)]
+#[instruction(tier: u8, units: u32, index: u64)]
 pub struct OfferClaim<'info> {
     #[account(mut)]
     pub buyer: Signer<'info>,
@@ -141,7 +141,7 @@ pub struct OfferClaim<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler(ctx: Context<OfferClaim>, tier: u8, units: u8, index: u64) -> Result<()> {
+pub fn handler(ctx: Context<OfferClaim>, tier: u8, units: u32, index: u64) -> Result<()> {
     let clock = Clock::get()?;
     let amm_state = &ctx.accounts.amm_state;
     let pinned = amm_state.cpmm_pool_state != Pubkey::default();
@@ -261,7 +261,7 @@ pub fn handler(ctx: Context<OfferClaim>, tier: u8, units: u8, index: u64) -> Res
 // ---------------------------------------------------------------------------
 
 #[derive(Accounts)]
-#[instruction(tier: u8, units: u8, index: u64)]
+#[instruction(tier: u8, units: u32, index: u64)]
 pub struct OfferClaimSol<'info> {
     #[account(mut)]
     pub buyer: Signer<'info>,
@@ -392,7 +392,7 @@ pub struct OfferClaimSol<'info> {
     pub cpmm_output_vault: Option<AccountInfo<'info>>,
 }
 
-pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u8, index: u64) -> Result<()> {
+pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u32, index: u64) -> Result<()> {
     let clock = Clock::get()?;
     let (cpmm_pool_state, cpmm_program, cpmm_sol_usdc_pool) = {
         let a = &ctx.accounts.amm_state;
@@ -458,11 +458,11 @@ pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u8, index: u64)
     )?;
 
     // ── Convert the USDC-denominated cost into lamports ──
-    // sol_price units match the spot oracle: (usdc_raw x 1e6) / lamports,
-    // so lamports = cost_usdc x 1e6 / sol_price. The CPMM charges a 0.25%
-    // fee on the input leg, so the buyer is charged 25bps on top — the pool
-    // then nets the protocol the full USDC cost (min-out below guards the
-    // residual slippage/drift).
+    // sol_price units match the spot oracle: (usdc_raw x 1e12) / lamports
+    // (price per whole SOL × 1e9), so lamports = cost_usdc x 1e12 /
+    // sol_price. The CPMM charges a 0.25% fee on the input leg, so the buyer
+    // is charged 25bps on top — the pool then nets the protocol the full
+    // USDC cost (min-out below guards the residual slippage/drift).
     let sol_price = if sol_pinned {
         super::raydium::read_cpmm_price_floor(
             &ctx.accounts.sol_usdc_pool_state.to_account_info(),
@@ -479,7 +479,7 @@ pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u8, index: u64)
     };
     require!(sol_price > 0, ErrorCode::InvalidOracle);
     let lamports = (q.cost_usdc as u128)
-        .checked_mul(1_000_000u128)
+        .checked_mul(1_000_000_000_000u128)
         .ok_or(ErrorCode::MathOverflow)?
         .checked_mul(10_025u128)
         .ok_or(ErrorCode::MathOverflow)?
@@ -669,7 +669,7 @@ fn quote_claim(
     afho_decimals: u8,
     live_price: u64,
     tier: u8,
-    units: u8,
+    units: u32,
 ) -> Result<ClaimQuote> {
     require!(units > 0, ErrorCode::ZeroAmount);
 
@@ -697,7 +697,7 @@ fn quote_claim(
         2 => offer_list.big_offer,
         _ => return err!(ErrorCode::InvalidTier),
     };
-    require!(offer.remaining >= units, ErrorCode::InsufficientOffer);
+    require!(offer.remaining as u32 >= units, ErrorCode::InsufficientOffer);
     let (lot_tier, vesting_days, discount_stored) =
         (offer.lot_size, offer.vesting_days, offer.discount_bps);
 
@@ -719,7 +719,8 @@ fn quote_claim(
     }
 
     // lot_size is a TIER INDEX — translate via lot_sizer to whole tokens,
-    // then to raw units. Price units: (usdc_raw × 1e6) / afho_raw.
+    // then to raw units. Price units: (usdc_raw × 1e12) / afho_raw
+    // (price per whole AFHO × 1e9).
     let unit = 10u64.checked_pow(afho_decimals as u32).unwrap_or(1);
     let total_tokens = lot_sizer(lot_tier) as u64 * units as u64;
     require!(total_tokens > 0, ErrorCode::InsufficientOffer);
@@ -729,7 +730,7 @@ fn quote_claim(
     let cost = total_raw
         .checked_mul(effective_price as u128)
         .ok_or(ErrorCode::MathOverflow)?
-        / 1_000_000u128;
+        / 1_000_000_000_000u128;
     let cost_usdc = u64::try_from(cost).map_err(|_| ErrorCode::MathOverflow)?;
     require!(cost_usdc > 0, ErrorCode::ZeroAmount);
 
@@ -759,11 +760,11 @@ fn validate_user_index(user_index: &AccountInfo, index: u64) -> Result<()> {
 
 /// Sheet accounting: decrement the tier's remaining lots; total_complete is
 /// in WHOLE TOKENS, not lots.
-fn settle_sheet(offer_list: &mut Account<OfferList>, tier: u8, units: u8, total_tokens: u64) {
+fn settle_sheet(offer_list: &mut Account<OfferList>, tier: u8, units: u32, total_tokens: u64) {
     match tier {
-        0 => offer_list.sml_offer.remaining -= units,
-        1 => offer_list.med_offer.remaining -= units,
-        _ => offer_list.big_offer.remaining -= units,
+        0 => offer_list.sml_offer.remaining -= units as u32,
+        1 => offer_list.med_offer.remaining -= units as u32,
+        _ => offer_list.big_offer.remaining -= units as u32,
     }
     offer_list.total_complete = offer_list
         .total_complete

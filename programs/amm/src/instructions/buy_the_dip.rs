@@ -339,7 +339,7 @@ pub fn handler(ctx: Context<BuyTheDip>) -> Result<()> {
     if slice_usdc > 0 {
         let before = ctx.accounts.afho_vault.amount;
         let min_out = if spot > 0 {
-            (slice_usdc as u128 * 1_000_000u128 * 10_000u128
+            (slice_usdc as u128 * 1_000_000_000_000u128 * 10_000u128
                 / (spot as u128 * (10_000 + MAX_SLIPPAGE_BPS) as u128)) as u64
         } else {
             0
@@ -351,7 +351,7 @@ pub fn handler(ctx: Context<BuyTheDip>) -> Result<()> {
             // M3: fill must sit inside the slippage band vs spot
             ratchet_within_band(
                 amm_state,
-                (slice_usdc as u128 * 1_000_000 / out as u128) as u64,
+                (slice_usdc as u128 * 1_000_000_000_000 / out as u128) as u64,
                 spot,
             )?;
         }

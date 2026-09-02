@@ -309,7 +309,7 @@ describe("offer_claim + distribute_staker_rewards", () => {
         buyerUsdc = await createAssociatedTokenAccount(provider.connection, payer, usdcMint, buyer.publicKey);
         await mintTo(provider.connection, payer, usdcMint, buyerUsdc, payer.publicKey, 1_000_000_000); // 1000 USDC
 
-        await setPrice(10); // same units as the mock exec price (1e6/1e5)
+        await setPrice(10_000_000); // same units as the mock exec price (1e12/1e5)
     });
 
     it("loads a sheet and claims: 80/10/10 split + vesting position created", async () => {
@@ -342,7 +342,8 @@ describe("offer_claim + distribute_staker_rewards", () => {
         await setMarket(1, 0, now()); // after-hours, day 0 (sheet day_index = 0 from init)
 
         // 2 lots = 20 AFHO; price 10, discount 10% -> effective 9
-        // cost = 20e9 raw * 9 / 1e6 = 180_000 raw USDC
+        // 2 lots = 20 AFHO; price $0.01, discount 10% -> effective 9e6
+        // cost = 20e9 raw * 9e6 / 1e12 = 180_000 raw USDC
         const expectedCost = 180_000;
         const vaultBefore = await provider.connection.getTokenAccountBalance(usdcVault);
         const dipBefore = await provider.connection.getTokenAccountBalance(usdcDip);

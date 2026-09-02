@@ -172,15 +172,15 @@ describe("ratchet floor decay", () => {
             })
             .rpc();
 
-        await setPrice(500);
+        await setPrice(500_000_000);
     });
 
     it("grace period: no decay through the 15th locked day", async () => {
-        await loadKnobs({ basis: 1000, untaken: 14, offerDayIndex: 0 });
+        await loadKnobs({ basis: 1_000_000_000, untaken: 14, offerDayIndex: 0 });
         const st = await calc(1);
-        // no sheet, live 500 < floor 1000 -> counter 14 -> 15, still grace
+        // no sheet, live 5e8 < floor 1e9 -> counter 14 -> 15, still grace
         assert.equal(st.untaken, 15);
-        assert.equal(st.floor, 1000, "no decay at day 15");
+        assert.equal(st.floor, 1_000_000_000, "no decay at day 15");
     });
 
     it("first decay day cuts exactly 2% of the gap", async () => {
@@ -188,21 +188,21 @@ describe("ratchet floor decay", () => {
         // (basis 0 leaves highest_buyback_basis alone) or the counter chain.
         await loadKnobs({ untaken: 15, offerDayIndex: 1 });
         const st = await calc(2);
-        // untaken 15 -> 16 > 15: cut = (1000 - 500) * 2 / 100 = 10
+        // untaken 15 -> 16 > 15: cut = (1e9 - 5e8) * 2 / 100 = 1e7
         assert.equal(st.untaken, 16);
-        assert.equal(st.floor, 990);
+        assert.equal(st.floor, 990_000_000);
     });
 
     it("converges exponentially over multiple locked days", async () => {
         await loadKnobs({ untaken: 16, offerDayIndex: 2 });
-        const d3 = await calc(3); // gap 490 -> cut 9
-        assert.equal(d3.floor, 981);
+        const d3 = await calc(3); // gap 490e6 -> cut 9.8e6
+        assert.equal(d3.floor, 980_200_000);
         await loadKnobs({ untaken: 17, offerDayIndex: 3 });
-        const d4 = await calc(4); // gap 481 -> cut 9
-        assert.equal(d4.floor, 972);
+        const d4 = await calc(4); // gap 480.2e6 -> cut 9.604e6
+        assert.equal(d4.floor, 970_596_000);
         await loadKnobs({ untaken: 18, offerDayIndex: 4 });
-        const d5 = await calc(5); // gap 472 -> cut 9
-        assert.equal(d5.floor, 963);
+        const d5 = await calc(5); // gap 470.596e6 -> cut 9.41192e6
+        assert.equal(d5.floor, 961_184_080);
     });
 
     it("any fill resets the counter and stops decay", async () => {
@@ -210,33 +210,33 @@ describe("ratchet floor decay", () => {
         await loadKnobs({ untaken: 25, offerDayIndex: 5, sheet: { big: [0, 0], med: [0, 0], sml: [10, 7] } });
         const st = await calc(6);
         assert.equal(st.untaken, 0, "fill resets counter");
-        assert.equal(st.floor, 963, "no decay on a fill day");
+        assert.equal(st.floor, 961_184_080, "no decay on a fill day");
     });
 
     it("no-sheet day with price >= floor leaves the counter unchanged", async () => {
-        await setPrice(2000); // above floor 963
+        await setPrice(2_000_000_000); // above floor 961_184_080
         await loadKnobs({ untaken: 20, offerDayIndex: 6 }); // clears the sheet (all zeros)
         const st = await calc(7);
         assert.equal(st.untaken, 20, "nothing wrong — counter holds");
-        assert.equal(st.floor, 963, "no decay above floor");
+        assert.equal(st.floor, 961_184_080, "no decay above floor");
     });
 
     it("sheet-made-but-untaken counts toward the lock", async () => {
         await loadKnobs({ untaken: 20, offerDayIndex: 7, sheet: { big: [0, 0], med: [0, 0], sml: [10, 10] } });
         const st = await calc(8);
         assert.equal(st.untaken, 21, "ignored sheet counts");
-        assert.equal(st.floor, 963, "still no decay above floor");
+        assert.equal(st.floor, 961_184_080, "still no decay above floor");
     });
 
     it("decay lands exactly on live price and stops", async () => {
-        await setPrice(99);
-        await loadKnobs({ basis: 100, untaken: 20, offerDayIndex: 8 }); // floor 100, sheet cleared
+        await setPrice(99_999_999);
+        await loadKnobs({ basis: 100_000_000, untaken: 20, offerDayIndex: 8 }); // floor 100e6, sheet cleared
         const d9 = await calc(9);
-        // gap 1 -> 2% = 0 -> max(1) -> floor 99 == live
-        assert.equal(d9.floor, 99);
+        // gap 1 -> 2% = 0 -> max(1) -> floor 99_999_999 == live
+        assert.equal(d9.floor, 99_999_999);
         await loadKnobs({ untaken: 21, offerDayIndex: 9 }); // floor carries (basis 0)
         const d10 = await calc(10);
-        assert.equal(d10.floor, 99, "never crosses below live");
+        assert.equal(d10.floor, 99_999_999, "never crosses below live");
         assert.equal(d10.untaken, 21, "no increment once floor == live");
     });
 });

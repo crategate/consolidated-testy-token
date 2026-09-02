@@ -25,28 +25,32 @@ use super::offer_claim::{read_live_price, require_pinned_pricing_accounts};
 use super::raydium::read_cpmm_price_floor;
 
 // Average tier terms for a flat, healthy market (momentum ~5000,
-// stake_health ~40, moderate demand — the "chop/flat" sheet the combinator
-// actually emits; see sim/mc_sweep.py). `discount_bps` is tenths of a percent
-// (90 = 9.0%); `lot_size` is an index into `lot_sizer`
-// (2 = 25, 4 = 100, 6 = 500).
+// stake_health ~40, moderate demand — the "chop/flat" row of sim/mc_sweep.py).
+// `discount_bps` is tenths of a percent (90 = 9.0%); `lot_size` is an index
+// into `lot_sizer`. Tiers ride the vault-scaled ladder (see
+// make_offers::lot_tiers): for a ~750M-token devnet vault the chop/flat sheet
+// lands at tiers 18/15/12 (500k / 50k / 10k AFHO per lot).
 const SML_OFFER: Offer = Offer {
-    lot_size: 2,
+    lot_size: 12,
     vesting_days: 5,
     discount_bps: 60, // 6.0%
+    _pad: 0,
     remaining: 10,
     total_offered: 10,
 };
 const MED_OFFER: Offer = Offer {
-    lot_size: 4,
+    lot_size: 15,
     vesting_days: 9,
     discount_bps: 75, // 7.5%
+    _pad: 0,
     remaining: 5,
     total_offered: 5,
 };
 const BIG_OFFER: Offer = Offer {
-    lot_size: 6,
+    lot_size: 18,
     vesting_days: 18,
     discount_bps: 90, // 9.0%
+    _pad: 0,
     remaining: 3,
     total_offered: 3,
 };
@@ -106,7 +110,6 @@ pub struct LoadOffers<'info> {
 pub fn handler(ctx: Context<LoadOffers>) -> Result<()> {
     let amm_state = &mut ctx.accounts.amm_state;
     let offer_list = &mut ctx.accounts.offer_list;
-
     // ── Current trading day from the crank's market-status PDA ──
     // MarketStatus layout: disc(8) + current_state(1) + timestamp(8) + trading_day_index(8)
     let market_data = ctx.accounts.market_status.try_borrow_data()?;
