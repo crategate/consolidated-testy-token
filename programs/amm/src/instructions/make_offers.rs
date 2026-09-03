@@ -123,7 +123,12 @@ pub fn handler(ctx: Context<MakeOffers>) -> Result<()> {
         if counts[i] > 0 && stored_disc[i] >= MIN_LIST_STORED {
             sheet[i] = Offer {
                 lot_size: tiers[i],
-                vesting_days: vesting_days(bases[i], stake_health, raw_disc[i], stored_disc[i] as i64 * 10),
+                vesting_days: vesting_days(
+                    bases[i],
+                    stake_health,
+                    raw_disc[i],
+                    stored_disc[i] as i64 * 10,
+                ),
                 discount_bps: stored_disc[i],
                 _pad: 0,
                 remaining: counts[i],
@@ -200,7 +205,13 @@ fn daily_totals_pct_bps(momentum: u64) -> u64 {
 // → shift 12 → big/med/sml land at tiers ~19/16/13 (1M/100k/15k tokens),
 // and a full 1B vault (the supply cap) sits its 1% ceiling tier exactly at
 // the ladder top — the shift clamp never engages at any reachable vault.
-fn lot_tiers(vault_balance: u64, total_supply: u64, unit: u64, mom_x: u64, excitement: u64) -> [u8; 3] {
+fn lot_tiers(
+    vault_balance: u64,
+    total_supply: u64,
+    unit: u64,
+    mom_x: u64,
+    excitement: u64,
+) -> [u8; 3] {
     let abundance = if total_supply == 0 {
         0
     } else {
@@ -328,3 +339,4 @@ pub enum ErrorCode {
     #[msg("Invalid price oracle")]
     InvalidOracle,
 }
+

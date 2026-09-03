@@ -154,6 +154,12 @@
     }
 }
 
+h1,
+h2,
+h3 {
+    font-weight: 400;
+}
+
 #spacer {
     height: 88px;
     border-top: 1px solid var(--border);

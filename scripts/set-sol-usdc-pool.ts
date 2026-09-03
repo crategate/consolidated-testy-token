@@ -24,8 +24,9 @@ import { writeDeploymentState } from "./deployment-state";
 //      these at the canonical Raydium SOL/USDC pool before launch).
 //   2. raydiumSolUsdcPool / raydiumSolUsdcConfig already in deployment.json.
 //   3. Devnet fallback: create our own SOL/USDC CPMM pool, seeded at the same
-//      200 USDC/SOL rate as the mock sol_oracle written by amm-init, so the
-//      claim's min-out math lines up. Seed amounts: SOL_USDC_SEED_SOL /
+//      200 USDC/SOL rate as the mock sol_oracle re-seeded by amm-test-data
+//      (200_000_000_000 floor units = price × 1e9), so the claim's min-out
+//      math lines up. Seed amounts: SOL_USDC_SEED_SOL /
 //      SOL_USDC_SEED_USDC env vars (defaults 0.3 SOL / 60 USDC — the devnet
 //      wallet has limited USDC; for bigger test claims seed a bigger pool).
 
@@ -34,9 +35,10 @@ const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
 const USDC_MINT = new PublicKey("USDCoctVLVnvTXBEuP9s8hntucdJokbo17RwHuNXemT"); // devnet (Raydium devnet faucet)
 // const USDC_MINT = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"); // MAINNET
 
-// 200 USDC/SOL — matches the mock sol_oracle (200000) that amm-init seeds on
-// devnet. MAINNET: this only affects the fallback pool creation, which should
-// never run on mainnet (env vars are used instead).
+// 200 USDC/SOL — matches the mock sol_oracle re-seeded by amm-test-data
+// (200_000_000_000 = 200 × 1e9 floor units). MAINNET: this only affects the
+// fallback pool creation, which should never run on mainnet (env vars are
+// used instead).
 const SEED_RATE_USDC_PER_SOL = 200;
 
 const seedSol = parseFloat(process.env.SOL_USDC_SEED_SOL || "0.3");
