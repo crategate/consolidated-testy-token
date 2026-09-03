@@ -324,8 +324,22 @@ export function useAmmData(): OfferDeskData {
         (!ammState && 'AMM state not found — run anchor run amm-init') ||
         (decimalsQuery.error instanceof Error ? decimalsQuery.error.message : null);
 
+    // CLOSED-SESSION BOOST mirror (programs/amm offer_claim::quote_claim):
+    // while the market is CLOSED (state 2) every remaining tier prices 0.5%
+    // deeper (5 tenths, saturating at the u8 cap); back in extended hours
+    // (state 1 = pre-trade) it reverts to the sheet's base discount. Applied
+    // at the data layer so tiles, discount labels, and the cart total all
+    // agree with the on-chain quote math.
+    const tiersDisplay = useMemo(
+        () =>
+            marketState === 2
+                ? tiers.map((t) => ({ ...t, discountBps: Math.min(t.discountBps + 5, 255) }))
+                : tiers,
+        [tiers, marketState],
+    );
+
     return {
-        tiers,
+        tiers: tiersDisplay,
         livePrice: livePrice.afhoUsdc,
         solPrice: livePrice.solUsdc,
         floorBasis: ammState ? big(field(ammState, 'highestBuybackBasis', 'highest_buyback_basis')) : 0n,

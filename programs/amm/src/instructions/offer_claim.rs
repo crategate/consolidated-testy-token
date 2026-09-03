@@ -704,7 +704,21 @@ fn quote_claim(
     // ── Price: live absolute price minus the tier discount ──
     // discount_bps is stored in tenths of a percent (115 = 11.5%) → ×10 = bps.
     require!(live_price > 0, ErrorCode::InvalidOracle);
-    let discount_bps = discount_stored as u64 * 10;
+    // CLOSED-SESSION BOOST: whatever survives the after-hours session into the
+    // closed session (state 1 → 2) drops another 0.5% (5 tenths) — every tier
+    // drops together, so the closed window gets its own special price. When
+    // the market moves back to extended hours (state 1 = pre-trade), remaining
+    // offers price at the sheet's base discount again. Deliberately a pure
+    // function of the market state: the stored sheet is untouched, nothing to
+    // mutate/revert, no keeper dependency — a state-1 claim simply reads the
+    // base discount. Still clamped by the ratchet floor below like any price.
+    let boosted_stored = if current_state == 2 {
+        msg!("closed-session boost: +0.5% (state 2)");
+        discount_stored.saturating_add(5)
+    } else {
+        discount_stored
+    };
+    let discount_bps = boosted_stored as u64 * 10;
     let discounted = live_price.saturating_sub(live_price.saturating_mul(discount_bps) / 10_000);
 
     // ── RATCHET: never sell below highest realized buyback basis ──

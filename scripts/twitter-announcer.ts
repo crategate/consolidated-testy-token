@@ -7,6 +7,8 @@
 //   2. Daily buyback completes (AFHO purchased, average price, USDC spent)
 //   3. Buy-the-dip trigger (AFHO bought, price, remaining dip vault)
 //   4. Market-state changes (with the associated unstake fee)
+//   4b. Closed-session flash sale: AFTER-HOURS → CLOSED with bonds still on
+//       the sheet — every remaining tier is 0.5% deeper for the closed window
 //   5. Monday market open (open + fee + % supply staked + bond vault remaining)
 //
 // All post copy lives in the MESSAGE DEFINITIONS block at the top of this
@@ -73,6 +75,7 @@ const MARKET_NAMES: Record<number, string> = {
 const LOT_SIZER: number[] = [
     0, 10, 25, 50, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000, 15000,
     20000, 50000, 100000, 250000, 500000, 1000000, 2500000, 5000000,
+    10000000,
 ];
 
 // ── number formatting (copy-facing) ──────────────────────────────────────────
@@ -258,6 +261,32 @@ export function marketStateMessage(state: number, feeLabel: string): string {
         `{Status|State} update: market ${name} · ${feeLabel}`,
         `Market {is now|switched to} ${name} · ${feeLabel}`,
     ]);
+}
+
+// 4b. Closed-session flash sale: the market went AFTER-HOURS → CLOSED and the
+// sheet still has bonds left. Every remaining tier prices +0.5% deeper for
+// the closed window (programs/amm offer_claim::quote_claim). Copy shows the
+// BOOSTED discount (base + 0.5) and what remains per tier.
+export function closedSaleMessage(tiers: {
+    big: TierLine & { left: number; total: number };
+    med: TierLine & { left: number; total: number };
+    sml: TierLine & { left: number; total: number };
+}): string {
+    const line = (name: string, t: TierLine & { left: number; total: number }) =>
+        `${name}: ${t.left} of ${t.total} × ${formatWhole(t.size)} AFHO @ ${(t.discountPct + 0.5).toFixed(
+            1
+        )}% {discount|off} · ${t.vestingDays}d {vest|vesting}`;
+    const lines: string[] = [
+        pick([
+            `Market CLOSED — {flash sale|night owl special}: every bond left drops another 0.5%`,
+            `Market {now CLOSED|just closed} — the {closed-session|late-night} discount just kicked in: −0.5% more on every bond left`,
+            `CLOSED-session prices are live — all remaining bonds drop an extra 0.5%`,
+        ]),
+    ];
+    if (tiers.big.left > 0) lines.push(line("Big", tiers.big));
+    if (tiers.med.left > 0) lines.push(line("Med", tiers.med));
+    if (tiers.sml.left > 0) lines.push(line("Sml", tiers.sml));
+    return lines.join("\n");
 }
 
 // 5. Monday market open (richer variant of the market-open message).
@@ -768,7 +797,25 @@ async function main(): Promise<void> {
                 // ── 1/5: market-state change (Monday open gets the richer message) ──
                 if (state !== prevState) {
                     const feeLabel = unstakeFeeLabel(stakingPool, state);
-                    if (state === 0 && isMondayEt()) {
+                    // AFTER-HOURS → CLOSED with bonds left: closed-session flash
+                    // sale replaces the plain status post (the sale message
+                    // already says the market is closed). Gated on REMAINING
+                    // lots — sold-out tiers don't make a sale.
+                    const lotsLeft =
+                        num(offerList.bigOffer.remaining) +
+                        num(offerList.medOffer.remaining) +
+                        num(offerList.smlOffer.remaining);
+                    const closedSale = prevState === 1 && state === 2 && lotsLeft > 0;
+                    if (closedSale) {
+                        const sheet = buildSheet(offerList);
+                        await announce(
+                            closedSaleMessage({
+                                big: { ...sheet.big, left: num(offerList.bigOffer.remaining), total: num(offerList.bigOffer.totalOffered) },
+                                med: { ...sheet.med, left: num(offerList.medOffer.remaining), total: num(offerList.medOffer.totalOffered) },
+                                sml: { ...sheet.sml, left: num(offerList.smlOffer.remaining), total: num(offerList.smlOffer.totalOffered) },
+                            })
+                        );
+                    } else if (state === 0 && isMondayEt()) {
                         const totalSupplyRaw = Number(
                             (await connection.getTokenSupply(afhoMint)).value.amount
                         );
