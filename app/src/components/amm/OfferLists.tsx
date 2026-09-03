@@ -257,8 +257,6 @@ export default function OfferLists() {
                     quantities={quantities}
                     livePrice={data.livePrice}
                     floorBasis={data.floorBasis}
-                    afhoDecimals={data.afhoDecimals}
-                    usdcDecimals={data.usdcDecimals}
                     disabled={!data.deskOpen || status === 'pending'}
                     onQtyChange={setQty}
                 />
@@ -337,7 +335,7 @@ export default function OfferLists() {
                     {priceKnown && (
                         <span className="order-live-price">
                             Live AFHO ≈ ${(() => {
-                                const px = pricePerToken(data.livePrice as bigint, data.afhoDecimals, data.usdcDecimals);
+                                const px = pricePerToken(data.livePrice as bigint);
                                 return px >= 1 ? px.toLocaleString('en-US', { maximumFractionDigits: 4 }) : px.toPrecision(4);
                             })()}{' '}
                             · source: {data.accounts ? 'pool (spot)' : 'oracle'}

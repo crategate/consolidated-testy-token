@@ -81,8 +81,8 @@ async function main() {
     // 4. Token Metadata Configuration
     const metadata: TokenMetadata = {
         mint: mint.publicKey,
-        name: 'After Hours',
-        symbol: 'AFHO31',
+        name: 'AfterHours',
+        symbol: 'AFHO92',
         uri: 'https://copper-quick-koi-488.mypinata.cloud/ipfs/bafkreibzpsjq7c2hqogq2ukdz4wbadv75v5rdy2xgzgo56iie6agef5xhe',
         additionalMetadata: [['description', 'a token bound by the hours of Wall Street']],
     };
@@ -140,7 +140,7 @@ async function main() {
     // NOTE: wallet AFHO balance after amm-init's 75% vault sweep is 249,999,978,
     // so the LP leg must stay below that when re-running on an existing mint.
     const AFHO_TO_LP = 250000000;
-    const USDC_TO_LP = 1200;
+    const USDC_TO_LP = 1250;
     const AFHO_TO_VAULT = 745000000;  // change in amm-init
 
     /// MINT TOKENS & TEST TRANSFER

@@ -185,7 +185,7 @@ fn daily_totals_pct_bps(momentum: u64) -> u64 {
     200
 }
 
-// Step 2 — dynamic lot tiers (indices 0–21 into lot_sizer). Vault abundance
+// Step 2 — dynamic lot tiers (indices 0–22 into lot_sizer). Vault abundance
 // caps the ladder: initial vault ≈ 40% of supply, so the % -of-supply
 // thresholds 30/20/10/4 mirror the sim's 75/50/25/10%-of-initial ceilings
 // 9/7/5/3/1. Excitement E climbs toward the ceiling; spacing widens with
@@ -195,13 +195,11 @@ fn daily_totals_pct_bps(momentum: u64) -> u64 {
 // absolute magnitude so lots stay a meaningful fraction of the sheet on any
 // vault size. t_hat = highest tier with lot ≤ vault/100 whole tokens (1% of
 // vault); shift = t_hat − ceiling, floored at 0 (vaults below ~900k tokens
-// keep the original tuned ladder — the sim/test regime). The ladder now
-// extends to tier 25 (100M tokens), so the window climbs as high as the
-// vault demands instead of pinning at a ceiling: a 749M-token vault at
-// ceiling 9 → t_hat 21 → shift 12 → big/med/sml land at tiers ~19/16/13
-// (1M/100k/15k tokens). A full 1B vault sits its ceiling at tier 22 (10M)
-// with headroom to 25 — no clamp engages below a ~10B-token vault, well
-// beyond the capped 1B supply.
+// keep the original tuned ladder — the sim/test regime). The ladder TOPS
+// OUT at tier 22 (10M tokens): a 749M-token vault at ceiling 9 → t_hat 21
+// → shift 12 → big/med/sml land at tiers ~19/16/13 (1M/100k/15k tokens),
+// and a full 1B vault (the supply cap) sits its 1% ceiling tier exactly at
+// the ladder top — the shift clamp never engages at any reachable vault.
 fn lot_tiers(vault_balance: u64, total_supply: u64, unit: u64, mom_x: u64, excitement: u64) -> [u8; 3] {
     let abundance = if total_supply == 0 {
         0
@@ -224,16 +222,16 @@ fn lot_tiers(vault_balance: u64, total_supply: u64, unit: u64, mom_x: u64, excit
     let target = vault_tokens / 100; // ceiling tier targets 1% of vault
     let mut t_hat: i64 = 0;
     if target > 0 {
-        for t in (1..=25u8).rev() {
+        for t in (1..=22u8).rev() {
             if lot_sizer(t) as u64 <= target {
                 t_hat = t as i64;
                 break;
             }
         }
     }
-    let shift = (t_hat - ceiling).clamp(0, 25 - ceiling);
+    let shift = (t_hat - ceiling).clamp(0, 22 - ceiling);
     let climb = ((10_000 - excitement) * 4 + 5_000) / 10_000; // 0..4
-    let big = (ceiling + shift - climb as i64).clamp(3, 25);
+    let big = (ceiling + shift - climb as i64).clamp(3, 22);
     let spacing = (2 + (2 * mom_x + 5_000) / 10_000) as i64; // 2..4
     let med = (big - spacing).clamp(2, big - 1);
     let sml = (med - spacing).clamp(1, med - 1);

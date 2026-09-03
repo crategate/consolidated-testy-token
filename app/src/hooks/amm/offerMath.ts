@@ -8,7 +8,7 @@
 export const LOT_SIZES: readonly number[] = [
     0, 10, 25, 50, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000, 15000,
     20000, 50000, 100000, 250000, 500000, 1000000, 2500000, 5000000,
-    10000000, 25000000, 50000000, 100000000,
+    10000000,
 ];
 
 export function lotTokens(lotTier: number): number {
@@ -33,7 +33,9 @@ export function ratchetActive(livePrice: bigint, discountTenths: number, floor: 
 
 // Cost in raw USDC for `units` lots — mirrors quote_claim:
 //   total_raw = lot_tokens × units × 10^afho_decimals
-//   cost_usdc = total_raw × effective_price / 1e6
+//   cost_usdc = total_raw × effective_price / 1e12
+// (floor units = price-per-token × 1e9, afho 9 dec → total_raw × price ×
+// 1e9 × 1e9 / 1e12 = tokens × price × 1e6 = USDC raw for the 6/9-dec pair)
 export function quoteCostRaw(
     livePrice: bigint,
     discountTenths: number,
@@ -55,10 +57,16 @@ export function formatUsdc(raw: bigint, usdcDecimals = 6): string {
     return `${whole.toLocaleString('en-US')}.${frac}`;
 }
 
-// Price of one whole AFHO in USDC, from floor units (price × 1e9).
-export function pricePerToken(floorUnits: bigint, afhoDecimals: number, usdcDecimals = 6): number {
+// Price of one whole AFHO in USDC, from floor units. Floor units are
+// price-per-token × 1e9 (nano-dollar) by construction —
+// (usdc_raw × 1e12) / afho_raw for the 6/9-dec pair — so the conversion to
+// a whole-token USDC price is always /1e9, independent of mint decimals.
+// (The pre-e9 formula `×10^(afho−9−usdc)` landed on /1e6 for the 9/6 pair
+// and printed per-lot + live prices 1000× high; quoteCostRaw was correct,
+// so the tile disagreed with the cart total by exactly 1000×.)
+export function pricePerToken(floorUnits: bigint): number {
     if (floorUnits <= 0n) return 0;
-    return Number(floorUnits) * 10 ** (afhoDecimals - 9 - usdcDecimals);
+    return Number(floorUnits) / 1e9;
 }
 
 export function formatTokens(n: number): string {

@@ -21,7 +21,7 @@ from plot import (BLUE, GRAY, GREEN, INK, LGRAY, RED, WHITE, Canvas, Plot,
 
 LOT_LADDER = [0, 10, 25, 50, 100, 250, 500, 750, 1000, 2500, 5000, 7500,
               10000, 15000, 20000, 50000, 100000, 250000, 500000, 1000000,
-              2500000, 5000000, 10000000, 25000000, 50000000, 100000000]
+              2500000, 5000000, 10000000]
 TIERS = ("sml", "med", "big")
 VEST_BASE = {"sml": 5, "med": 10, "big": 20}
 VEST_MIN, VEST_MAX = 3, 25   # 25 = big-tier cap (sml/med saturate below: 8/15)
@@ -67,22 +67,21 @@ def lot_tiers(vault, supply, mom_x, excitement):
     The ladder window rides the vault's magnitude: t_hat = highest tier with
     lot <= vault/100 whole tokens (1% of vault); shift = t_hat - ceiling,
     floored at 0 so the small-vault (<= ~900k tokens) regime keeps the
-    original tuned ladder. The ladder extends to tier 25 (100M tokens), so the
-    window climbs as high as the vault demands instead of pinning at a
-    ceiling."""
+    original tuned ladder. The ladder TOPS OUT at tier 22 (10M tokens): a
+    full 1B vault (the supply cap) sits its 1% ceiling tier exactly there."""
     abundance = vault * 100 // supply if supply > 0 else 0
     ceiling = (9 if abundance >= 30 else 7 if abundance >= 20 else 5
                if abundance >= 10 else 3 if abundance >= 4 else 1)
     target = vault // 100
     t_hat = 0
     if target > 0:
-        for t in range(25, 0, -1):
+        for t in range(22, 0, -1):
             if LOT_LADDER[t] <= target:
                 t_hat = t
                 break
-    shift = clamp(t_hat - ceiling, 0, 25 - ceiling)
+    shift = clamp(t_hat - ceiling, 0, 22 - ceiling)
     climb = ((10000 - excitement) * 4 + 5000) // 10000
-    big = clamp(ceiling + shift - climb, 3, 25)
+    big = clamp(ceiling + shift - climb, 3, 22)
     spacing = 2 + (2 * mom_x + 5000) // 10000
     med = clamp(big - spacing, 2, big - 1)
     sml = clamp(med - spacing, 1, med - 1)

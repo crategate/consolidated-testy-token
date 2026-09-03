@@ -7,8 +7,6 @@ interface SingleOfferProps {
     qty: number;
     livePrice: bigint | null;
     floorBasis: bigint;
-    afhoDecimals: number;
-    usdcDecimals: number;
     disabled: boolean;
     onQtyChange: (qty: number) => void;
 }
@@ -18,8 +16,6 @@ export default function SingleOffer({
     qty,
     livePrice,
     floorBasis,
-    afhoDecimals,
-    usdcDecimals,
     disabled,
     onQtyChange,
 }: SingleOfferProps) {
@@ -44,7 +40,7 @@ export default function SingleOffer({
     let perLot: string | null = null;
     if (livePrice !== null && livePrice > 0n) {
         const eff = effectivePrice(livePrice, offer.discountBps, floorBasis);
-        const usd = pricePerToken(eff, afhoDecimals, usdcDecimals) * offer.lotTokens;
+        const usd = pricePerToken(eff) * offer.lotTokens;
         perLot = usd >= 1
             ? usd.toLocaleString('en-US', { maximumFractionDigits: 2 })
             : usd.toPrecision(3);

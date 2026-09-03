@@ -114,6 +114,11 @@ pub mod staking {
         require!(after_hours_penalty_bps <= 10_000, StakeError::InvalidBps);
         require!(closed_penalty_bps <= 10_000, StakeError::InvalidBps);
         require!(halted_penalty_bps <= 10_000, StakeError::InvalidBps);
+        // SECURITY: the multiplier is a weight amplifier (see
+        // calculate_multiplier) — an unbounded cap lets an oversized value
+        // inflate total_weighted_stake and skew reward share. Spec header
+        // claims 1.0x–3.0x: pin the ceiling at 30_000 bps (3.0x).
+        require!(max_multiplier_bps <= 30_000, StakeError::InvalidBps);
 
         let pool = &mut ctx.accounts.pool;
         pool.authority = ctx.accounts.authority.key();

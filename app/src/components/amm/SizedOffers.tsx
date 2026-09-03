@@ -6,8 +6,6 @@ interface SizedOffersProps {
     quantities: Record<string, number>;
     livePrice: bigint | null;
     floorBasis: bigint;
-    afhoDecimals: number;
-    usdcDecimals: number;
     disabled: boolean;
     onQtyChange: (tierKey: string, qty: number) => void;
 }
@@ -17,8 +15,6 @@ export default function SizedOffers({
     quantities,
     livePrice,
     floorBasis,
-    afhoDecimals,
-    usdcDecimals,
     disabled,
     onQtyChange,
 }: SizedOffersProps) {
@@ -31,8 +27,6 @@ export default function SizedOffers({
                     qty={quantities[offer.key] ?? 0}
                     livePrice={livePrice}
                     floorBasis={floorBasis}
-                    afhoDecimals={afhoDecimals}
-                    usdcDecimals={usdcDecimals}
                     disabled={disabled}
                     onQtyChange={(q) => onQtyChange(offer.key, q)}
                 />
