@@ -26,12 +26,9 @@ pub struct CalcCompletedOffers<'info> {
     #[account(mut, seeds = [b"accepted_offers", amm_state.afho_mint.as_ref()], bump)]
     pub accepted_offers: Box<Account<'info, AcceptedOffers>>,
 
-    /// CHECK: live absolute-price oracle — mock fallback (raw u64). Used only
-    /// when the CPMM pool is NOT pinned.
-    #[account(address = amm_state.spot_oracle)]
-    pub price_oracle: UncheckedAccount<'info>,
-
-    // Raydium CPMM AFHO/USDC pool — live price source when pinned.
+    // Raydium CPMM AFHO/USDC pool — the ONLY price source (pool pins in
+    // AmmState; the handler hard-errors when unset and validates the
+    // accounts against the pool's derived PDAs).
     /// CHECK: pool state, pinned to amm_state.cpmm_pool_state in the handler
     pub cpmm_pool_state: Option<AccountInfo<'info>>,
     /// CHECK: pool observation (TWAP ring)
@@ -95,8 +92,8 @@ pub fn handler(ctx: Context<CalcCompletedOffers>) -> Result<()> {
     let live_price = {
         let amm_state = &ctx.accounts.amm_state;
         let pinned = amm_state.cpmm_pool_state != Pubkey::default();
-        if pinned {
-            let clock = Clock::get()?;
+        require!(pinned, ErrorCode::PoolNotPinned);
+        let clock = Clock::get()?;
             let pool_state = ctx.accounts.cpmm_pool_state.as_ref().ok_or(ErrorCode::InvalidPoolAccount)?;
             let observation = ctx.accounts.cpmm_observation.as_ref().ok_or(ErrorCode::InvalidPoolAccount)?;
             let base_vault = ctx.accounts.cpmm_output_vault.as_ref().ok_or(ErrorCode::InvalidPoolAccount)?;
@@ -130,9 +127,6 @@ pub fn handler(ctx: Context<CalcCompletedOffers>) -> Result<()> {
                 clock.unix_timestamp as u64,
             )
             .ok_or(ErrorCode::InvalidOracle)?
-        } else {
-            read_live_price(&ctx.accounts.price_oracle)?
-        }
     };
     let amm_state = &mut ctx.accounts.amm_state;
     let floor = amm_state.highest_buyback_basis;
@@ -198,12 +192,6 @@ fn update_offer_sheet_records(
     accepted.sml_offers_accepted.copy_within(1.., 0);
     accepted.sml_offers_accepted[4] = sml_pct;
 }
-// Raw u64 price stub, same pattern as offer_claim::read_live_price.
-fn read_live_price(price_oracle: &AccountInfo) -> Result<u64> {
-    let data = price_oracle.try_borrow_data()?;
-    require!(data.len() >= 8, ErrorCode::InvalidOracle);
-    Ok(u64::from_le_bytes(data[0..8].try_into().unwrap()))
-}
 
 #[error_code]
 pub enum ErrorCode {    #[msg("Unauthorized caller")]
@@ -220,4 +208,6 @@ pub enum ErrorCode {    #[msg("Unauthorized caller")]
     InvalidOracle,
     #[msg("CPMM pool account mismatch")]
     InvalidPoolAccount,
+    #[msg("CPMM pool not pinned — run set_cpmm_pool")]
+    PoolNotPinned,
 }

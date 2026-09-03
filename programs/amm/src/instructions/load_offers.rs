@@ -21,7 +21,7 @@ use anchor_lang::prelude::*;
 
 use crate::state::offersState::{AmmState, Offer, OfferList};
 
-use super::offer_claim::{read_live_price, require_pinned_pricing_accounts};
+use super::offer_claim::require_pinned_pricing_accounts;
 use super::raydium::read_cpmm_price_floor;
 
 // Average tier terms for a flat, healthy market (momentum ~5000,
@@ -90,13 +90,8 @@ pub struct LoadOffers<'info> {
     )]
     pub market_status: UncheckedAccount<'info>,
 
-    /// Absolute-price mock oracle — fallback when the CPMM pool is NOT pinned.
-    /// CHECK: address-verified against amm_state.spot_oracle.
-    #[account(address = amm_state.spot_oracle)]
-    pub spot_oracle: UncheckedAccount<'info>,
-
-    // Raydium CPMM AFHO/USDC pricing accounts — live price source when the
-    // pool is pinned (mirrors offer_claim). Omitted in mock/localnet mode.
+    // Raydium CPMM AFHO/USDC pricing accounts — the ONLY price source (pool
+    // pins in AmmState; the handler hard-errors when unset).
     /// CHECK: validated against amm_state.cpmm_pool_state when pinned.
     pub cpmm_pool_state: Option<AccountInfo<'info>>,
     /// CHECK: validated as the pool's observation PDA when pinned.
@@ -119,10 +114,13 @@ pub fn handler(ctx: Context<LoadOffers>) -> Result<()> {
     );
     let current_day = u64::from_le_bytes(market_data[17..25].try_into().unwrap());
 
-    // ── Live price: CPMM pool when pinned, mock spot oracle otherwise ──
+    // ── Live price: pinned CPMM pool (required) ──
     let pinned = amm_state.cpmm_pool_state != Pubkey::default();
-    require_pinned_pricing_accounts(
+    require!(
         pinned,
+        crate::instructions::make_offers::ErrorCode::InvalidMarketStatus
+    );
+    require_pinned_pricing_accounts(
         amm_state.cpmm_program,
         amm_state.cpmm_pool_state,
         &amm_state.afho_mint,
@@ -133,19 +131,15 @@ pub fn handler(ctx: Context<LoadOffers>) -> Result<()> {
         ctx.accounts.cpmm_input_vault.as_ref(),  // quote leg (USDC)
     )?;
     let now = Clock::get()?.unix_timestamp as u64;
-    let live_price = if pinned {
-        read_cpmm_price_floor(
-            ctx.accounts.cpmm_pool_state.as_ref().unwrap(),
-            ctx.accounts.cpmm_observation.as_ref().unwrap(),
-            ctx.accounts.cpmm_output_vault.as_ref().unwrap(),
-            ctx.accounts.cpmm_input_vault.as_ref().unwrap(),
-            &amm_state.afho_mint,
-            &amm_state.usdc_mint,
-            now,
-        )
-    } else {
-        Some(read_live_price(&ctx.accounts.spot_oracle)?)
-    };
+    let live_price = read_cpmm_price_floor(
+        ctx.accounts.cpmm_pool_state.as_ref().unwrap(),
+        ctx.accounts.cpmm_observation.as_ref().unwrap(),
+        ctx.accounts.cpmm_output_vault.as_ref().unwrap(),
+        ctx.accounts.cpmm_input_vault.as_ref().unwrap(),
+        &amm_state.afho_mint,
+        &amm_state.usdc_mint,
+        now,
+    );
 
     // ── Post the sheet (always succeeds — the sheet is the point of this ix) ──
     offer_list.sml_offer = SML_OFFER;

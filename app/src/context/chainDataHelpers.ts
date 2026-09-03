@@ -268,12 +268,12 @@ export interface LivePriceData {
 
 /**
  * The accounts needed to compute both legs of the live price, in fixed order:
- * [afhoPoolVault, usdcPoolVault, solUsdcInputVault, solUsdcOutputVault,
- *  spotOracle, solOracle].
+ * [afhoPoolVault, usdcPoolVault, solUsdcInputVault, solUsdcOutputVault].
  *
- * Unpinned pools are PublicKey.default placeholders (the RPC answers null for
- * them), so one getMultipleAccountsInfo covers the entire price read with no
- * fallback round-trips.
+ * Pricing is pool-only: no mock oracle fallbacks. Unpinned pools are
+ * PublicKey.default placeholders (the RPC answers null for them), so one
+ * getMultipleAccountsInfo covers the entire price read with no extra
+ * round-trips. solUsdc stays null until the SOL/USDC pool is pinned.
  */
 export function derivePriceAccounts(ammState: AmmStateData, mint: PublicKey): PublicKey[] {
     const cpmmPoolState = pub(ammState, 'cpmmPoolState', 'cpmm_pool_state');
@@ -313,8 +313,6 @@ export function derivePriceAccounts(ammState: AmmStateData, mint: PublicKey): Pu
         usdcPoolVault ?? PublicKey.default,
         solUsdcInputVault ?? PublicKey.default,
         solUsdcOutputVault ?? PublicKey.default,
-        pub(ammState, 'spotOracle', 'spot_oracle') ?? PublicKey.default,
-        pub(ammState, 'solOracle', 'sol_oracle') ?? PublicKey.default,
     ];
 }
 
@@ -324,19 +322,17 @@ export function derivePriceAccounts(ammState: AmmStateData, mint: PublicKey): Pu
  * price fallbacks the previous two-call fetch used.
  */
 export function computeLivePrice(infos: Array<{ data: Uint8Array } | null>): LivePriceData {
-    const [afhoVaultInfo, usdcVaultInfo, solInInfo, solOutInfo, rawSpotInfo, solOracleInfo] = infos;
+    // POOL-ONLY pricing — no mock oracle fallbacks on either leg. The AFHO
+    // price is the pinned AFHO/USDC pool vault ratio; the SOL price is the
+    // pinned SOL/USDC pool vault ratio. Until a pool is pinned its leg is
+    // null: the UI shows "—" and gates the affected flows (fail closed).
+    const [afhoVaultInfo, usdcVaultInfo, solInInfo, solOutInfo] = infos;
 
     let afhoUsdc: bigint | null = null;
     const baseRaw = tokenAmount(afhoVaultInfo?.data ?? null);
     const quoteRaw = tokenAmount(usdcVaultInfo?.data ?? null);
     if (baseRaw !== null && quoteRaw !== null && baseRaw > 0n) {
         afhoUsdc = (quoteRaw * 1_000_000_000_000n) / baseRaw;
-    }
-    if (afhoUsdc === null && rawSpotInfo && rawSpotInfo.data.length >= 8) {
-        afhoUsdc = new DataView(rawSpotInfo.data.buffer, rawSpotInfo.data.byteOffset).getBigUint64(
-            0,
-            true,
-        );
     }
 
     let solUsdc: bigint | null = null;
@@ -345,12 +341,12 @@ export function computeLivePrice(infos: Array<{ data: Uint8Array } | null>): Liv
     if (solBase !== null && solQuote !== null && solBase > 0n) {
         solUsdc = (solQuote * 1_000_000_000_000n) / solBase;
     }
-    if (solUsdc === null && solOracleInfo && solOracleInfo.data.length >= 8) {
-        solUsdc = new DataView(solOracleInfo.data.buffer, solOracleInfo.data.byteOffset).getBigUint64(
-            0,
-            true,
-        );
-    }
+    // NO mock fallback for the SOL leg: the desk price must come from the
+    // pinned Raydium SOL/USDC pool vault ratio or not at all. A stale raw-u64
+    // stub (b"mock_price" + wSOL) once priced SOL 1000× off here; until
+    // `cpmm_sol_usdc_pool` is pinned in AmmState (`anchor run
+    // set-sol-usdc-pool`), solUsdc stays null — the UI shows "—" and keeps
+    // the SOL currency option disabled (fail closed).
 
     return { afhoUsdc, solUsdc };
 }

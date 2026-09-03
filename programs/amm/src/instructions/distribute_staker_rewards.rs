@@ -37,18 +37,6 @@ pub struct DistributeStakerRewards<'info> {
     /// Staker-rewards holding vault (the 10% USDC claim share)
     #[account(mut, address = amm_state.usdc_rewards)]
     pub usdc_rewards: Box<InterfaceAccount<'info, TokenAccount>>,
-    /// Staker-rewards holding vault (the 10% SOL claim share, now retired —
-    /// rewards are USDC-only). Vestigial: kept until the §4 state-field cleanup.
-    /// CHECK: address-verified system PDA
-    #[account(mut, address = amm_state.sol_rewards)]
-    pub sol_rewards: AccountInfo<'info>,
-    /// CHECK: vestigial SOL/USD price oracle (SOL leg retired)
-    #[account(address = amm_state.sol_oracle)]
-    pub sol_oracle: UncheckedAccount<'info>,
-    /// CHECK: live absolute spot price — the M3 slippage band for every fill
-    /// is measured against this. Address pinned at init.
-    #[account(address = amm_state.spot_oracle)]
-    pub spot_oracle: UncheckedAccount<'info>,
     /// Swap out-leg destination + deposit source
     #[account(mut, address = amm_state.afho_vault)]
     pub afho_vault: Box<InterfaceAccount<'info, TokenAccount>>,
@@ -56,38 +44,25 @@ pub struct DistributeStakerRewards<'info> {
     #[account(address = amm_state.usdc_mint)]
     pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
 
-    // --- swap adapter accounts (mock-dex-pool today; real DEX at launch) ---
-    /// CHECK: pool state PDA, verified against the configured dex_program
-    #[account(
-        mut,
-        seeds = [b"mock_pool", afho_mint.key().as_ref()],
-        seeds::program = amm_state.dex_program,
-        bump
-    )]
-    pub pool_state: UncheckedAccount<'info>,
-    // H1 — pinned to the pool's own topology (same as dex_buyback): the pool
-    // token accounts are the pool PDA's ATAs, pool_sol is the pool PDA
-    // itself, so a compromised keeper can't redirect the in-leg.
-    #[account(
-        mut,
-        associated_token::mint = afho_mint,
-        associated_token::authority = pool_state,
-        associated_token::token_program = token_2022_program,
-    )]
-    pub pool_afho: Box<InterfaceAccount<'info, TokenAccount>>,
-    #[account(
-        mut,
-        associated_token::mint = usdc_mint,
-        associated_token::authority = pool_state,
-        associated_token::token_program = token_program,
-    )]
-    pub pool_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
-    /// CHECK: lamport destination for the SOL in-leg — the pool PDA itself
-    #[account(mut, address = pool_state.key())]
-    pub pool_sol: AccountInfo<'info>,
-    /// CHECK: configured swap target program
-    #[account(address = amm_state.dex_program)]
-    pub dex_program: AccountInfo<'info>,
+    // --- Raydium CPMM — the ONLY swap venue and price source. The pool pins
+    // live in AmmState (set_cpmm_pool); the handler hard-errors when unset
+    // and validates every account against the pool's derived PDAs (H1). ---
+    /// CHECK: CPMM pool state PDA (pinned in state via set_cpmm_pool)
+    #[account(mut)]
+    pub cpmm_pool_state: UncheckedAccount<'info>,
+    /// CHECK: CPMM amm_config (pinned in state via set_cpmm_pool)
+    pub cpmm_amm_config: UncheckedAccount<'info>,
+    /// CHECK: pool's input (USDC) vault
+    #[account(mut)]
+    pub cpmm_input_vault: UncheckedAccount<'info>,
+    /// CHECK: pool's output (AFHO) vault
+    #[account(mut)]
+    pub cpmm_output_vault: UncheckedAccount<'info>,
+    /// CHECK: pool's observation (TWAP) account
+    #[account(mut)]
+    pub cpmm_observation: UncheckedAccount<'info>,
+    /// CHECK: pool authority PDA (signs vault/LP-mint transfers)
+    pub cpmm_authority: UncheckedAccount<'info>,
 
     // --- staking CPI ---
     pub staking_program: Program<'info, staking::program::Staking>,
@@ -101,24 +76,6 @@ pub struct DistributeStakerRewards<'info> {
     /// Token-2022 (AFHO out-leg + staking deposit)
     pub token_2022_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
-
-    // --- Raydium CPMM accounts (None while the mock adapter is active) ---
-    #[account(mut)]
-    /// CHECK: Raydium CPMM account (validated at CPI time).
-    pub cpmm_pool_state: UncheckedAccount<'info>,
-    /// CHECK: Raydium CPMM account (validated at CPI time).
-    pub cpmm_amm_config: UncheckedAccount<'info>,
-    #[account(mut)]
-    /// CHECK: Raydium CPMM account (validated at CPI time).
-    pub cpmm_input_vault: UncheckedAccount<'info>,
-    #[account(mut)]
-    /// CHECK: Raydium CPMM account (validated at CPI time).
-    pub cpmm_output_vault: UncheckedAccount<'info>,
-    #[account(mut)]
-    /// CHECK: Raydium CPMM account (validated at CPI time).
-    pub cpmm_observation: UncheckedAccount<'info>,
-    /// CHECK: Raydium CPMM account (validated at CPI time).
-    pub cpmm_authority: UncheckedAccount<'info>,
 }
 
 pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
@@ -129,14 +86,8 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
         amm_state: ctx.accounts.amm_state.to_account_info(),
         usdc_vault: ctx.accounts.usdc_rewards.to_account_info(),
         afho_vault: ctx.accounts.afho_vault.to_account_info(),
-        sol_vault: ctx.accounts.sol_rewards.to_account_info(),
-        pool_state: ctx.accounts.pool_state.to_account_info(),
-        pool_afho: ctx.accounts.pool_afho.to_account_info(),
-        pool_usdc: ctx.accounts.pool_usdc.to_account_info(),
-        pool_sol: ctx.accounts.pool_sol.to_account_info(),
         afho_mint: ctx.accounts.afho_mint.to_account_info(),
         usdc_mint: ctx.accounts.usdc_mint.to_account_info(),
-        dex_program: ctx.accounts.dex_program.to_account_info(),
         token_program: ctx.accounts.token_program.to_account_info(),
         token_2022_program: ctx.accounts.token_2022_program.to_account_info(),
         system_program: ctx.accounts.system_program.to_account_info(),
@@ -155,11 +106,15 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
         ErrorCode::UnauthorizedCaller
     );
 
-    // H1 re-pin: when the CPMM pool is pinned, the swap/pricing accounts must
-    // be the pool's own derived PDAs.
+    // The CPMM pool is the only swap venue: hard-error when unpinned.
+    require!(
+        amm_state.cpmm_pool_state != Pubkey::default(),
+        ErrorCode::PoolNotPinned
+    );
+    // H1 re-pin: the swap/pricing accounts must be the pool's own derived
+    // PDAs.
     require!(
         super::raydium::pinned_pool_accounts_valid(
-            amm_state.cpmm_pool_state != Pubkey::default(),
             amm_state.cpmm_program,
             amm_state.cpmm_pool_state,
             amm_state.cpmm_amm_config,
@@ -209,12 +164,10 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
     if usdc_in > 0 {
         let clock = Clock::get()?;
         let spot = super::raydium::read_price(
-            amm_state.cpmm_pool_state != Pubkey::default(),
             &ctx.accounts.cpmm_pool_state.to_account_info(),
             &ctx.accounts.cpmm_observation.to_account_info(),
             &ctx.accounts.cpmm_output_vault.to_account_info(), // AFHO (base) vault
             &ctx.accounts.cpmm_input_vault.to_account_info(),  // USDC (quote) vault
-            &ctx.accounts.spot_oracle.to_account_info(),
             &ctx.accounts.afho_mint.key(),
             &ctx.accounts.usdc_mint.key(),
             clock.unix_timestamp as u64,
@@ -234,7 +187,6 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
             usdc_in,
             min_out,
             amm_state.cpmm_program,
-            amm_state.cpmm_pool_state != Pubkey::default(),
         )?;
         ctx.accounts.afho_vault.reload()?;
         let out = ctx.accounts.afho_vault.amount.saturating_sub(before);
@@ -296,4 +248,6 @@ pub enum ErrorCode {
     InvalidOracle,
     #[msg("CPMM pool account mismatch")]
     InvalidPoolAccount,
+    #[msg("CPMM pool not pinned — run set_cpmm_pool")]
+    PoolNotPinned,
 }

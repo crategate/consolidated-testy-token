@@ -74,17 +74,13 @@ async function main() {
     ).publicKey;
     console.log(" Crank oracle:", CRANK_PROGRAM_ID.toBase58());
 
-    // ── 3b. DEX swap target (mock-dex-pool stub for devnet; real DEX at launch) ──
-    const mockPoolKeyPath = path.join(
-        process.cwd(), "target", "deploy", "mock_dex_pool-keypair.json"
-    );
-    if (!fs.existsSync(mockPoolKeyPath)) {
-        throw new Error("mock_dex_pool-keypair.json not found. Run 'anchor build' first.");
-    }
-    const DEX_PROGRAM_ID = Keypair.fromSecretKey(
-        new Uint8Array(JSON.parse(fs.readFileSync(mockPoolKeyPath, "utf-8")))
-    ).publicKey;
-    console.log(" DEX program (stub):", DEX_PROGRAM_ID.toBase58());
+    // ── 3b. DEX program slot (§4: legacy state field, no longer read) ──
+    // AmmState.dex_program used to hold the mock-dex-pool program id; every
+    // swap/pricing path now requires the pinned Raydium CPMM pool instead.
+    // The field is dead but still written at init — pass the default pubkey
+    // until the §4 state-field cleanup removes it.
+    const DEX_PROGRAM_ID = PublicKey.default;
+    console.log(" DEX program slot: default (legacy field — unused)");
 
     // ── 3c. Staking program + pool (offer_claim CPIs into it; run pool-init first) ──
     const stakingKeyPath = path.join(
@@ -134,18 +130,10 @@ async function main() {
         [Buffer.from("amm_usdc_rewards"), AFHO_MINT.toBuffer()],
         AMM_PROGRAM_ID
     );
-    // Absolute spot price (devnet stub: mock-dex-pool's mock_price PDA;
-    // MAINNET: real absolute-price source in highest_buyback_basis units)
-    const [spotOraclePda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("mock_price"), AFHO_MINT.toBuffer()],
-        DEX_PROGRAM_ID
-    );
-    // SOL/USD price — same raw-u64 mock pattern, seeded with the wSOL mint.
-    // MAINNET: real SOL/USD feed.
-    const [solOraclePda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("mock_price"), NATIVE_MINT.toBuffer()],
-        DEX_PROGRAM_ID
-    );
+    // Legacy oracle slots (§4: dead state fields, no longer read anywhere).
+    // initializeAmm still stores them; default pubkeys until the cleanup.
+    const spotOraclePda = PublicKey.default;
+    const solOraclePda = PublicKey.default;
     // Holding PDA for the stakers' 10% share of SOL claim proceeds
     const [solRewardsPda] = PublicKey.findProgramAddressSync(
         [Buffer.from("amm_sol_rewards"), AFHO_MINT.toBuffer()],

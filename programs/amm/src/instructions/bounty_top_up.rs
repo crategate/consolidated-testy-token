@@ -112,7 +112,6 @@ pub fn handler(ctx: Context<BountyTopUp>) -> Result<()> {
     // H1 re-pin: the swap/pricing accounts must be the pools' derived PDAs.
     require!(
         super::raydium::pinned_pool_accounts_valid(
-            true,
             cpmm_program,
             amm_state.cpmm_pool_state,
             amm_state.cpmm_amm_config,
@@ -129,7 +128,6 @@ pub fn handler(ctx: Context<BountyTopUp>) -> Result<()> {
     );
     require!(
         super::raydium::pinned_sol_usdc_accounts_valid(
-            true,
             cpmm_program,
             amm_state.cpmm_sol_usdc_pool,
             amm_state.cpmm_sol_usdc_config,

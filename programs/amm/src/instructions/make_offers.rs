@@ -42,10 +42,6 @@ pub struct MakeOffers<'info> {
     /// CHECK: nyse_vault for balance capping
     #[account(mut, address = amm_state.afho_vault)]
     pub afho_vault: AccountInfo<'info>,
-    /// CHECK: pinned price-oracle account. Value is NOT read here — momentum
-    /// comes from `metrics.price_changes` (sampled in update_tradeday_stats).
-    #[account(address = amm_state.price_oracle)]
-    pub price_oracle: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
 }
 

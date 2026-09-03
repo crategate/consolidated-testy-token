@@ -15,31 +15,16 @@
 import * as anchor from "@coral-xyz/anchor";
 import * as fs from "fs";
 import * as path from "path";
-import { PublicKey, Keypair } from "@solana/web3.js";
+import { PublicKey } from "@solana/web3.js";
 
-const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
-
-async function main() {    const provider = anchor.AnchorProvider.env();
+async function main() {
+    const provider = anchor.AnchorProvider.env();
     anchor.setProvider(provider);
 
     const ammIdl = JSON.parse(
         fs.readFileSync(path.join(process.cwd(), "target", "idl", "amm.json"), "utf-8")
     );
     const ammProgram = new anchor.Program(ammIdl as anchor.Idl, provider);
-
-    // Mock-dex-pool program (devnet stub) — needed to re-seed the raw-u64
-    // mock_price PDAs that the unpinned-pool price fallbacks read.
-    const dexKeypairPath = path.join(process.cwd(), "target", "deploy", "mock_dex_pool-keypair.json");
-    if (!fs.existsSync(dexKeypairPath)) {
-        throw new Error("mock_dex_pool-keypair.json not found. Run 'anchor build' first.");
-    }
-    const mockDexProgramId = Keypair.fromSecretKey(
-        new Uint8Array(JSON.parse(fs.readFileSync(dexKeypairPath, "utf-8")))
-    ).publicKey;
-    const mockDexIdl = JSON.parse(
-        fs.readFileSync(path.join(process.cwd(), "target", "idl", "mock_dex_pool.json"), "utf-8")
-    );
-    const mockDexProgram = new anchor.Program(mockDexIdl as anchor.Idl, provider);
 
     const deployment = JSON.parse(
         fs.readFileSync(path.join(process.cwd(), "app", "public", "deployment.json"), "utf-8")
@@ -117,24 +102,9 @@ async function main() {    const provider = anchor.AnchorProvider.env();
     console.log("   stake health steady at 40%");
     console.log("   offer sheet: big 3/2 @1M 11.5% 30d · med 5/4 @100k 9% 20d · sml 10/8 @15k 7.5% 10d");
 
-    // ── Mock price re-seed (devnet fallback oracles, e9 floor units) ─────
-    // The unpinned-pool price fallbacks read these raw-u64 PDAs as
-    // price-per-unit × 1e9 (nano-USD). The wSOL mock was last seeded at
-    // 200_000 (the pre-e9 milli-USD scale for 200 USDC/SOL), which made the
-    // SOL price read 1000× small and the offer-desk SOL quote 1e6× large
-    // (10.39 USDC → "52,000 SOL"). Re-seed at the e9 scale every run so a
-    // re-initialized stack heals without manual poking. The AFHO mock spot
-    // is left alone here — the keeper refreshes it against the live pool.
-    const mockSolPrice = process.env.MOCK_SOL_PRICE || "200000000000"; // 200 USDC/SOL
-    const [solMockPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("mock_price"), WSOL_MINT.toBuffer()],
-        mockDexProgramId
-    );
-    await mockDexProgram.methods
-        .setPrice(new anchor.BN(mockSolPrice))
-        .accounts({ payer: provider.wallet.publicKey, afhoMint: WSOL_MINT, mockPrice: solMockPda })
-        .rpc();
-    console.log(`   mock SOL price re-seeded: ${mockSolPrice} floor units (${Number(mockSolPrice) / 1e9} USDC/SOL)`);
+    // NOTE: the mock-dex-pool program is DELETED — every swap/pricing path
+    // requires the pinned Raydium CPMM pool. Run 'anchor run set-cpmm-pool'
+    // (and 'set-sol-usdc-pool' for the SOL leg) after every fresh amm-init.
 }
 
 main().catch((e) => {

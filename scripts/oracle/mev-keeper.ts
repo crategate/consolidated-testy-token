@@ -71,22 +71,17 @@ async function main() {
     const acceptedOffersPda = ammPda("accepted_offers");
 
     // Raydium CPMM accounts for the swap adapter. When the pool is pinned in
-    // state (set_cpmm_pool), derive the real CPMM PDAs; otherwise fall back to
-    // the mock pool so the required accounts still resolve.
+    // The CPMM pool is the ONLY swap venue and price source. The pool pins
+    // live in AmmState; an unpinned pool is a hard error (the on-chain
+    // instructions reject it with PoolNotPinned) — never a stub price.
     function cpmmAccountsFor(
         ammState: any,
-        usdcMint: PublicKey,
-        mockPool: PublicKey
+        usdcMint: PublicKey
     ) {
         if (!ammState.cpmmPoolState || !ammState.cpmmProgram) {
-            return {
-                cpmmPoolState: mockPool,
-                cpmmAmmConfig: mockPool,
-                cpmmInputVault: mockPool,
-                cpmmOutputVault: mockPool,
-                cpmmObservation: mockPool,
-                cpmmAuthority: mockPool,
-            };
+            throw new Error(
+                "CPMM pool not pinned in AmmState — run 'anchor run set-cpmm-pool' (and 'set-sol-usdc-pool' for the SOL leg)."
+            );
         }
         const program = new PublicKey(ammState.cpmmProgram);
         const pool = new PublicKey(ammState.cpmmPoolState);
@@ -390,11 +385,7 @@ async function main() {
                     try {
                         const ammStateForStats = await (ammProgram.account as any).ammState.fetch(ammStatePda);
                         const statsUsdcMint = new PublicKey(ammStateForStats.usdcMint);
-                        const statsMockPool = PublicKey.findProgramAddressSync(
-                            [Buffer.from("mock_pool"), afhoMint.toBuffer()],
-                            new PublicKey(ammStateForStats.dexProgram)
-                        )[0];
-                        const statsCpmm = cpmmAccountsFor(ammStateForStats, statsUsdcMint, statsMockPool);
+                        const statsCpmm = cpmmAccountsFor(ammStateForStats, statsUsdcMint);
                         const statsIx = await ammProgram.methods
                             .updateTradedayStats()
                             .accountsStrict({
@@ -402,7 +393,6 @@ async function main() {
                                 ammState: ammStatePda,
                                 marketMetrics: metricsPda,
                                 marketStatus: marketStatusPda,
-                                spotOracle: ammStateForStats.spotOracle,
                                 cpmmPoolState: statsCpmm.cpmmPoolState,
                                 cpmmObservation: statsCpmm.cpmmObservation,
                                 cpmmInputVault: statsCpmm.cpmmInputVault,
@@ -437,7 +427,6 @@ async function main() {
                                 acceptedOffers: acceptedOffersPda,
                                 afhoMint: afhoMint,
                                 afhoVault: new PublicKey(deployment.ammAfhoVault),
-                                priceOracle: quoteAccount,
                                 systemProgram: anchor.web3.SystemProgram.programId,
                             })
                             .instruction();
@@ -467,21 +456,11 @@ async function main() {
                 if (dayStarted) {
                     console.log(` Day started (${prevState} → 0). Firing calc_completed_offers...`);
                     try {
-                        // Live price for ratchet decay: mock_price PDA of the
-                        // configured dex_program (devnet stub; MAINNET: the real
-                        // absolute-price account in highest_buyback_basis units).
+                        // Live price for ratchet decay: the pinned CPMM pool
+                        // (TWAP / vault-ratio) — the only price source.
                         const ammStateForCalc = await (ammProgram.account as any).ammState.fetch(ammStatePda);
                         const calcUsdcMint = new PublicKey(ammStateForCalc.usdcMint);
-                        const calcDexProgramId = new PublicKey(ammStateForCalc.dexProgram);
-                        const [calcMockPool] = PublicKey.findProgramAddressSync(
-                            [Buffer.from("mock_pool"), afhoMint.toBuffer()],
-                            calcDexProgramId
-                        );
-                        const [mockPricePda] = PublicKey.findProgramAddressSync(
-                            [Buffer.from("mock_price"), afhoMint.toBuffer()],
-                            calcDexProgramId
-                        );
-                        const calcCpmm = cpmmAccountsFor(ammStateForCalc, calcUsdcMint, calcMockPool);
+                        const calcCpmm = cpmmAccountsFor(ammStateForCalc, calcUsdcMint);
                         const calcIx = await ammProgram.methods
                             .calcCompletedOffers()
                             .accountsStrict({
@@ -490,7 +469,6 @@ async function main() {
                                 offerList: offerListPda,
                                 marketStatus: marketStatusPda,
                                 acceptedOffers: acceptedOffersPda,
-                                priceOracle: mockPricePda,
                                 cpmmPoolState: calcCpmm.cpmmPoolState,
                                 cpmmObservation: calcCpmm.cpmmObservation,
                                 cpmmInputVault: calcCpmm.cpmmInputVault,
@@ -521,14 +499,7 @@ async function main() {
                     // collected / no stakers) is expected and skipped.
                     try {
                         const ammStateForDist = await (ammProgram.account as any).ammState.fetch(ammStatePda);
-                        const dexProgramId = new PublicKey(ammStateForDist.dexProgram);
                         const usdcMint = new PublicKey(ammStateForDist.usdcMint);
-                        const [poolState] = PublicKey.findProgramAddressSync(
-                            [Buffer.from("mock_pool"), afhoMint.toBuffer()],
-                            dexProgramId
-                        );
-                        const poolAfho = getAssociatedTokenAddressSync(afhoMint, poolState, true, TOKEN_2022_PROGRAM_ID);
-                        const poolUsdc = getAssociatedTokenAddressSync(usdcMint, poolState, true, TOKEN_PROGRAM_ID);
                         const stakingPoolPda = new PublicKey(ammStateForDist.stakingPool);
                         const stakingIdl = JSON.parse(fs.readFileSync(path.join(process.cwd(), "target", "idl", "staking.json"), "utf-8"));
                         const stakingProgramId = new PublicKey(stakingIdl.address ?? stakingIdl.metadata?.address);
@@ -543,18 +514,10 @@ async function main() {
                                 ammState: ammStatePda,
                                 marketStatus: marketStatusPda,
                                 usdcRewards: ammStateForDist.usdcRewards,
-                                solRewards: ammStateForDist.solRewards,
-                                solOracle: ammStateForDist.solOracle,
-                                spotOracle: ammStateForDist.spotOracle,
                                 afhoVault: ammStateForDist.afhoVault,
                                 afhoMint,
                                 usdcMint,
-                                poolState,
-                                poolAfho,
-                                poolUsdc,
-                                poolSol: poolState,
-                                dexProgram: dexProgramId,
-                                ...cpmmAccountsFor(ammStateForDist, usdcMint, poolState),
+                                ...cpmmAccountsFor(ammStateForDist, usdcMint),
                                 stakingProgram: stakingProgramId,
                                 stakingPool: stakingPoolPda,
                                 stakingRewardVault,
@@ -571,7 +534,7 @@ async function main() {
                         });
                         const distSim = await connection.simulateTransaction(distTx);
                         if (distSim.value.err) {
-                            console.log("distribute_staker_rewards skipped (already done / nothing to distribute / no stakers).");
+                            console.log("distribute_staker_rewards skipped (already done / nothing to distribute / no stakers):", JSON.stringify(distSim.value.err));
                         } else {
                             const distSig = await connection.sendTransaction(distTx);
                             await connection.confirmTransaction(distSig, "confirmed");
@@ -593,15 +556,7 @@ async function main() {
                 const statusNow = await program.account.marketStatus.fetch(marketStatusPda);
                 if (statusNow.currentState === 0) {
                     const ammState = await (ammProgram.account as any).ammState.fetch(ammStatePda);
-                    const dexProgramId = new PublicKey(ammState.dexProgram);
                     const usdcMint = new PublicKey(ammState.usdcMint);
-                    // mock-dex-pool: pool token accounts are ATAs of the pool PDA
-                    const [poolState] = PublicKey.findProgramAddressSync(
-                        [Buffer.from("mock_pool"), afhoMint.toBuffer()],
-                        dexProgramId
-                    );
-                    const poolAfho = getAssociatedTokenAddressSync(afhoMint, poolState, true, TOKEN_2022_PROGRAM_ID);
-                    const poolUsdc = getAssociatedTokenAddressSync(usdcMint, poolState, true, TOKEN_PROGRAM_ID);
                     const bbIx = await ammProgram.methods
                         .dexBuyback()
                         .accountsStrict({
@@ -611,17 +566,9 @@ async function main() {
                             acceptedOffers: acceptedOffersPda,
                             usdcVault: ammState.usdcVault,
                             afhoVault: ammState.afhoVault,
-                            solVault: ammState.solVault,
-                            solOracle: ammState.solOracle,
-                            spotOracle: ammState.spotOracle,
                             afhoMint,
                             usdcMint,
-                            poolState,
-                            poolAfho,
-                            poolUsdc,
-                            poolSol: poolState,
-                            dexProgram: dexProgramId,
-                            ...cpmmAccountsFor(ammState, usdcMint, poolState),
+                            ...cpmmAccountsFor(ammState, usdcMint),
                             tokenProgram: TOKEN_PROGRAM_ID,
                             token2022Program: TOKEN_2022_PROGRAM_ID,
                             systemProgram: anchor.web3.SystemProgram.programId,
@@ -635,7 +582,7 @@ async function main() {
                     });
                     const bbSim = await connection.simulateTransaction(bbTx);
                     if (bbSim.value.err) {
-                        console.log("dex_buyback skipped (pacing / no fills / spent).");
+                        console.log("dex_buyback skipped (pacing / no fills / spent):", JSON.stringify(bbSim.value.err));
                     } else {
                         const bbSig = await connection.sendTransaction(bbTx);
                         await connection.confirmTransaction(bbSig, "confirmed");
@@ -654,15 +601,7 @@ async function main() {
             // expected.
             try {
                 const ammState = await (ammProgram.account as any).ammState.fetch(ammStatePda);
-                const dexProgramId = new PublicKey(ammState.dexProgram);
                 const usdcMint = new PublicKey(ammState.usdcMint);
-                // mock-dex-pool: pool token accounts are ATAs of the pool PDA
-                const [poolState] = PublicKey.findProgramAddressSync(
-                    [Buffer.from("mock_pool"), afhoMint.toBuffer()],
-                    dexProgramId
-                );
-                const poolAfho = getAssociatedTokenAddressSync(afhoMint, poolState, true, TOKEN_2022_PROGRAM_ID);
-                const poolUsdc = getAssociatedTokenAddressSync(usdcMint, poolState, true, TOKEN_PROGRAM_ID);
                 const dipIx = await ammProgram.methods
                     .buyTheDip()
                     .accountsStrict({
@@ -670,19 +609,11 @@ async function main() {
                         ammState: ammStatePda,
                         marketStatus: marketStatusPda,
                         metrics: metricsPda,
-                        spotOracle: ammState.spotOracle,
-                        solOracle: ammState.solOracle,
                         usdcDip: ammState.usdcDip,
-                        solDip: ammState.solDip,
                         afhoVault: ammState.afhoVault,
                         afhoMint,
                         usdcMint,
-                        poolState,
-                        poolAfho,
-                        poolUsdc,
-                        poolSol: poolState,
-                        dexProgram: dexProgramId,
-                        ...cpmmAccountsFor(ammState, usdcMint, poolState),
+                        ...cpmmAccountsFor(ammState, usdcMint),
                         tokenProgram: TOKEN_PROGRAM_ID,
                         token2022Program: TOKEN_2022_PROGRAM_ID,
                         systemProgram: anchor.web3.SystemProgram.programId,
@@ -696,7 +627,7 @@ async function main() {
                 });
                 const dipSim = await connection.simulateTransaction(dipTx);
                 if (dipSim.value.err) {
-                    console.log("buy_the_dip skipped (cold start / no dip / pacing / cap).");
+                    console.log("buy_the_dip skipped (cold start / no dip / pacing / cap):", JSON.stringify(dipSim.value.err));
                 } else {
                     const dipSig = await connection.sendTransaction(dipTx);
                     await connection.confirmTransaction(dipSig, "confirmed");
@@ -716,8 +647,7 @@ async function main() {
                 const solUsdc = solUsdcAccountsFor(ammState);
                 const afhoUsdc = cpmmAccountsFor(
                     ammState,
-                    new PublicKey(ammState.usdcMint),
-                    PublicKey.default
+                    new PublicKey(ammState.usdcMint)
                 );
                 if (solUsdc && ammState.cpmmPoolState && !new PublicKey(ammState.cpmmPoolState).equals(PublicKey.default)) {
                     const usdcMint = new PublicKey(ammState.usdcMint);
@@ -756,7 +686,7 @@ async function main() {
                     });
                     const topupSim = await connection.simulateTransaction(topupTx);
                     if (topupSim.value.err) {
-                        console.log("bounty_top_up skipped (healthy / no USDC / already topped).");
+                        console.log("bounty_top_up skipped (healthy / no USDC / already topped):", JSON.stringify(topupSim.value.err));
                     } else {
                         const topupSig = await connection.sendTransaction(topupTx);
                         await connection.confirmTransaction(topupSig, "confirmed");

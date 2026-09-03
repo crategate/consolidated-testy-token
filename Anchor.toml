@@ -8,11 +8,7 @@ skip-lint = false
 [programs.devnet]
 amm = "AU19M8ELLh7h4GMpmj9ZKjF4NNXmYK6aiVoLs9yvnuRi"
 crank_oracle = "HkA18DxZU3RSg2cJfC1vZEkkRmDnSWuXjHim2NXbao7U"
-mock_dex_pool = "CAmYEL8zb8rtV2F9r68P7NLeYNdB3cXXCrahDCBRL27S"
 staking = "AR1Wyj3CLhcxB5jAiqFn5xHFamcjdNiiYv9gQLCVvTZp"
-
-[programs.localnet]
-mock_dex_pool = "CAmYEL8zb8rtV2F9r68P7NLeYNdB3cXXCrahDCBRL27S"
 
 [registry]
 url = "https://api.apr.dev"

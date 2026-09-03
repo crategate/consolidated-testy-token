@@ -5,18 +5,18 @@
 // Unlike amm-test-data (load_test_data), this stamps offer_list.day_index with
 // the CURRENT market-status trading day, so the sheet is claimable tonight —
 // exactly like a sheet produced by make_offers. The ratchet floor is anchored
-// to the LIVE devnet pool price (CPMM when pinned, mock spot oracle otherwise)
-// at 80% of live, so every seeded discount executes in full.
+// to the LIVE pool price (pinned CPMM TWAP with vault-ratio fallback) at 80%
+// of live, so every seeded discount executes in full.
 //
-// DEVNET ONLY. Run after amm-init + set-cpmm-pool (pool pinning is optional;
-// the instruction falls back to the mock spot oracle when unpinned).
+// DEVNET ONLY. Run after amm-init + set-cpmm-pool (the pool pin is REQUIRED —
+// load_offers prices off the pinned pool; there is no mock oracle).
 //
 // Usage: npx ts-node ./scripts/amm-offers.ts   (or: anchor run amm-offers)
 
 import * as anchor from "@coral-xyz/anchor";
 import * as fs from "fs";
 import * as path from "path";
-import { PublicKey, Keypair } from "@solana/web3.js";
+import { PublicKey } from "@solana/web3.js";
 
 async function main() {
     const provider = anchor.AnchorProvider.env();
@@ -42,34 +42,25 @@ async function main() {
             ammProgram.programId
         )[0];
 
-    // Spot oracle = the mock-dex-pool's raw-u64 `mock_price` PDA (fallback
-    // price source when the CPMM pool isn't pinned).
-    const dexKeypairPath = path.join(process.cwd(), "target", "deploy", "mock_dex_pool-keypair.json");
-    if (!fs.existsSync(dexKeypairPath)) {
-        throw new Error("mock_dex_pool-keypair.json not found. Run 'anchor build' first.");
-    }
-    const mockDexProgram = Keypair.fromSecretKey(
-        new Uint8Array(JSON.parse(fs.readFileSync(dexKeypairPath, "utf-8")))
-    ).publicKey;
-    const [spotOracle] = PublicKey.findProgramAddressSync(
-        [Buffer.from("mock_price"), mint.toBuffer()],
-        mockDexProgram
-    );
-
+    // Pricing is pool-only: load_offers reads the pinned CPMM pool's price.
     const ammStatePda = new PublicKey(deployment.ammState);
     const marketStatus = new PublicKey(deployment.marketStatus);
 
-    // Is the AFHO/USDC CPMM pool pinned? If so, pass its four pricing PDAs so
-    // load_offers reads the LIVE pool price (TWAP with vault-ratio fallback).
+    // The AFHO/USDC CPMM pool MUST be pinned — load_offers prices off it
+    // (TWAP with vault-ratio fallback); there is no mock oracle anymore.
     const ammState = await (ammProgram.account as any).ammState.fetch(ammStatePda);
     const pinned = !ammState.cpmmPoolState.equals(PublicKey.default);
+    if (!pinned) {
+        throw new Error(
+            "CPMM pool not pinned in AmmState — run 'anchor run set-cpmm-pool' first."
+        );
+    }
 
     const accounts: Record<string, PublicKey> = {
         authority: provider.wallet.publicKey,
         ammState: ammStatePda,
         offerList: pda("offer_list"),
         marketStatus,
-        spotOracle,
     };
 
     if (pinned) {
@@ -90,8 +81,6 @@ async function main() {
             cpmmProgram
         )[0];
         console.log("   pinned CPMM pool:", poolState.toBase58(), "(live price source)");
-    } else {
-        console.log("   pool not pinned — using mock spot oracle as the price source");
     }
 
     // One-time offer_list resize (devnet-big u8→u32 count widening): the

@@ -116,7 +116,7 @@ export default function OfferLists() {
     );
     const estCostRaw = data.tiers.reduce(
         (sum, t) => sum + quoteCostRaw(
-            data.livePrice ?? 0n, t.discountBps, data.floorBasis,
+            data.livePrice ?? 0n, t.discountBps + t.bonusBps, data.floorBasis,
             t.lotTier, quantities[t.key] ?? 0, data.afhoDecimals,
         ),
         0n,
@@ -125,13 +125,13 @@ export default function OfferLists() {
     const priceKnown = data.livePrice !== null && data.livePrice > 0n;
     const solPriceKnown = data.solPrice !== null && data.solPrice > 0n;
     const ratchet = priceKnown && data.tiers.some(
-        (t) => (quantities[t.key] ?? 0) > 0 && ratchetActive(data.livePrice as bigint, t.discountBps, data.floorBasis)
+        (t) => (quantities[t.key] ?? 0) > 0 && ratchetActive(data.livePrice as bigint, t.discountBps + t.bonusBps, data.floorBasis)
     );
 
     // Per-lot cost in the SELECTED currency (SOL estimates use the same
     // lamports math the on-chain handler applies at claim time).
     const costPerLot = (t: OfferTierData): bigint => {
-        const c = quoteCostRaw(data.livePrice ?? 0n, t.discountBps, data.floorBasis, t.lotTier, 1, data.afhoDecimals);
+        const c = quoteCostRaw(data.livePrice ?? 0n, t.discountBps + t.bonusBps, data.floorBasis, t.lotTier, 1, data.afhoDecimals);
         return currency === 'usdc' ? c : lamportsForCost(c, data.solPrice ?? 0n);
     };
 

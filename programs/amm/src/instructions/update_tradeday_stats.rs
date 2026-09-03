@@ -29,12 +29,10 @@ pub struct UpdateTradedayStats<'info> {
         bump
     )]
     pub market_status: UncheckedAccount<'info>,
-    /// CHECK: absolute-price oracle (raw u64, floor units) — mock fallback;
-    /// used only when the CPMM pool is NOT pinned. Address pinned at init.
-    #[account(address = amm_state.spot_oracle)]
-    pub spot_oracle: UncheckedAccount<'info>,
 
-    // Raydium CPMM AFHO/USDC pool — live price source when pinned.
+    // Raydium CPMM AFHO/USDC pool — the ONLY price source (pool pins in
+    // AmmState; the handler hard-errors when unset and validates the
+    // accounts against the pool's derived PDAs).
     /// CHECK: pool state, pinned to amm_state.cpmm_pool_state in the handler
     pub cpmm_pool_state: Option<AccountInfo<'info>>,
     /// CHECK: pool observation (TWAP ring)
@@ -83,14 +81,14 @@ pub fn handler(ctx: Context<UpdateTradedayStats>) -> Result<()> {
     ctx.accounts.market_metrics.total_supply = ctx.accounts.afho_mint.supply;
 
     // End-of-day metric writes (helpers_make_offers.rs). The momentum input is
-    // a close→close change computed from the live AFHO/USDC price (pool TWAP
-    // when pinned, mock oracle otherwise): record today's close against the
+    // a close→close change computed from the live AFHO/USDC price (pinned
+    // pool TWAP, vault-ratio fallback): record today's close against the
     // previous day's.
     let spot = {
         let amm_state = &ctx.accounts.amm_state;
         let pinned = amm_state.cpmm_pool_state != Pubkey::default();
-        if pinned {
-            let clock = Clock::get()?;
+        require!(pinned, ErrorCode::PoolNotPinned);
+        let clock = Clock::get()?;
             let pool_state = ctx.accounts.cpmm_pool_state.as_ref().ok_or(ErrorCode::InvalidPoolAccount)?;
             let observation = ctx.accounts.cpmm_observation.as_ref().ok_or(ErrorCode::InvalidPoolAccount)?;
             let base_vault = ctx.accounts.cpmm_output_vault.as_ref().ok_or(ErrorCode::InvalidPoolAccount)?;
@@ -124,9 +122,6 @@ pub fn handler(ctx: Context<UpdateTradedayStats>) -> Result<()> {
                 clock.unix_timestamp as u64,
             )
             .ok_or(ErrorCode::InvalidOracle)?
-        } else {
-            super::offer_claim::read_live_price(&ctx.accounts.spot_oracle.to_account_info())?
-        }
     };
     record_price_change(&mut ctx.accounts.market_metrics, spot);
     record_stake_ratio(&mut ctx.accounts.market_metrics);
@@ -148,4 +143,6 @@ pub enum ErrorCode {
     InvalidOracle,
     #[msg("CPMM pool account mismatch")]
     InvalidPoolAccount,
+    #[msg("CPMM pool not pinned — run set_cpmm_pool")]
+    PoolNotPinned,
 }

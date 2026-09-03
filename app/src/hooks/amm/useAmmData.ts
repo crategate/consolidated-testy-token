@@ -25,7 +25,13 @@ export interface OfferTierData {
     lotTier: number;
     lotTokens: number;
     vestingDays: number;
+    /** Sheet (base) discount, stored tenths of a percent (115 = 11.5%). */
     discountBps: number;
+    /** CLOSED-session boost in the same units (5 = +0.5%) while market state
+     *  is 2; 0 otherwise. Mirrors offer_claim::quote_claim — the on-chain
+     *  claim price uses discountBps + bonusBps. Kept SEPARATE from the base
+     *  so the UI can show the base pill plus a distinct bonus pill. */
+    bonusBps: number;
     remaining: number;
     totalOffered: number;
 }
@@ -35,7 +41,6 @@ export interface ClaimAccounts {
     offerList: PublicKey;
     afhoMint: PublicKey;
     usdcMint: PublicKey;
-    spotOracle: PublicKey;
     marketStatus: PublicKey;
     stakingPool: PublicKey;
     stakingVault: PublicKey;
@@ -54,7 +59,6 @@ export interface SolClaimAccounts {
     // and the runtime requires the callee program id to be among the caller
     // instruction's accounts — the client passes it as a remaining account.
     cpmmProgram: PublicKey;
-    solOracle: PublicKey;
     wsolVault: PublicKey;
     wrappedSolMint: PublicKey;
     solUsdcPoolState: PublicKey;
@@ -101,6 +105,7 @@ function parseTier(key: 'sml' | 'med' | 'big', tier: number, label: string, raw:
         lotTokens: lotTokens(lotTier),
         vestingDays: Number(field(o, 'vestingDays', 'vesting_days') ?? 0),
         discountBps: Number(field(o, 'discountBps', 'discount_bps') ?? 0),
+        bonusBps: 0, // set per-tick below while the market is CLOSED
         remaining: Number(field(o, 'remaining') ?? 0),
         totalOffered: Number(field(o, 'totalOffered', 'total_offered') ?? 0),
     };
@@ -118,7 +123,6 @@ function deriveClaimAccounts(
     const usdcDip = pub(ammState, 'usdcDip', 'usdc_dip');
     const usdcRewards = pub(ammState, 'usdcRewards', 'usdc_rewards');
     const afhoVault = pub(ammState, 'afhoVault', 'afho_vault');
-    const spotOracle = pub(ammState, 'spotOracle', 'spot_oracle');
     const stakingPool = pub(ammState, 'stakingPool', 'staking_pool');
     const cpmmPoolState = pub(ammState, 'cpmmPoolState', 'cpmm_pool_state');
     const cpmmProgram = pub(ammState, 'cpmmProgram', 'cpmm_program');
@@ -129,7 +133,6 @@ function deriveClaimAccounts(
         !usdcDip ||
         !usdcRewards ||
         !afhoVault ||
-        !spotOracle ||
         !stakingPool ||
         !cpmmPoolState ||
         !cpmmProgram
@@ -159,7 +162,6 @@ function deriveClaimAccounts(
         offerList: offerListPda,
         afhoMint: mint,
         usdcMint,
-        spotOracle,
         marketStatus: marketStatusPda,
         stakingPool,
         stakingVault,
@@ -178,13 +180,12 @@ function deriveSolClaimAccounts(
     ammState: AmmStateData,
     ammStatePda: PublicKey,
 ): SolClaimAccounts | null {
-    const solOracle = pub(ammState, 'solOracle', 'sol_oracle');
     const cpmmSolUsdcPool = pub(ammState, 'cpmmSolUsdcPool', 'cpmm_sol_usdc_pool');
     const cpmmSolUsdcConfig = pub(ammState, 'cpmmSolUsdcConfig', 'cpmm_sol_usdc_config');
     const cpmmProgram = pub(ammState, 'cpmmProgram', 'cpmm_program');
     const usdcMint = pub(ammState, 'usdcMint', 'usdc_mint');
 
-    if (!solOracle || !cpmmSolUsdcPool || !cpmmSolUsdcConfig || !cpmmProgram || !usdcMint) {
+    if (!cpmmSolUsdcPool || !cpmmSolUsdcConfig || !cpmmProgram || !usdcMint) {
         return null;
     }
 
@@ -209,7 +210,6 @@ function deriveSolClaimAccounts(
 
     return {
         cpmmProgram,
-        solOracle,
         wsolVault,
         wrappedSolMint: WSOL_MINT,
         solUsdcPoolState: cpmmSolUsdcPool,
@@ -327,13 +327,14 @@ export function useAmmData(): OfferDeskData {
     // CLOSED-SESSION BOOST mirror (programs/amm offer_claim::quote_claim):
     // while the market is CLOSED (state 2) every remaining tier prices 0.5%
     // deeper (5 tenths, saturating at the u8 cap); back in extended hours
-    // (state 1 = pre-trade) it reverts to the sheet's base discount. Applied
-    // at the data layer so tiles, discount labels, and the cart total all
-    // agree with the on-chain quote math.
+    // (state 1 = pre-trade) it reverts to the sheet's base discount. Kept as
+    // a SEPARATE bonusBps field — the UI shows the base discount pill plus a
+    // distinct blue bonus pill, while the cost math sums both to stay exact
+    // with the on-chain quote.
     const tiersDisplay = useMemo(
         () =>
             marketState === 2
-                ? tiers.map((t) => ({ ...t, discountBps: Math.min(t.discountBps + 5, 255) }))
+                ? tiers.map((t) => ({ ...t, bonusBps: Math.min(t.discountBps + 5, 255) - t.discountBps }))
                 : tiers,
         [tiers, marketState],
     );

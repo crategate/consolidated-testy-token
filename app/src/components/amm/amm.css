@@ -28,6 +28,30 @@
     border-bottom-color: rgba(255, 214, 10, 0.55);
 }
 
+/* CLOSED-session bonus pill inside the banner — blue, same rounded-pill
+   shape as the desk's .offer-discount. Blue-tints the banner so the extra
+   discount reads at a glance from any page. */
+.indicator-bonus-pill {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--neon-blue, #00f0ff);
+    background: rgba(0, 240, 255, 0.08);
+    border: 1px solid rgba(0, 240, 255, 0.4);
+    border-radius: 999px;
+    padding: 2px 10px;
+    flex-shrink: 0;
+}
+
+.home-offer-indicator.closed-bonus {
+    background: rgba(0, 240, 255, 0.09);
+    border-bottom-color: rgba(0, 240, 255, 0.35);
+}
+
+.home-offer-indicator.closed-bonus:hover {
+    background: rgba(0, 240, 255, 0.15);
+    border-bottom-color: rgba(0, 240, 255, 0.55);
+}
+
 @media (prefers-reduced-motion: reduce) {
     .home-offer-indicator {
         animation: none !important;

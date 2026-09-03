@@ -36,10 +36,11 @@ export default function SingleOffer({
     };
 
     // Approximate per-lot price in USDC — the final price is fixed on-chain
-    // at claim time from the same oracle read this estimate uses.
+    // at claim time from the same oracle read this estimate uses. Sums the
+    // closed-session bonus so the estimate matches the on-chain quote.
     let perLot: string | null = null;
     if (livePrice !== null && livePrice > 0n) {
-        const eff = effectivePrice(livePrice, offer.discountBps, floorBasis);
+        const eff = effectivePrice(livePrice, offer.discountBps + offer.bonusBps, floorBasis);
         const usd = pricePerToken(eff) * offer.lotTokens;
         perLot = usd >= 1
             ? usd.toLocaleString('en-US', { maximumFractionDigits: 2 })
@@ -61,6 +62,11 @@ export default function SingleOffer({
                 <h3>{offer.label}</h3>
                 <span className="offer-discount">{offer.discountBps / 10}% off</span>
             </header>
+            {offer.bonusBps > 0 && (
+                <div className="offer-bonus-row">
+                    <span className="offer-discount offer-discount--bonus">+0.5% late nite bonus</span>
+                </div>
+            )}
 
             <div className="offer-lot-size">
                 {formatTokens(offer.lotTokens)} <span>AFHO / lot</span>

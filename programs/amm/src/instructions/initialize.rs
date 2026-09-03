@@ -246,8 +246,8 @@ pub struct InitializeAmm<'info> {
     /// CHECK: legacy Switchboard quote slot — pinned in state but no longer
     /// read (momentum comes from the self-sampled pool price ring)
     pub price_oracle: AccountInfo<'info>,
-    /// CHECK: swap target for dex_buyback (mock-dex-pool stub on devnet; the
-    /// real DEX pool program at launch)
+    /// CHECK: legacy dex-program slot (§4 — unused since the mock removal;
+    /// default pubkey stored)
     pub dex_program: AccountInfo<'info>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub token_program: Interface<'info, TokenInterface>,

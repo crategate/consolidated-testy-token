@@ -229,7 +229,6 @@ pub fn read_twap_token0_in_token1(
 /// when the pool isn't pinned.
 #[allow(clippy::too_many_arguments)]
 pub fn pinned_sol_usdc_accounts_valid(
-    pinned: bool,
     cpmm_program: Pubkey,
     pool_state: Pubkey,
     amm_config: Pubkey,
@@ -242,9 +241,6 @@ pub fn pinned_sol_usdc_accounts_valid(
     acct_observation: &AccountInfo,
     acct_authority: &AccountInfo,
 ) -> bool {
-    if !pinned {
-        return true;
-    }
     let (obs, _) = observation_pda(&cpmm_program, pool_state);
     let (wsol_vault, _) = pool_vault_pda(&cpmm_program, pool_state, wrapped_sol_mint);
     let (usdc_vault, _) = pool_vault_pda(&cpmm_program, pool_state, usdc_mint);
@@ -387,54 +383,39 @@ pub fn read_cpmm_price_floor(
     Some(u64::try_from(quote_raw as u128 * 1_000_000_000_000u128 / base_raw as u128).ok()?)
 }
 
-/// Unified price reader for the whole AMM. When the CPMM pool is pinned in
-/// state (`pool_pinned`), reads the pool TWAP (with vault-ratio fallback);
-/// otherwise reads the legacy raw-u64 mock oracle PDA (localnet tests /
-/// pre-mainnet devnet). Returns `None` when no price is available — callers
-/// fail closed on it.
+/// Unified price reader for the whole AMM: the pinned CPMM pool's TWAP,
+/// with the pool's own instantaneous vault-ratio as the in-pool fallback.
+/// Returns `None` when no price is available — callers fail closed on it.
+/// The legacy raw-u64 mock oracle is gone: an unpinned pool is a hard error
+/// at the instruction level, never a stub price.
 #[allow(clippy::too_many_arguments)]
 pub fn read_price(
-    pool_pinned: bool,
     pool_state: &AccountInfo,
     observation: &AccountInfo,
     base_vault: &AccountInfo,
     quote_vault: &AccountInfo,
-    mock_oracle: &AccountInfo,
     base_mint: &Pubkey,
     quote_mint: &Pubkey,
     now: u64,
 ) -> Option<u64> {
-    if pool_pinned {
-        return read_cpmm_price_floor(
-            pool_state,
-            observation,
-            base_vault,
-            quote_vault,
-            base_mint,
-            quote_mint,
-            now,
-        );
-    }
-    // Legacy mock: raw-u64 LE floor units in the first 8 bytes.
-    let data = mock_oracle.try_borrow_data().ok()?;
-    if data.len() < 8 {
-        return None;
-    }
-    let v = u64::from_le_bytes(data[0..8].try_into().ok()?);
-    if v == 0 {
-        None
-    } else {
-        Some(v)
-    }
+    read_cpmm_price_floor(
+        pool_state,
+        observation,
+        base_vault,
+        quote_vault,
+        base_mint,
+        quote_mint,
+        now,
+    )
 }
 
 /// Verify a full pinned-CPMM account set against the addresses derived from
 /// `amm_state` (H1 re-pin: a compromised keeper can't redirect the pricing
-/// reads or the swap in/out vaults). No-op when the pool isn't pinned
-/// (mock/localnet mode). Returns false with a `msg!` on any mismatch.
+/// reads or the swap in/out vaults). The pool is REQUIRED to be pinned —
+/// callers check `cpmm_pool_state != default` before calling. Returns false
+/// with a `msg!` on any mismatch.
 #[allow(clippy::too_many_arguments)]
 pub fn pinned_pool_accounts_valid(
-    pinned: bool,
     cpmm_program: Pubkey,
     pool_state: Pubkey,
     amm_config: Pubkey,
@@ -447,9 +428,6 @@ pub fn pinned_pool_accounts_valid(
     acct_observation: &AccountInfo,
     acct_authority: &AccountInfo,
 ) -> bool {
-    if !pinned {
-        return true;
-    }
     let (obs, _) = observation_pda(&cpmm_program, pool_state);
     let (afho_vault, _) = pool_vault_pda(&cpmm_program, pool_state, afho_mint);
     let (usdc_vault, _) = pool_vault_pda(&cpmm_program, pool_state, usdc_mint);

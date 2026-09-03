@@ -154,7 +154,6 @@ export function useOfferClaim(
                                 offerList: accounts.offerList,
                                 afhoMint: accounts.afhoMint,
                                 usdcMint: accounts.usdcMint,
-                                spotOracle: accounts.spotOracle,
                                 marketStatus: accounts.marketStatus,
                                 buyerUsdc,
                                 ammUsdcVault: accounts.ammUsdcVault,
@@ -211,15 +210,13 @@ export function useOfferClaim(
                             tokenProgram: TOKEN_PROGRAM_ID,
                             token2022Program: TOKEN_2022_PROGRAM_ID,
                             systemProgram: SystemProgram.programId,
-                            // Pricing oracles are only used in unpinned mode;
-                            // the SOL path is only exposed when both pools are
-                            // pinned, so they are unused here. Anchor optional
-                            // accounts must still be passed, and programId is the
-                            // sentinel that means "omitted". Because they live at
-                            // the end of the account list, the sentinel does not
+                            // Pool-only pricing: the pinned-pool accounts are
+                            // the only price sources (the mock oracles are gone
+                            // from the program). Anchor optional accounts must
+                            // still be passed, and programId is the sentinel
+                            // that means "omitted". Because they live at the
+                            // end of the account list, the sentinel does not
                             // shift any required account.
-                            spotOracle: program.programId,
-                            solOracle: program.programId,
                             cpmmPoolState: accounts.cpmmPoolState,
                             cpmmObservation: accounts.cpmmObservation,
                             cpmmInputVault: accounts.cpmmInputVault,
