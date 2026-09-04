@@ -48,7 +48,7 @@ const DIP_TREND_GAIN: i64 = 10; // multiplier bps per centi-percent of slope
 const DIP_TREND_FLOOR_BPS: i64 = 2_500; // knife guard: 25% of base
 const DIP_TREND_CAP_BPS: i64 = 12_500; // uptrend boost: 125% of base
 const DIP_DAY_CAP_BPS: u64 = 4_000; // <=40% of the day-start reserve per leg
-const DIP_MIN_SLICE_SLOTS: u64 = 150;
+const DIP_MIN_SLICE_SLOTS: u64 = 800;
 
 // Same per-sample clamp as calculate_momentum_score.
 const SAMPLE_CAP_CP: i64 = 1_000;
@@ -155,7 +155,11 @@ fn trend_slope_cp(metrics: &MarketMetrics) -> i64 {
             older_n += 1;
         }
     }
-    let recent = if recent_n > 0 { recent_sum / recent_n } else { 0 };
+    let recent = if recent_n > 0 {
+        recent_sum / recent_n
+    } else {
+        0
+    };
     let older = if older_n > 0 { older_sum / older_n } else { 0 };
     recent - older
 }
@@ -302,7 +306,14 @@ pub fn handler(ctx: Context<BuyTheDip>) -> Result<()> {
         } else {
             0
         };
-        execute_swap(&swap, mint_key, state_bump, slice_usdc, min_out, amm_state.cpmm_program)?;
+        execute_swap(
+            &swap,
+            mint_key,
+            state_bump,
+            slice_usdc,
+            min_out,
+            amm_state.cpmm_program,
+        )?;
         ctx.accounts.afho_vault.reload()?;
         let out = ctx.accounts.afho_vault.amount.saturating_sub(before);
         if out > 0 {

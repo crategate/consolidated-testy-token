@@ -4,7 +4,7 @@ use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
 // Minimum slots between slices (~1 min) — pacing so one crank burst can't
 // drain the day's budget in a single block.
-const MIN_SLICE_SLOTS: u64 = 150;
+const MIN_SLICE_SLOTS: u64 = 400;
 // Slice weights: 1.9% of remaining budget during the first hour after open,
 // 5% after. With ~1 slice/min (36 first-hour slices) ~50% of the day's volume
 // lands in the first hour on average; the 5% tail spends the rest by close.
@@ -281,12 +281,12 @@ pub(crate) fn execute_swap(
     let authority = &swap.cpmm_authority;
     let ix = crate::instructions::raydium::cpmm_swap_base_input_ix(
         cpmm_program,
-        swap.amm_state.key(),          // payer (PDA signs)
+        swap.amm_state.key(), // payer (PDA signs)
         authority.key(),
         amm_config.key(),
         pool_state.key(),
-        swap.usdc_vault.key(),         // input_token_account
-        swap.afho_vault.key(),         // output_token_account
+        swap.usdc_vault.key(), // input_token_account
+        swap.afho_vault.key(), // output_token_account
         input_vault.key(),
         output_vault.key(),
         swap.token_program.key(),      // input token program (USDC)
@@ -366,3 +366,4 @@ pub enum ErrorCode {
     #[msg("CPMM pool not pinned — run set_cpmm_pool")]
     PoolNotPinned,
 }
+
