@@ -220,14 +220,27 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
             clock.unix_timestamp as u64,
         )
         .ok_or(ErrorCode::InvalidOracle)?;
-        // min-out for the CPMM swap: bound the realized price inside the same
-        // M3 band used post-swap. (usdc_raw × 1e12 / afho_raw = floor units.)
-        let min_out = if spot > 0 {
-            (slice_usdc as u128 * 1_000_000_000_000u128 * 10_000u128
-                / (spot as u128 * (10_000 + MAX_SLIPPAGE_BPS) as u128)) as u64
-        } else {
-            0
-        };
+        // min-out for the CPMM swap: preview the pool's actual constant-product
+        // output from its vault balances. The old TWAP-anchored floor ignored
+        // the trade's own price impact and lagged the live pool during the
+        // day's buyback climb — a rising pool pays fewer AFHO than the stale
+        // TWAP floor demands, failing slices with Raydium 0x1775. Residual
+        // tolerance stays MAX_SLIPPAGE_BPS (5%) for the input fee + concurrent
+        // trades; flat-floor fallback only if the vaults are unreadable.
+        let min_out = super::raydium::cpmm_swap_min_out_from_vaults(
+            &swap.cpmm_input_vault,  // pool USDC (input) vault
+            &swap.cpmm_output_vault, // pool AFHO (output) vault
+            slice_usdc,
+            MAX_SLIPPAGE_BPS,
+        )
+        .unwrap_or_else(|| {
+            if spot > 0 {
+                (slice_usdc as u128 * 1_000_000_000_000u128 * 10_000u128
+                    / (spot as u128 * (10_000 + MAX_SLIPPAGE_BPS) as u128)) as u64
+            } else {
+                0
+            }
+        });
         let before = ctx.accounts.afho_vault.amount;
         execute_swap(
             &swap,

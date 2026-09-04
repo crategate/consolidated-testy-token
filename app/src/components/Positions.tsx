@@ -15,7 +15,7 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
     const { positions, loading: positionsLoading, refresh: refreshPositions } = usePositions(mint);
     const { data: marketData } = useMarketStatus(marketStatusPda);
     const { pool } = usePool(mint);
-    const { enriched, grandTotal } = usePositionRewards(mint, positions, marketStatusPda);
+    const { enriched, claimableTotal, vestingTotal, vestingCount } = usePositionRewards(mint, positions, marketStatusPda);
     const { claimAll, loading: claimLoading } = useClaimAll(mint, positions, marketStatusPda);
     const { unstake, loadingIndex: unstakeLoadingIndex } = useUnstake(mint, marketStatusPda, marketData?.state);
     const claimsOpen = marketData?.state === 0;
@@ -88,7 +88,10 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
         return Math.max(0, unlockDay - currentTradingDay);
     };
 
-    const grandTotalDisplay = (grandTotal).toFixed(4);
+    // The green tile shows CLAIMABLE AFHO only: rewards on still-vesting
+    // bond positions are gated by the program (claim() rejects unvested
+    // positions) and are surfaced in the vesting note below instead.
+    const grandTotalDisplay = claimableTotal.toFixed(4);
 
     // Sum of all staked principal — the user's total balance locked in staking.
     const lockedTotal = positions.reduce((sum, pos) => sum + pos.amount, 0) / 1e9;
@@ -111,7 +114,7 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
                 <button
                     className="claim-collect"
                     onClick={handleClaimAll}
-                    disabled={!claimsOpen || claimLoading || grandTotal <= 0}
+                    disabled={!claimsOpen || claimLoading || claimableTotal <= 0}
                 >
                     {!claimsOpen ? 'Claim Available After Opening Bell' : claimLoading ? 'Collecting…' : 'Collect All Claims'}
                 </button>
@@ -125,6 +128,11 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
                 <span className="grand-total">
                     Total available: <strong>{grandTotalDisplay} AFHO</strong>
                 </span>
+                {vestingCount > 0 && (
+                    <span className="vesting-note">
+                        +{vestingTotal.toFixed(4)} AFHO locked in vesting bond positions — becomes claimable at end of vesting
+                    </span>
+                )}
             </div>
 
             <div className="pos-contain">

@@ -1087,6 +1087,16 @@ h3 {
     transform: translateY(-2px);
 }
 
+/* Muted footnote under the collect-all tile: rewards still gated by vesting
+   bond positions (shown as +X AFHO — becomes claimable at end of vesting). */
+.vesting-note {
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    letter-spacing: 0.05em;
+    opacity: 0.85;
+}
+
 .site-footer-note {
     margin: 0;
     font-size: 0.65rem;

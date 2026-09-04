@@ -4,6 +4,7 @@ use anchor_spl::associated_token::{create_idempotent, AssociatedToken, Create};
 use anchor_spl::token::{close_account, CloseAccount};
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
+use super::dex_buyback::MAX_SLIPPAGE_BPS;
 use super::raydium::cpmm_swap_base_input_ix;
 
 // Bounty auto-top-up (AFHO-funded): when the crank-oracle bounty vault's SOL
@@ -81,10 +82,13 @@ pub struct BountyTopUp<'info> {
     pub sol_usdc_amm_config: UncheckedAccount<'info>,
     #[account(mut)]
     /// CHECK: SOL/USDC pool account (pinned in the handler).
-    pub sol_usdc_input_vault: UncheckedAccount<'info>, // pool USDC vault
+    // NB: input/output follow the offer_claim_sol direction (wSOL in → USDC
+    // out). Leg 2 below runs the REVERSE direction, so it passes these two
+    // vaults swapped at the CPI.
+    pub sol_usdc_input_vault: UncheckedAccount<'info>, // pool wSOL vault
     #[account(mut)]
     /// CHECK: SOL/USDC pool account (pinned in the handler).
-    pub sol_usdc_output_vault: UncheckedAccount<'info>, // pool wSOL vault
+    pub sol_usdc_output_vault: UncheckedAccount<'info>, // pool USDC vault
     #[account(mut)]
     /// CHECK: SOL/USDC pool account (pinned in the handler).
     pub sol_usdc_observation: UncheckedAccount<'info>,
@@ -223,7 +227,21 @@ pub fn handler(ctx: Context<BountyTopUp>) -> Result<()> {
 
     // ── Leg 1: AFHO → USDC (into usdc_vault) ──
     let usdc_before = ctx.accounts.usdc_vault.amount;
-    let min_out = usdc_needed.saturating_mul(98) / 100; // 2% drift tolerance
+    // Impact-aware min-out: the flat `usdc_needed × 98/100` floor priced the
+    // swap at the pool's spot/TWAP read and ignored the trade's own
+    // constant-product price impact (~8% for a bounty-sized AFHO sale on the
+    // devnet pool), so the CPI failed with Raydium 0x1775 ExceededSlippage.
+    // Preview the pool's real output from its vault balances and keep
+    // MAX_SLIPPAGE_BPS (5%, same as the buyback paths) as the residual
+    // tolerance for the 0.25% input fee + concurrent trades. Flat-floor
+    // fallback only if the vaults are unreadable.
+    let min_out = super::raydium::cpmm_swap_min_out_from_vaults(
+        &ctx.accounts.cpmm_output_vault.to_account_info(), // pool AFHO (input) vault
+        &ctx.accounts.cpmm_input_vault.to_account_info(),  // pool USDC (output) vault
+        afho_in,
+        MAX_SLIPPAGE_BPS,
+    )
+    .unwrap_or_else(|| usdc_needed.saturating_mul(98) / 100);
     let ix = cpmm_swap_base_input_ix(
         cpmm_program,
         ctx.accounts.amm_state.key(),
@@ -266,21 +284,30 @@ pub fn handler(ctx: Context<BountyTopUp>) -> Result<()> {
     require!(usdc_got > 0, ErrorCode::SwapReturnedNothing);
 
     // ── Leg 2: USDC → wSOL (into wsol_vault) ──
-    // 98% min-out (2% drift tolerance, same as the claim path): a manipulated
-    // SOL/USDC pool must not be able to eat the whole conversion.
-    // lamports = usdc_raw × 1e12 / sol_price — the same ×1e12 form as the
-    // claim path's lamports math (sol_price = price per whole SOL × 1e9).
-    // Pre-scale-change this was 1e9 where the matching form was 1e6 — a 1000×
-    // min-out that no real swap could meet; fixed to the fair 1e12 form.
-    let wsol_min_out = (usdc_got as u128)
-        .checked_mul(1_000_000_000_000u128)
-        .ok_or(ErrorCode::MathOverflow)?
-        .checked_div(sol_price as u128)
-        .ok_or(ErrorCode::MathOverflow)?
-        .checked_mul(98u128)
-        .ok_or(ErrorCode::MathOverflow)?
-        .checked_div(100u128)
-        .ok_or(ErrorCode::MathOverflow)? as u64;
+    // Impact-aware min-out (see leg 1): the bounty's USDC hop is a large share
+    // of the devnet SOL/USDC pool's USDC reserve, so a spot-priced floor can
+    // never pass. This leg runs the REVERSE of the sol_usdc_input/output
+    // naming (those follow the claim path's wSOL-in direction): the swap's
+    // input vault is the pool's USDC vault (sol_usdc_output_vault) and its
+    // output vault is the pool's wSOL vault (sol_usdc_input_vault) — passing
+    // them in naming order fails the pool's input_token_mint == input_vault.mint
+    // address constraint (Raydium 0x7dc ConstraintAddress). Flat fallback:
+    // usdc_raw × 1e12 / sol_price × 98/100 (the same ×1e12 lamports form as
+    // the claim path).
+    let wsol_min_out = super::raydium::cpmm_swap_min_out_from_vaults(
+        &ctx.accounts.sol_usdc_output_vault.to_account_info(), // pool USDC (this leg's input) vault
+        &ctx.accounts.sol_usdc_input_vault.to_account_info(),  // pool wSOL (this leg's output) vault
+        usdc_got,
+        MAX_SLIPPAGE_BPS,
+    )
+    .unwrap_or_else(|| {
+        ((usdc_got as u128)
+            .checked_mul(1_000_000_000_000u128)
+            .and_then(|v| v.checked_div(sol_price as u128))
+            .and_then(|v| v.checked_mul(98u128))
+            .and_then(|v| v.checked_div(100u128))
+            .unwrap_or(0)) as u64
+    });
     let ix = cpmm_swap_base_input_ix(
         cpmm_program,
         ctx.accounts.amm_state.key(),
@@ -289,8 +316,8 @@ pub fn handler(ctx: Context<BountyTopUp>) -> Result<()> {
         ctx.accounts.sol_usdc_pool_state.key(),
         ctx.accounts.usdc_vault.key(),       // user input (USDC)
         ctx.accounts.wsol_vault.key(),       // user output (wSOL)
-        ctx.accounts.sol_usdc_input_vault.key(),  // pool USDC vault
-        ctx.accounts.sol_usdc_output_vault.key(), // pool wSOL vault
+        ctx.accounts.sol_usdc_output_vault.key(), // pool USDC vault (this leg's input)
+        ctx.accounts.sol_usdc_input_vault.key(),  // pool wSOL vault (this leg's output)
         ctx.accounts.token_program.key(),
         ctx.accounts.token_program.key(),
         ctx.accounts.usdc_mint.key(),
@@ -308,8 +335,8 @@ pub fn handler(ctx: Context<BountyTopUp>) -> Result<()> {
             ctx.accounts.sol_usdc_pool_state.to_account_info(),
             ctx.accounts.usdc_vault.to_account_info(),
             ctx.accounts.wsol_vault.to_account_info(),
-            ctx.accounts.sol_usdc_input_vault.to_account_info(),
-            ctx.accounts.sol_usdc_output_vault.to_account_info(),
+            ctx.accounts.sol_usdc_output_vault.to_account_info(), // pool USDC vault
+            ctx.accounts.sol_usdc_input_vault.to_account_info(),  // pool wSOL vault
             ctx.accounts.token_program.to_account_info(),
             ctx.accounts.token_program.to_account_info(),
             ctx.accounts.usdc_mint.to_account_info(),

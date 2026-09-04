@@ -18,7 +18,10 @@
 // The floor (highest_buyback_basis) is USDC-denominated in BOTH paths: a SOL
 // claim converts its USDC-terms cost to lamports at the sol_oracle rate, so
 // the ratchet never mixes units. The buyer covers the CPMM 0.25% input fee
-// (+25bps on the lamports); min-out tolerates 2% pool drift/slippage.
+// The buyer's lamports are solved from the SOL/USDC pool's actual reserves so
+// the swap nets the full USDC cost after the pool fee and the trade's own
+// price impact; the swap min-out and the vault-delta check enforce it
+// fail-closed.
 
 use crate::state::offersState::{lot_sizer, AmmState, OfferList};
 use anchor_lang::prelude::*;
@@ -27,6 +30,10 @@ use anchor_spl::token_interface::{
 };
 use anchor_spl::associated_token::{create_idempotent, AssociatedToken, Create};
 use anchor_spl::token::{sync_native, SyncNative};
+
+/// The pinned SOL/USDC amm_config's input-leg trade fee (0.25%) — the same
+/// assumption the historical `10_025` sizing buffers made.
+const SOL_POOL_TRADE_FEE_BPS: u64 = 25;
 
 // ---------------------------------------------------------------------------
 // USDC payment
@@ -452,16 +459,32 @@ pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u32, index: u64
     )
     .ok_or(ErrorCode::InvalidOracle)?;
     require!(sol_price > 0, ErrorCode::InvalidOracle);
-    let lamports = (q.cost_usdc as u128)
-        .checked_mul(1_000_000_000_000u128)
-        .ok_or(ErrorCode::MathOverflow)?
-        .checked_mul(10_025u128)
-        .ok_or(ErrorCode::MathOverflow)?
-        .checked_div(sol_price as u128)
-        .ok_or(ErrorCode::MathOverflow)?
-        .checked_div(10_000u128)
-        .ok_or(ErrorCode::MathOverflow)?;
-    let lamports = u64::try_from(lamports).map_err(|_| ErrorCode::MathOverflow)?;
+    // Size the buyer's input from the pool's ACTUAL reserves so the swap nets
+    // the full USDC cost after the 0.25% input-leg fee AND the trade's own
+    // constant-product price impact. The old form (cost × 1.0025 / price
+    // read) had zero impact headroom — the 25bps buffer exactly covered the
+    // pool fee — so any input larger than ~0.25% of the pool's wSOL reserve
+    // left usdc_got short of cost_usdc and failed the claim. Solving the
+    // constant-product equation makes netting the cost hold by construction
+    // at any size the pool can actually serve:
+    //   out = R_out × net/(R_in + net) ≥ cost ⇒ net = cost × R_in/(R_out − cost)
+    // The sol_price read stays as a fail-closed validation that the pinned
+    // pool still prices the wSOL/USDC pair (mints + TWAP ring sanity).
+    let pool_wsol = super::raydium::token_account_amount(
+        &ctx.accounts.sol_usdc_input_vault.to_account_info(),
+    )
+    .ok_or(ErrorCode::InvalidOracle)?;
+    let pool_usdc = super::raydium::token_account_amount(
+        &ctx.accounts.sol_usdc_output_vault.to_account_info(),
+    )
+    .ok_or(ErrorCode::InvalidOracle)?;
+    let lamports = super::raydium::cpmm_swap_input_for_out(
+        pool_wsol,
+        pool_usdc,
+        q.cost_usdc,
+        SOL_POOL_TRADE_FEE_BPS,
+    )
+    .ok_or(ErrorCode::InsufficientPoolLiquidity)?;
     require!(lamports > 0, ErrorCode::ZeroAmount);
 
     // ── 0. Ensure the wSOL ATA exists. bounty_top_up closes it after
@@ -511,6 +534,12 @@ pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u32, index: u64
     let state_bump = ctx.accounts.amm_state.bump;
     let cpmm_program = ctx.accounts.amm_state.cpmm_program;
     let seeds: &[&[u8]] = &[b"amm_state", mint_key.as_ref(), &[state_bump]];
+    let usdc_before = ctx.accounts.usdc_vault.amount;
+    // Raydium enforces the economics itself now: the input is solved from the
+    // pool's reserves so the pool nets ≥ cost_usdc, and the CPI min-out pins
+    // that same floor. The vault-delta check below re-verifies it fail-closed
+    // (e.g. if the pinned amm_config's fee ever differs from the 25bps model).
+    let min_out = q.cost_usdc;
     let ix = crate::instructions::raydium::cpmm_swap_base_input_ix(
         cpmm_program,
         ctx.accounts.amm_state.key(),
@@ -527,7 +556,7 @@ pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u32, index: u64
         ctx.accounts.usdc_mint.key(),
         ctx.accounts.sol_usdc_observation.key(),
         lamports,
-        q.cost_usdc.saturating_mul(98) / 100, // min-out: 2% tolerance for pool drift/slippage
+        min_out,
     );
     anchor_lang::solana_program::program::invoke_signed(
         &ix,
@@ -548,6 +577,14 @@ pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u32, index: u64
         ],
         &[seeds],
     )?;
+
+    // The swap must net the protocol the full USDC cost: the 80/10/10 split
+    // below moves cost-derived amounts out of usdc_vault, so a pool shortfall
+    // would otherwise be silently drawn from the pre-existing buyback-vault
+    // balance. Fail closed instead.
+    ctx.accounts.usdc_vault.reload()?;
+    let usdc_got = ctx.accounts.usdc_vault.amount.saturating_sub(usdc_before);
+    require!(usdc_got >= q.cost_usdc, ErrorCode::InsufficientSwapOutput);
 
     // ── 3. 80/10/10 split of the USDC (rounding favors the buyback vault) ──
     let dip = q.cost_usdc / 10;
@@ -869,4 +906,8 @@ pub enum ErrorCode {
     InvalidPoolAccount,
     #[msg("CPMM pool not pinned — run set_cpmm_pool / set_sol_usdc_pool")]
     PoolNotPinned,
+    #[msg("SOL leg swap did not net the full USDC cost")]
+    InsufficientSwapOutput,
+    #[msg("SOL/USDC pool cannot serve this claim cost")]
+    InsufficientPoolLiquidity,
 }

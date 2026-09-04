@@ -326,6 +326,133 @@ pub fn token_account_amount(account: &AccountInfo) -> Option<u64> {
     Some(u64::from_le_bytes(data.get(64..72)?.try_into().ok()?))
 }
 
+/// Constant-product preview of a Raydium CPMM `swap_base_input`: the output
+/// the pool will actually produce for `amount_in` against reserves
+/// (r_in, r_out), before the pool's ~0.25% input-leg trade fee, discounted
+/// by `slippage_bps` of residual tolerance (input fee + concurrent-trade
+/// jitter).
+///
+/// This is the correct min-out for sized trades. A flat
+/// `amount_in × spot × (1 − tol)` floor ignores the trade's own price impact
+/// (`amount_in / (r_in + amount_in)`), so any input larger than the tolerance
+/// reliably fails the CPI with Raydium 0x1775 ExceededSlippage on a thin
+/// pool — the pool's real output is always below spot×input for a non-dust
+/// trade.
+pub fn cpmm_swap_min_out(r_in: u64, r_out: u64, amount_in: u64, slippage_bps: u64) -> Option<u64> {
+    if r_in == 0 || r_out == 0 || amount_in == 0 {
+        return None;
+    }
+    let expected_out = (amount_in as u128)
+        .checked_mul(r_out as u128)?
+        .checked_div((r_in as u128).checked_add(amount_in as u128)?)?;
+    let min_out = expected_out
+        .checked_mul(10_000u128)?
+        .checked_div(10_000u128.checked_add(slippage_bps as u128)?)?;
+    u64::try_from(min_out).ok().filter(|m| *m > 0)
+}
+
+/// `cpmm_swap_min_out` against the pool's two vault accounts: pass the swap's
+/// INPUT vault first, OUTPUT vault second (caller's swap orientation, not
+/// mint order). Returns `None` when either vault is unreadable or empty so
+/// callers can fall back to their flat floor-price min-out.
+pub fn cpmm_swap_min_out_from_vaults(
+    input_vault: &AccountInfo,
+    output_vault: &AccountInfo,
+    amount_in: u64,
+    slippage_bps: u64,
+) -> Option<u64> {
+    let r_in = token_account_amount(input_vault)?;
+    let r_out = token_account_amount(output_vault)?;
+    cpmm_swap_min_out(r_in, r_out, amount_in, slippage_bps)
+}
+
+/// Constant-product solve: the gross `swap_base_input` input (including the
+/// pool's `fee_bps` input-leg trade fee) needed for the pool to net at least
+/// `min_out` against reserves (r_in, r_out). Ceil-rounded so the pool's own
+/// integer math still reaches the target. Returns `None` when `min_out` is 0
+/// or `min_out >= r_out` — no input can net more than the pool's entire
+/// output side holds.
+///
+/// Inverse of the pool math behind `cpmm_swap_min_out`:
+///   out = r_out × net/(r_in + net) ≥ min_out, net = in × (10000 − fee_bps)/10000
+///   ⇒ net_req = ceil(min_out × r_in/(r_out − min_out)), in = ceil(net_req × 10000/(10000 − fee_bps))
+pub fn cpmm_swap_input_for_out(r_in: u64, r_out: u64, min_out: u64, fee_bps: u64) -> Option<u64> {
+    if r_in == 0 || r_out == 0 || min_out == 0 || min_out >= r_out || fee_bps >= 10_000 {
+        return None;
+    }
+    let (r_in, r_out, min_out) = (r_in as u128, r_out as u128, min_out as u128);
+    let num = min_out.checked_mul(r_in)?;
+    let den = r_out.checked_sub(min_out)?; // > 0 by the guard above
+    let net_req = (num.checked_add(den)?.checked_sub(1)?) / den; // ceil(num/den)
+    let gross = net_req
+        .checked_mul(10_000u128)?
+        .checked_div(10_000u128.checked_sub(fee_bps as u128)?)?;
+    u64::try_from(gross).ok()
+}
+
+#[cfg(test)]
+mod cpmm_min_out_tests {
+    use super::*;
+
+    #[test]
+    fn min_out_reproduces_observed_0x1775_fill() {
+        // Devnet SOL/USDC pool at the time of the failure: ~1.1 wSOL vs
+        // ~158 USDC reserves. A 0.0675-SOL claim input (~9.696 USDC cost at
+        // sol_price 144.01) actually produced 9,138,841 raw USDC out, while
+        // the old flat floor (cost × 0.98 = 9,502,080) failed the CPI.
+        let min = cpmm_swap_min_out(1_100_000_000, 158_000_000, 67_503_000, 500).unwrap();
+        // expected out ≈ 9.136e6, min = expected × 10000/10500 ≈ 8.701e6.
+        assert!((8_690_000..=8_710_000).contains(&min));
+        // The old spot-priced floor is strictly above what the pool pays out:
+        assert!(9_502_080u64 > 9_136_000);
+        assert!(min < 9_502_080);
+    }
+
+    #[test]
+    fn min_out_needs_liquidity_on_both_sides() {
+        assert!(cpmm_swap_min_out(0, 158_000_000, 67_503_000, 500).is_none());
+        assert!(cpmm_swap_min_out(1_100_000_000, 0, 67_503_000, 500).is_none());
+        assert!(cpmm_swap_min_out(1_100_000_000, 158_000_000, 0, 500).is_none());
+    }
+
+    #[test]
+    fn min_out_converges_to_spot_for_dust() {
+        // Dust input: no impact, so min = fair × 10000/10500 exactly.
+        let (r_in, r_out, amount) = (1_100_000_000u64, 158_000_000u64, 1_000u64);
+        let min = cpmm_swap_min_out(r_in, r_out, amount, 500).unwrap() as u128;
+        let fair = amount as u128 * r_out as u128 / r_in as u128;
+        assert!(min <= fair);
+        assert!(min >= fair * 9_500 / 10_000);
+    }
+
+    #[test]
+    fn input_for_out_nets_target_after_fee() {
+        // Solve, then replay the pool's integer math (fee floor, output
+        // floor): the net must reach the target.
+        let (r_in, r_out, target) = (1_100_000_000u64, 158_000_000u64, 9_696_000u64);
+        let input = cpmm_swap_input_for_out(r_in, r_out, target, 25).unwrap() as u128;
+        let net = input - input * 25 / 10_000;
+        let out = (r_out as u128) * net / ((r_in as u128) + net);
+        assert!(out >= target as u128);
+        // Targets the pool can never serve fail cleanly.
+        assert!(cpmm_swap_input_for_out(r_in, r_out, r_out, 25).is_none());
+        assert!(cpmm_swap_input_for_out(r_in, r_out, r_out + 1, 25).is_none());
+        assert!(cpmm_swap_input_for_out(r_in, 0, 1, 25).is_none());
+        assert!(cpmm_swap_input_for_out(0, r_out, 1, 25).is_none());
+        assert!(cpmm_swap_input_for_out(r_in, r_out, 0, 25).is_none());
+    }
+
+    #[test]
+    fn input_for_out_dust_is_spot_plus_fee() {
+        // Dust: input ≈ target × r_in/r_out × (1 + fee) + rounding.
+        let (r_in, r_out, target) = (1_100_000_000u64, 158_000_000u64, 1_000u64);
+        let input = cpmm_swap_input_for_out(r_in, r_out, target, 25).unwrap() as u128;
+        let fair = target as u128 * r_in as u128 / r_out as u128;
+        assert!(input > fair);
+        assert!(input <= fair * 10_050 / 10_000 + 2);
+    }
+}
+
 /// CPMM pool-state mints: token_0 at offset 168, token_1 at offset 200
 /// (after the 8-byte discriminator + config_id/pool_creator/vaults/lp_mint).
 pub fn pool_state_mints(pool_state: &AccountInfo) -> Option<(Pubkey, Pubkey)> {

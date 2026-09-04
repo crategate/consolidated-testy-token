@@ -267,7 +267,9 @@ function buildDashData(
             },
             {
                 label: 'Highest buyback basis',
-                value: `${field(ammState, 'highestBuybackBasis', 'highest_buyback_basis')}`,
+                // Stored in floor units (price × 1e9 nano-USD per token):
+                // 4505 = $0.000004505/AFHO. Display it as a dollar price.
+                value: `$${(Number(field(ammState, 'highestBuybackBasis', 'highest_buyback_basis')) / 1e9).toFixed(9)}`,
             },
         );
     }

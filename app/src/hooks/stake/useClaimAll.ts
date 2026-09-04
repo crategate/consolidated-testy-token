@@ -39,33 +39,60 @@ export function useClaimAll(mint: PublicKey | null, positions: Position[], marke
             )[0];
             const ownerToken = getAssociatedTokenAddressSync(mint, publicKey, false, TOKEN_2022_PROGRAM_ID);
 
-            const tx = new Transaction();
-            const { blockhash } = await connection.getLatestBlockhash('confirmed');
-            tx.recentBlockhash = blockhash;
-            tx.feePayer = publicKey;
-
-            for (const position of positions) {
-                const ix = await program.methods
-                    .claim()
-                    .accounts({
-                        owner: publicKey,
-                        mint,
-                        pool: poolPda,
-                        position: position.pda,
-                        rewardVault: rewardVaultPda,
-                        bondVault,
-                        ownerToken,
-                        marketStatus,
-                        tokenProgram: TOKEN_2022_PROGRAM_ID,
-                    })
-                    .instruction();
-                tx.add(ix);
+            // One failing claim aborts the whole transaction (Vesting /
+            // ClaimsClosed / size limits), so: (1) drop positions that are
+            // still vesting — the market-status layout is disc(8) +
+            // state(1) + timestamp(8) + trading_day_index(8); (2) chunk into
+            // transactions of 4 — each claim ix serializes ~9 accounts ≈
+            // 300B, and the 1232B packet caps a legacy tx at ~4 claims.
+            let currentDay = 0;
+            if (marketStatus) {
+                const msInfo = await connection.getAccountInfo(marketStatus);
+                if (msInfo && msInfo.data.length >= 25) {
+                    currentDay = Number(
+                        new DataView(msInfo.data.buffer, msInfo.data.byteOffset).getBigUint64(17, true),
+                    );
+                }
+            }
+            const claimable = positions.filter(
+                (p) => currentDay >= p.entryTradingDay + (p.daysToUnlock ?? 0),
+            );
+            if (!claimable.length) {
+                throw new Error('No positions are vested for claiming yet');
             }
 
+            const CLAIMS_PER_TX = 4;
             const sendAndConfirm = program.provider.sendAndConfirm?.bind(program.provider);
             if (!sendAndConfirm) throw new Error('Provider cannot send transactions');
-            const signature = await sendAndConfirm(tx);
-            return signature;
+
+            const signatures: string[] = [];
+            for (let i = 0; i < claimable.length; i += CLAIMS_PER_TX) {
+                const tx = new Transaction();
+                const { blockhash } = await connection.getLatestBlockhash('confirmed');
+                tx.recentBlockhash = blockhash;
+                tx.feePayer = publicKey;
+
+                for (const position of claimable.slice(i, i + CLAIMS_PER_TX)) {
+                    const ix = await program.methods
+                        .claim()
+                        .accounts({
+                            owner: publicKey,
+                            mint,
+                            pool: poolPda,
+                            position: position.pda,
+                            rewardVault: rewardVaultPda,
+                            bondVault,
+                            ownerToken,
+                            marketStatus,
+                            tokenProgram: TOKEN_2022_PROGRAM_ID,
+                        })
+                        .instruction();
+                    tx.add(ix);
+                }
+
+                signatures.push(await sendAndConfirm(tx));
+            }
+            return signatures.join(', ');
         } catch (e) {
             console.error('Claim all error:', e);
             throw e;

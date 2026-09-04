@@ -149,6 +149,40 @@ async function main() {
         };
     }
 
+    // ── descriptive-log helpers (amounts + % of vaults) ───────────────────
+    const fmtRaw = (raw: bigint, decimals: number, maxFrac = 4): string => {
+        const unit = 10n ** BigInt(decimals);
+        const whole = raw / unit;
+        let frac = (raw % unit).toString().padStart(decimals, "0").slice(0, maxFrac);
+        frac = frac.replace(/0+$/, "");
+        return frac ? `${whole.toLocaleString("en-US")}.${frac}` : whole.toLocaleString("en-US");
+    };
+    const fmtUsdc = (raw: bigint) => `${fmtRaw(raw, 6)} USDC`;
+    const fmtSolL = (raw: bigint) => `${fmtRaw(raw, 9)} SOL`;
+    const fmtAfho = (raw: bigint) => `${fmtRaw(raw, 9, 2)} AFHO`;
+    // Floor units = price per whole token × 1e9 (nano-USD).
+    const fmtPrice = (floor: bigint) => `$${fmtRaw(floor, 9, 9)}`;
+    const pctOf = (num: bigint, den: bigint): string =>
+        den <= 0n ? "—" : `${(Number((num * 10000n) / den) / 100).toFixed(2)}%`;
+    const bn = (v: unknown): bigint => BigInt((v as any).toString());
+
+    // Custom error code out of a failed simulation ({"InstructionError":[..,{"Custom":N}]}).
+    function customErrCode(err: unknown): number | null {
+        const m = JSON.stringify(err).match(/"Custom":(\d+)/);
+        return m ? parseInt(m[1], 10) : null;
+    }
+    const reason = (err: unknown, map: Record<number, string>): string => {
+        const code = customErrCode(err);
+        return code !== null ? (map[code] ?? `custom ${code}`) : JSON.stringify(err);
+    };
+
+    // SPL token amount (u64 LE at offset 64) — null when the account is absent.
+    async function tokenAmount(pk: PublicKey): Promise<bigint | null> {
+        const a = await connection.getAccountInfo(pk, "confirmed");
+        if (!a || a.data.length < 72) return null;
+        return new DataView(a.data.buffer, a.data.byteOffset, a.data.byteLength).getBigUint64(64, true);
+    }
+
     console.log(" Keeper started");
     console.log("Program ID:", programId.toBase58());
     console.log("Market Status:", marketStatusPda.toBase58());
@@ -561,6 +595,33 @@ async function main() {
                 if (statusNow.currentState === 0) {
                     const ammState = await (ammProgram.account as any).ammState.fetch(ammStatePda);
                     const usdcMint = new PublicKey(ammState.usdcMint);
+                    const bbVault = (await tokenAmount(ammState.usdcVault)) ?? 0n;
+                    const bbAfhoBefore = (await tokenAmount(ammState.afhoVault)) ?? 0n;
+                    const bbBudget = bn(ammState.bbBudgetUsdc);
+                    const bbSpent = bn(ammState.bbSpentUsdc);
+                    const bbRemaining = bbBudget > bbSpent ? bbBudget - bbSpent : 0n;
+                    const bbSpendable = bbRemaining < bbVault ? bbRemaining : bbVault;
+                    const bbElapsed = Math.max(
+                        0,
+                        Math.floor(Date.now() / 1000) - Number(bn(statusNow.lastUpdatedTimestamp))
+                    );
+                    const bbWeight = bbElapsed < 3600 ? 190n : 500n;
+                    const slotNow = BigInt(await connection.getSlot());
+                    const bbX =
+                        slotNow ^ (bn(statusNow.tradingDayIndex) << 16n) ^ bn(ammState.bbSliceCount);
+                    const bbFactor = 5000n + (bbX % 10001n);
+                    const estSlice = (bbSpendable * bbWeight * bbFactor) / 100_000_000n;
+                    const estSliceCapped = estSlice > bbSpendable ? bbSpendable : estSlice;
+                    const pacingLeft =
+                        bn(ammState.bbLastSlot) > 0n && slotNow - bn(ammState.bbLastSlot) < 150n
+                            ? Number(150n - (slotNow - bn(ammState.bbLastSlot)))
+                            : 0;
+                    console.log(
+                        ` dex_buyback: budget=${fmtUsdc(bbBudget)} spent=${fmtUsdc(bbSpent)} ` +
+                        `(${pctOf(bbSpent, bbBudget)} of budget) vault=${fmtUsdc(bbVault)} ` +
+                        `est slice=${fmtUsdc(estSliceCapped)} (${pctOf(estSliceCapped, bbVault)} of vault)` +
+                        `${pacingLeft ? `, pacing ${pacingLeft} slots` : ""}`
+                    );
                     const bbIx = await ammProgram.methods
                         .dexBuyback()
                         .accountsStrict({
@@ -586,12 +647,33 @@ async function main() {
                     });
                     const bbSim = await connection.simulateTransaction(bbTx);
                     if (bbSim.value.err) {
-                        console.log("dex_buyback skipped (pacing / no fills / spent):", JSON.stringify(bbSim.value.err));
+                        const bbReasons: Record<number, string> = {
+                            6000: "unauthorized caller",
+                            6001: "invalid market status",
+                            6002: "market not open",
+                            6003: "no offers taken last night — nothing to buy back",
+                            6004: "slippage exceeded",
+                            6005: "invalid oracle (or a Raydium CPI code propagated)",
+                            6006: "CPMM pool account mismatch",
+                            6007: "CPMM pool not pinned",
+                        };
+                        console.log(
+                            ` dex_buyback skipped (${reason(bbSim.value.err, bbReasons)}): ` +
+                            `spendable=${fmtUsdc(bbSpendable)} (${pctOf(bbSpendable, bbVault)} of vault)`
+                        );
                         console.log("  last logs:", bbSim.value.logs?.slice(-4) ?? []);
                     } else {
                         const bbSig = await connection.sendTransaction(bbTx);
                         await connection.confirmTransaction(bbSig, "confirmed");
-                        console.log(` dex_buyback slice fired! ${bbSig}`);
+                        const after = await (ammProgram.account as any).ammState.fetch(ammStatePda);
+                        const spentDelta = bn(after.bbSpentUsdc) - bbSpent;
+                        const bbVaultAfter = (await tokenAmount(ammState.usdcVault)) ?? 0n;
+                        const bbAfhoAfter = (await tokenAmount(ammState.afhoVault)) ?? 0n;
+                        console.log(
+                            ` dex_buyback slice fired: +${fmtUsdc(spentDelta)} ` +
+                            `(${pctOf(spentDelta, bbVault)} of vault, ${pctOf(bn(after.bbSpentUsdc), bn(after.bbBudgetUsdc))} of budget) ` +
+                            `+${fmtAfho(bbAfhoAfter - bbAfhoBefore)} → vault now=${fmtUsdc(bbVaultAfter)} — ${bbSig}`
+                        );
                     }
                 }
             } catch (e) {
@@ -607,6 +689,77 @@ async function main() {
             try {
                 const ammState = await (ammProgram.account as any).ammState.fetch(ammStatePda);
                 const usdcMint = new PublicKey(ammState.usdcMint);
+                const dipMetrics = await (ammProgram.account as any).marketMetrics.fetch(metricsPda);
+                const cp = cpmmAccountsFor(ammState, usdcMint);
+                // Client-side mirror of the on-chain trigger, for the log:
+                // spot ≈ pool vault ratio (the on-chain read prefers the TWAP
+                // when fresh, so this can drift slightly — marked "≈").
+                const afhoPool = (await tokenAmount(cp.cpmmOutputVault)) ?? 0n;
+                const usdcPool = (await tokenAmount(cp.cpmmInputVault)) ?? 0n;
+                const dipSpot = afhoPool > 0n && usdcPool > 0n ? (usdcPool * 1_000_000_000_000n) / afhoPool : null;
+                const dipReserve = (await tokenAmount(ammState.usdcDip)) ?? 0n;
+                const dipAfhoBefore = (await tokenAmount(ammState.afhoVault)) ?? 0n;
+                const ring: bigint[] = (dipMetrics.spotPrices as unknown[]).map((v) => bn(v));
+                let refSum = 0n;
+                let dipSamples = 0;
+                for (const p of ring) {
+                    if (p > 0n) {
+                        refSum += p;
+                        dipSamples++;
+                    }
+                }
+                const dipRef = dipSamples > 0 ? refSum / BigInt(dipSamples) : 0n;
+                let dipDepthBps = 0n;
+                if (dipSpot !== null && dipSamples >= 5 && dipRef > 0n && dipSpot < dipRef) {
+                    dipDepthBps = ((dipRef - dipSpot) * 10_000n) / dipRef;
+                }
+                // trend slope (port of trend_slope_cp): recent-5 minus older-15
+                // mean of the 20-day price_changes ring, ±1000 per sample, zeros skipped.
+                const changes: number[] = (dipMetrics.priceChanges as unknown[]).map((v) => Number(v));
+                const n = changes.length;
+                const head = Number(bn(dipMetrics.sampleHead)) % n;
+                let recentSum = 0;
+                let recentN = 0;
+                let olderSum = 0;
+                let olderN = 0;
+                for (let age = 0; age < n; age++) {
+                    const raw = changes[(head + age) % n];
+                    if (raw === 0) continue;
+                    const v = Math.max(-1000, Math.min(1000, raw));
+                    if (age >= n - 5) {
+                        recentSum += v;
+                        recentN++;
+                    } else {
+                        olderSum += v;
+                        olderN++;
+                    }
+                }
+                const dipSlope = (recentN ? recentSum / recentN : 0) - (olderN ? olderSum / olderN : 0);
+                // spend bps (port of dip_spend_bps): 2500 × depth² × trend mult.
+                let dipSpendBps = 0n;
+                if (dipDepthBps >= 300n) {
+                    const clamped = dipDepthBps > 1000n ? 1000n : dipDepthBps;
+                    const depth2 = (clamped * clamped * 10_000n) / 1_000_000n;
+                    const mult = Math.max(2500, Math.min(12500, 10000 + Math.trunc(dipSlope) * 10));
+                    dipSpendBps = (2500n * depth2 * BigInt(mult)) / 100_000_000n;
+                }
+                const dipDayCap = (bn(ammState.dipDayUsdc) * 4000n) / 10_000n;
+                const dipCapLeft = dipDayCap > bn(ammState.dipSpentUsdc) ? dipDayCap - bn(ammState.dipSpentUsdc) : 0n;
+                const dipSliceRaw = (dipReserve * dipSpendBps) / 10_000n;
+                const dipEstSlice = dipSliceRaw > dipCapLeft ? dipCapLeft : dipSliceRaw;
+                const dipSlot = BigInt(await connection.getSlot());
+                const dipPacingLeft =
+                    bn(ammState.dipLastSlot) > 0n && dipSlot - bn(ammState.dipLastSlot) < 800n
+                        ? Number(800n - (dipSlot - bn(ammState.dipLastSlot)))
+                        : 0;
+                console.log(
+                    ` buy_the_dip: reserve=${fmtUsdc(dipReserve)} dayBudget=${fmtUsdc(bn(ammState.dipDayUsdc))} ` +
+                    `spent=${fmtUsdc(bn(ammState.dipSpentUsdc))} (${pctOf(bn(ammState.dipSpentUsdc), dipDayCap)} of 40% day cap) ` +
+                    `spot≈${dipSpot !== null ? fmtPrice(dipSpot) : "—"} ref=${dipRef > 0n ? fmtPrice(dipRef) : "—"} ` +
+                    `depth=${(Number(dipDepthBps) / 100).toFixed(2)}% (trigger 3%) samples=${dipSamples} slope=${Math.trunc(dipSlope)}cp ` +
+                    `→ est slice=${fmtUsdc(dipEstSlice)} (${pctOf(dipEstSlice, dipReserve)} of reserve)` +
+                    `${dipPacingLeft ? `, pacing ${dipPacingLeft} slots` : ""}`
+                );
                 const dipIx = await ammProgram.methods
                     .buyTheDip()
                     .accountsStrict({
@@ -632,13 +785,48 @@ async function main() {
                 });
                 const dipSim = await connection.simulateTransaction(dipTx);
                 if (dipSim.value.err) {
-                    console.log("buy_the_dip skipped (cold start / no dip / pacing / cap):", JSON.stringify(dipSim.value.err));
+                    const dipReasons: Record<number, string> = {
+                        6000: "unauthorized caller",
+                        6001: "invalid market status",
+                        6002: "invalid oracle (or a Raydium CPI code propagated)",
+                        6003: "CPMM pool account mismatch",
+                        6004: "CPMM pool not pinned",
+                        6005: "Raydium ExceededSlippage propagated (see last logs)",
+                        6006: "Raydium ZeroTradingTokens propagated (see last logs)",
+                        6007: "Raydium NotSupportMint propagated (see last logs)",
+                        6008: "Raydium InvalidVault propagated (see last logs)",
+                    };
+                    console.log(
+                        ` buy_the_dip skipped (${reason(dipSim.value.err, dipReasons)}): ` +
+                        `reserve=${fmtUsdc(dipReserve)} est slice=${fmtUsdc(dipEstSlice)}`
+                    );
+                    console.log("  last logs:", dipSim.value.logs?.slice(-4) ?? []);
                 } else {
                     const dipSig = await connection.sendTransaction(dipTx);
                     await connection.confirmTransaction(dipSig, "confirmed");
                     // NB: a successful tx is usually a no-op (ring sampling / no dip
                     // / pacing) — the on-chain trigger decides whether a slice is spent.
-                    console.log(` buy_the_dip called (slice only on a real ≥3% dip): ${dipSig}`);
+                    const after = await (ammProgram.account as any).ammState.fetch(ammStatePda);
+                    const spentDelta = bn(after.dipSpentUsdc) - bn(ammState.dipSpentUsdc);
+                    const dipReserveAfter = (await tokenAmount(ammState.usdcDip)) ?? 0n;
+                    const dipAfhoAfter = (await tokenAmount(ammState.afhoVault)) ?? 0n;
+                    if (spentDelta > 0n) {
+                        console.log(
+                            ` buy_the_dip slice FIRED: +${fmtUsdc(spentDelta)} ` +
+                            `(${pctOf(spentDelta, dipReserve)} of reserve, ${pctOf(bn(after.dipSpentUsdc), dipDayCap)} of day cap) ` +
+                            `+${fmtAfho(dipAfhoAfter - dipAfhoBefore)} → reserve now=${fmtUsdc(dipReserveAfter)} — ${dipSig}`
+                        );
+                    } else {
+                        const noopWhy =
+                            dipSamples < 5
+                                ? `cold start (${dipSamples}/5 samples)`
+                                : dipDepthBps < 300n
+                                    ? `no dip (depth ${(Number(dipDepthBps) / 100).toFixed(2)}% < 3%)`
+                                    : dipPacingLeft
+                                        ? `pacing (${dipPacingLeft} slots left)`
+                                        : "day cap reached / reserve empty";
+                        console.log(` buy_the_dip no-op (${noopWhy}) — ${dipSig}`);
+                    }
                 }
             } catch (e) {
                 // Never let a dip attempt kill the crank loop
@@ -658,6 +846,25 @@ async function main() {
                     const usdcMint = new PublicKey(ammState.usdcMint);
                     const afhoMint = new PublicKey(ammState.afhoMint);
                     const wsolVault = getAssociatedTokenAddressSync(WSOL_MINT, ammStatePda, true);
+                    // Amounts for the log: bounty balance, both pool prices
+                    // (vault-ratio ≈), and the AFHO the top-up would sell.
+                    const bountyBal = BigInt(await connection.getBalance(bountyVaultPda));
+                    const afhoVaultBal = (await tokenAmount(ammState.afhoVault)) ?? 0n;
+                    const afhoPoolRaw = (await tokenAmount(afhoUsdc.cpmmOutputVault)) ?? 0n;
+                    const usdcPoolRaw = (await tokenAmount(afhoUsdc.cpmmInputVault)) ?? 0n;
+                    const wsolPoolRaw = (await tokenAmount(solUsdc.solUsdcInputVault)) ?? 0n;
+                    const solPoolUsdc = (await tokenAmount(solUsdc.solUsdcOutputVault)) ?? 0n;
+                    const afhoPrice = afhoPoolRaw > 0n && usdcPoolRaw > 0n ? (usdcPoolRaw * 1_000_000_000_000n) / afhoPoolRaw : 0n;
+                    const solPrice = wsolPoolRaw > 0n && solPoolUsdc > 0n ? (solPoolUsdc * 1_000_000_000_000n) / wsolPoolRaw : 0n;
+                    const TOPUP_SOL = 400_000_000n; // 0.4 SOL added each top-up
+                    const usdcNeeded = solPrice > 0n ? (TOPUP_SOL * solPrice * 10_025n) / 1_000_000_000_000n / 10_000n : 0n;
+                    const afhoIn = afhoPrice > 0n ? (usdcNeeded * 1_000_000_000_000n * 10_025n) / afhoPrice / 10_000n : 0n;
+                    console.log(
+                        ` bounty_top_up: bounty=${fmtSolL(bountyBal)} (tops up +0.4 SOL when < 0.2) ` +
+                        `afho_price=${afhoPrice > 0n ? fmtPrice(afhoPrice) : "—"} sol_price=${solPrice > 0n ? fmtPrice(solPrice) : "—"} ` +
+                        `→ est AFHO sold=${fmtAfho(afhoIn)} (${pctOf(afhoIn, afhoVaultBal)} of afho_vault) ` +
+                        `est USDC hop=${fmtUsdc(usdcNeeded)}`
+                    );
                     const topupIx = await ammProgram.methods
                         .bountyTopUp()
                         .accountsStrict({
@@ -692,11 +899,32 @@ async function main() {
                     });
                     const topupSim = await connection.simulateTransaction(topupTx);
                     if (topupSim.value.err) {
-                        console.log("bounty_top_up skipped (healthy / no USDC / already topped):", JSON.stringify(topupSim.value.err));
+                        const topupReasons: Record<number, string> = {
+                            6000: "invalid pool price oracle",
+                            6001: "AFHO/USDC or SOL/USDC pool not pinned",
+                            6002: "computed AFHO amount is zero",
+                            6003: "treasury AFHO too low to top up",
+                            6004: "CPMM pool account mismatch",
+                            6005: "AFHO→USDC swap returned nothing (or a Raydium CPI code propagated)",
+                            6006: "math overflow",
+                        };
+                        console.log(
+                            ` bounty_top_up skipped (${reason(topupSim.value.err, topupReasons)}): ` +
+                            `bounty=${fmtSolL(bountyBal)} est AFHO=${fmtAfho(afhoIn)} (${pctOf(afhoIn, afhoVaultBal)} of afho_vault)`
+                        );
+                        console.log("  last logs:", topupSim.value.logs?.slice(-4) ?? []);
+                    } else if (bountyBal >= 200_000_000n) {
+                        // Simulation passed because the on-chain low-water check
+                        // no-ops — don't spend a tx on a healthy vault.
+                        console.log(` bounty_top_up no-op (vault healthy: ${fmtSolL(bountyBal)} ≥ 0.2 SOL)`);
                     } else {
                         const topupSig = await connection.sendTransaction(topupTx);
                         await connection.confirmTransaction(topupSig, "confirmed");
-                        console.log(` bounty_top_up fired: ${topupSig}`);
+                        const bountyAfter = BigInt(await connection.getBalance(bountyVaultPda));
+                        console.log(
+                            ` bounty_top_up fired: bounty ${fmtSolL(bountyBal)} → ${fmtSolL(bountyAfter)} ` +
+                            `(+${fmtSolL(bountyAfter - bountyBal)} SOL, sold ≈${fmtAfho(afhoIn)} AFHO = ${pctOf(afhoIn, afhoVaultBal)} of afho_vault) — ${topupSig}`
+                        );
                     }
                 }
             } catch (e) {

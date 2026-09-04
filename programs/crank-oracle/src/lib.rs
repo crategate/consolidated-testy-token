@@ -108,7 +108,13 @@ pub mod crank_oracle {
         }
 
         market_status.current_state = market_state;
-        market_status.last_updated_timestamp = Clock::get()?.unix_timestamp;
+        // The timestamp marks when the CURRENT STATE began — only a real
+        // transition may bump it. dex_buyback reads it as the market-open
+        // time for its first-hour slice weighting; a heartbeat refresh would
+        // keep every day in "first hour" forever.
+        if market_state != old_state {
+            market_status.last_updated_timestamp = Clock::get()?.unix_timestamp;
+        }
         ctx.accounts.bounty_config.last_crank_slot = quote_slot;
 
         // Bounty is paid ONLY on a real state transition. Without this gate,
@@ -131,47 +137,12 @@ pub mod crank_oracle {
         // lamports = (usd_raw × 1e6) / sol_price_floor, where usd_raw is the
         // base bounty escalated 5%/yr (or the configured bps) since base_year.
         // Falls back to the fixed lamport bounty when the pool isn't set.
-        let cfg = &ctx.accounts.bounty_config;
-        let bounty = if cfg.sol_usdc_pool != Pubkey::default() {
-            let wsol_vault = ctx
-                .accounts
-                .sol_usdc_wsol_vault
-                .as_ref()
-                .ok_or(CrankError::InvalidSolPrice)?;
-            let usdc_vault = ctx
-                .accounts
-                .sol_usdc_usdc_vault
-                .as_ref()
-                .ok_or(CrankError::InvalidSolPrice)?;
-            // Pin the two vaults to the pool's derived PDAs.
-            let (expected_wsol, _) = Pubkey::find_program_address(
-                &[
-                    POOL_VAULT_SEED,
-                    cfg.sol_usdc_pool.as_ref(),
-                    WSOL_MINT.as_ref(),
-                ],
-                &cfg.cpmm_program,
-            );
-            let (expected_usdc, _) = Pubkey::find_program_address(
-                &[
-                    POOL_VAULT_SEED,
-                    cfg.sol_usdc_pool.as_ref(),
-                    cfg.usdc_mint.as_ref(),
-                ],
-                &cfg.cpmm_program,
-            );
-            require!(
-                wsol_vault.key() == expected_wsol && usdc_vault.key() == expected_usdc,
-                CrankError::InvalidSolPrice
-            );
-            let sol_price = read_sol_usdc_price(wsol_vault, usdc_vault)?;
-            require!(sol_price > 0, CrankError::InvalidSolPrice);
-            let year = year_from_unix(ctx.accounts.clock.unix_timestamp);
-            let usd_raw = effective_bounty_usd(cfg, year)?;
-            (usd_raw as u128 * 1_000_000u128 / sol_price as u128) as u64
-        } else {
-            cfg.bounty_amount
-        };
+        let bounty = bounty_lamports(
+            &ctx.accounts.bounty_config,
+            &ctx.accounts.sol_usdc_wsol_vault,
+            &ctx.accounts.sol_usdc_usdc_vault,
+            ctx.accounts.clock.unix_timestamp,
+        )?;
         require!(bounty > 0, CrankError::InvalidSolPrice);
         require!(
             ctx.accounts.bounty_vault.lamports()
@@ -179,18 +150,11 @@ pub mod crank_oracle {
             CrankError::BountyExhausted
         );
 
-        // Manual lamport transfer from program-owned PDA
-        let vault_info = ctx.accounts.bounty_vault.to_account_info();
-        let cranker_info = ctx.accounts.cranker.to_account_info();
-
-        let mut vault_lamports = vault_info.try_borrow_mut_lamports()?;
-        let mut cranker_lamports = cranker_info.try_borrow_mut_lamports()?;
-
-        **vault_lamports -= bounty;
-        **cranker_lamports += bounty;
-
-        drop(vault_lamports);
-        drop(cranker_lamports);
+        pay_bounty(
+            &ctx.accounts.bounty_vault.to_account_info(),
+            &ctx.accounts.cranker.to_account_info(),
+            bounty,
+        )?;
 
         msg!(
             "Cranked by {}. Bounty paid: {} lamports. State: {}",
@@ -458,4 +422,64 @@ fn token_account_amount(account: &AccountInfo) -> Result<u64> {
     let data = account.try_borrow_data()?;
     require!(data.len() >= 72, CrankError::InvalidSolPrice);
     Ok(u64::from_le_bytes(data[64..72].try_into().unwrap()))
+}
+
+/// Bounty in lamports for this crank: pool-priced when the SOL/USDC pool is
+/// configured — lamports = (usd_raw × 1e6) / sol_price_floor, where usd_raw
+/// is the base bounty escalated `annual_inflation_bps`/yr since `base_year` —
+/// falling back to the fixed lamport bounty when it isn't. Both optional
+/// vault accounts are pinned to the pool's derived PDAs before pricing.
+fn bounty_lamports(
+    cfg: &BountyConfig,
+    wsol_vault: &Option<AccountInfo>,
+    usdc_vault: &Option<AccountInfo>,
+    now: i64,
+) -> Result<u64> {
+    if cfg.sol_usdc_pool != Pubkey::default() {
+        let wsol_vault = wsol_vault.as_ref().ok_or(CrankError::InvalidSolPrice)?;
+        let usdc_vault = usdc_vault.as_ref().ok_or(CrankError::InvalidSolPrice)?;
+        // Pin the two vaults to the pool's derived PDAs.
+        let (expected_wsol, _) = Pubkey::find_program_address(
+            &[
+                POOL_VAULT_SEED,
+                cfg.sol_usdc_pool.as_ref(),
+                WSOL_MINT.as_ref(),
+            ],
+            &cfg.cpmm_program,
+        );
+        let (expected_usdc, _) = Pubkey::find_program_address(
+            &[
+                POOL_VAULT_SEED,
+                cfg.sol_usdc_pool.as_ref(),
+                cfg.usdc_mint.as_ref(),
+            ],
+            &cfg.cpmm_program,
+        );
+        require!(
+            wsol_vault.key() == expected_wsol && usdc_vault.key() == expected_usdc,
+            CrankError::InvalidSolPrice
+        );
+        let sol_price = read_sol_usdc_price(wsol_vault, usdc_vault)?;
+        require!(sol_price > 0, CrankError::InvalidSolPrice);
+        let year = year_from_unix(now);
+        let usd_raw = effective_bounty_usd(cfg, year)?;
+        Ok((usd_raw as u128 * 1_000_000u128 / sol_price as u128) as u64)
+    } else {
+        Ok(cfg.bounty_amount)
+    }
+}
+
+/// Manual lamport transfer from the program-owned bounty PDA to the cranker
+/// (no System-transfer CPI: the vault is program-owned, so direct lamport
+/// arithmetic is the only route).
+fn pay_bounty(vault: &AccountInfo, cranker: &AccountInfo, bounty: u64) -> Result<()> {
+    let mut vault_lamports = vault.try_borrow_mut_lamports()?;
+    let mut cranker_lamports = cranker.try_borrow_mut_lamports()?;
+    **vault_lamports = vault_lamports
+        .checked_sub(bounty)
+        .ok_or(CrankError::BountyExhausted)?;
+    **cranker_lamports = cranker_lamports
+        .checked_add(bounty)
+        .ok_or(CrankError::MathOverflow)?;
+    Ok(())
 }

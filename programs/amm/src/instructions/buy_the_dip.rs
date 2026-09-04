@@ -300,12 +300,22 @@ pub fn handler(ctx: Context<BuyTheDip>) -> Result<()> {
     let slice_usdc = slice_usdc.min(cap_left_usdc);
     if slice_usdc > 0 {
         let before = ctx.accounts.afho_vault.amount;
-        let min_out = if spot > 0 {
-            (slice_usdc as u128 * 1_000_000_000_000u128 * 10_000u128
-                / (spot as u128 * (10_000 + MAX_SLIPPAGE_BPS) as u128)) as u64
-        } else {
-            0
-        };
+        // Reserves-preview min-out (see dex_buyback): the TWAP-anchored floor
+        // fails into a climbing pool; the pool's own vaults are the truth.
+        let min_out = super::raydium::cpmm_swap_min_out_from_vaults(
+            &swap.cpmm_input_vault,  // pool USDC (input) vault
+            &swap.cpmm_output_vault, // pool AFHO (output) vault
+            slice_usdc,
+            MAX_SLIPPAGE_BPS,
+        )
+        .unwrap_or_else(|| {
+            if spot > 0 {
+                (slice_usdc as u128 * 1_000_000_000_000u128 * 10_000u128
+                    / (spot as u128 * (10_000 + MAX_SLIPPAGE_BPS) as u128)) as u64
+            } else {
+                0
+            }
+        });
         execute_swap(
             &swap,
             mint_key,

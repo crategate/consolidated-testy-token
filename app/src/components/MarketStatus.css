@@ -110,7 +110,7 @@
     border-radius: 50%;
     background: var(--dot);
     box-shadow: 0 0 10px var(--dot);
-    animation: pulse 6.4s ease-in-out infinite;
+    animation: pulse 31.4s ease-in-out infinite;
 }
 
 .status-pill.stale {
