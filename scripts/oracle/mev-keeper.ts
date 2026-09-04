@@ -108,6 +108,9 @@ async function main() {
             cpmmOutputVault: outputVault,
             cpmmObservation: observation,
             cpmmAuthority: authority,
+            // The CPMM program itself must be among the instruction's
+            // accounts or the swap CPI fails with MissingAccount.
+            cpmmProgram: program,
         };
     }
 
@@ -535,6 +538,7 @@ async function main() {
                         const distSim = await connection.simulateTransaction(distTx);
                         if (distSim.value.err) {
                             console.log("distribute_staker_rewards skipped (already done / nothing to distribute / no stakers):", JSON.stringify(distSim.value.err));
+                            console.log("  last logs:", distSim.value.logs?.slice(-4) ?? []);
                         } else {
                             const distSig = await connection.sendTransaction(distTx);
                             await connection.confirmTransaction(distSig, "confirmed");
@@ -583,6 +587,7 @@ async function main() {
                     const bbSim = await connection.simulateTransaction(bbTx);
                     if (bbSim.value.err) {
                         console.log("dex_buyback skipped (pacing / no fills / spent):", JSON.stringify(bbSim.value.err));
+                        console.log("  last logs:", bbSim.value.logs?.slice(-4) ?? []);
                     } else {
                         const bbSig = await connection.sendTransaction(bbTx);
                         await connection.confirmTransaction(bbSig, "confirmed");
@@ -671,6 +676,7 @@ async function main() {
                             cpmmOutputVault: afhoUsdc.cpmmOutputVault,
                             cpmmObservation: afhoUsdc.cpmmObservation,
                             cpmmAuthority: afhoUsdc.cpmmAuthority,
+                            cpmmProgram: afhoUsdc.cpmmProgram,
                             ...solUsdc,
                             associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
                             tokenProgram: TOKEN_PROGRAM_ID,

@@ -63,6 +63,11 @@ pub struct DistributeStakerRewards<'info> {
     pub cpmm_observation: UncheckedAccount<'info>,
     /// CHECK: pool authority PDA (signs vault/LP-mint transfers)
     pub cpmm_authority: UncheckedAccount<'info>,
+    /// CHECK: the Raydium CPMM program itself — the runtime refuses the CPI
+    /// unless the callee program is among the caller instruction's accounts;
+    /// address-pinned to AmmState.cpmm_program.
+    #[account(address = amm_state.cpmm_program)]
+    pub cpmm_program: UncheckedAccount<'info>,
 
     // --- staking CPI ---
     pub staking_program: Program<'info, staking::program::Staking>,

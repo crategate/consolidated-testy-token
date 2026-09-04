@@ -600,8 +600,9 @@
 }
 
 .offer-bonus-row {
-    margin: -4px 0 6px;
+    margin: 3px 0 6px;
     display: flex;
+    flex-direction: row-reverse;
 }
 
 .offer-lot-size {

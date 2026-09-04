@@ -67,6 +67,11 @@ pub struct BountyTopUp<'info> {
     pub cpmm_observation: UncheckedAccount<'info>,
     /// CHECK: pool authority PDA
     pub cpmm_authority: UncheckedAccount<'info>,
+    /// CHECK: the Raydium CPMM program itself — required among the caller's
+    /// accounts for the two swap CPIs to resolve; address-pinned to
+    /// AmmState.cpmm_program (both pinned pools share this program).
+    #[account(address = amm_state.cpmm_program)]
+    pub cpmm_program: UncheckedAccount<'info>,
 
     // --- SOL/USDC CPMM pool (USDC in → wSOL out) ---
     #[account(mut)]

@@ -101,6 +101,11 @@ pub struct BuyTheDip<'info> {
     pub cpmm_observation: UncheckedAccount<'info>,
     /// CHECK: Raydium CPMM account (validated at CPI time).
     pub cpmm_authority: UncheckedAccount<'info>,
+    /// CHECK: the Raydium CPMM program itself — the runtime refuses the CPI
+    /// unless the callee program is among the caller instruction's accounts;
+    /// address-pinned to AmmState.cpmm_program.
+    #[account(address = amm_state.cpmm_program)]
+    pub cpmm_program: UncheckedAccount<'info>,
 
     /// Classic SPL (USDC in-leg)
     pub token_program: Interface<'info, TokenInterface>,

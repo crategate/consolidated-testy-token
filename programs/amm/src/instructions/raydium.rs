@@ -160,18 +160,22 @@ pub const SWAP_ACCOUNT_KEYS: usize = 13;
 
 // ────────────────────────────── oracle (TWAP) ───────────────────────────────
 
-/// Time-weighted average price of `token_0` denominated in `token_1`, as Q32
-/// (×2^32), over the last `window_seconds`.
+/// Time-weighted sample of `token_0` denominated in `token_1` over the last
+/// `window_seconds`. Returns the accumulated (delta_cumulative_price_x32, dt)
+/// pair WITHOUT dividing — callers convert straight to floor units from the
+/// accumulated form so tiny per-second ratios (a sub-penny token against USDC
+/// can have a Q32 TWAP of ~10, where one integer ulp is ~7% of the price)
+/// don't lose precision to integer truncation.
 ///
 /// Returns `None` when the oracle isn't initialized or there aren't two
 /// observations spanning the window. `cumulative_token_0_price_x32` accrues
-/// "token_1 per token_0", so this is the price a unit of token_0 fetches in
-/// token_1 (for an AFHO/USDC pool with AFHO as token_0, that's USDC per AFHO).
-pub fn read_twap_token0_in_token1(
+/// "token_1 per token_0", so the sample is the price a unit of token_0 fetches
+/// in token_1 (for an AFHO/USDC pool with AFHO as token_0, USDC per AFHO).
+pub fn read_twap_sample(
     observation_data: &[u8],
     now: u64,
     window_seconds: u64,
-) -> Option<u128> {
+) -> Option<(u128, u64)> {
     const HEADER: usize = OBSERVATION_STATE_HEADER_LEN;
     const DISC: usize = OBSERVATION_STATE_DISCRIMINATOR_LEN;
     if observation_data.len() < HEADER + OBSERVATION_NUM * size_of_observation() {
@@ -222,7 +226,7 @@ pub fn read_twap_token0_in_token1(
     let dcum = latest
         .cumulative_token_0_price_x32
         .saturating_sub(oldest.cumulative_token_0_price_x32);
-    Some(dcum / dt as u128)
+    Some((dcum, dt))
 }
 
 /// Verify a full pinned SOL/USDC CPMM account set (wSOL in, USDC out). No-op
@@ -282,15 +286,22 @@ pub const TWAP_WINDOW_SECONDS: u64 = 600;
 /// instead (which is always current, not stale).
 pub const TWAP_MAX_AGE_SECONDS: u64 = 600;
 
-/// Conversion factor from a Q32.32 whole-token price to this protocol's
-/// floor-units price: floor = (quote_raw × 1e6) / base_raw. With both the
-/// AFHO/USDC and SOL/USDC pools using 9-dp base / 6-dp quote tokens, a Q32
-/// quote-per-base price × 1000 == floor units.
-/// Floor units = USDC price per whole token × 1e9 (nano-dollar). This scale
-/// must represent sub-cent launch prices (a $1,300 LP against 250M AFHO is
-/// $5.2e-6 → 5,200 floor units) while keeping headroom: u64 holds up to
-/// ~$1.8e10 per token.
-pub const FLOOR_UNITS_PER_Q32: u128 = 1_000_000_000;
+/// Conversion factor from a Q32.32 raw-ratio TWAP to this protocol's
+/// floor-units price. The TWAP (cumulative_token_0_price_x32) accrues the
+/// RAW token_1-per-token_0 ratio × 2^32, so:
+///
+///   floor = twap_q32 × FLOOR_UNITS_PER_Q32 / 2^32 = raw_ratio × FLOOR_UNITS_PER_Q32
+///
+/// Floor units = USDC price per whole token × 1e9 (nano-dollar), and every
+/// protocol pool pairs a 6-dp quote (USDC) with a 9-dp base (AFHO or wSOL), so
+/// price = raw_ratio × 1e(6−9 → 1e3) and floor = raw_ratio × 1e12. The
+/// constant must therefore be 1e12 — it moves together with the ×1e12
+/// numerators in the vault-ratio fallback, the claim cost divisor, and the
+/// min-out/exec-price math. (The pre-fix 1e9 was the old milli-USD scale's
+/// value for a same-decimals pair: on this pool's inverted mint order it
+/// returned floor 2 instead of 2500, inflating min_out ~1000× and failing
+/// every swap CPI with Raydium 0x1775 ExceededSlippage on a fresh TWAP ring.)
+pub const FLOOR_UNITS_PER_Q32: u128 = 1_000_000_000_000;
 
 /// Latest observation timestamp (the ring's `observation_index` points at the
 /// most recently written entry).
@@ -324,22 +335,39 @@ pub fn pool_state_mints(pool_state: &AccountInfo) -> Option<(Pubkey, Pubkey)> {
     Some((token_0, token_1))
 }
 
-/// Convert a token_0-in-token_1 Q32 TWAP to floor units for the requested
-/// base/quote pair. Handles the pool listing the pair in either order.
-fn q32_to_floor(twap_q32: u128, token_0: Pubkey, token_1: Pubkey, base: Pubkey, quote: Pubkey) -> Option<u64> {
-    let price_q32 = if token_0 == base && token_1 == quote {
-        twap_q32
+/// Convert a TWAP sample (delta cumulative Q32 price, dt seconds) to floor
+/// units for the requested base/quote pair, doing the ×FLOOR_UNITS_PER_Q32
+/// scaling BEFORE the /dt and /Q32 divisions so tiny ratios keep full
+/// precision (a sub-penny base token can have a Q32 TWAP of ~10, where one
+/// integer ulp is ~7% of the price). Handles the pool listing the pair in
+/// either order. Floor units = price per whole token × 1e9 (nano-USD); with
+/// the protocol's 6-dp quote / 9-dp base pairs, floor = raw_ratio × 1e12.
+fn q32_to_floor(
+    dcum: u128,
+    dt: u64,
+    token_0: Pubkey,
+    token_1: Pubkey,
+    base: Pubkey,
+    quote: Pubkey,
+) -> Option<u64> {
+    let floor = if token_0 == base && token_1 == quote {
+        // Direct: twap = dcum/dt is quote_raw/base_raw × Q32.
+        dcum.checked_mul(FLOOR_UNITS_PER_Q32)?
+            .checked_div(dt as u128)?
+            .checked_div(Q32)?
     } else if token_0 == quote && token_1 == base {
-        // Invert: 1 / (twap / Q32) = Q32^2 / twap.
-        (Q32 as u128).checked_mul(Q32 as u128)?.checked_div(twap_q32)?
+        // Inverted: 1/twap = dt/dcum × Q32.
+        if dcum == 0 {
+            return None;
+        }
+        (dt as u128)
+            .checked_mul(Q32)?
+            .checked_mul(FLOOR_UNITS_PER_Q32)?
+            .checked_div(dcum)?
     } else {
         return None; // pool does not contain this pair
     };
-    if price_q32 == 0 {
-        return None;
-    }
-    let floor = price_q32.checked_mul(FLOOR_UNITS_PER_Q32)?.checked_div(Q32 as u128)?;
-    Some(u64::try_from(floor).ok()?)
+    u64::try_from(floor).ok()
 }
 
 /// Floor-units price of `base_mint` quoted in `quote_mint` from a pinned CPMM
@@ -364,8 +392,8 @@ pub fn read_cpmm_price_floor(
         if let Some(latest_ts) = observation_latest_timestamp(&obs) {
             let fresh = now.saturating_sub(latest_ts) <= TWAP_MAX_AGE_SECONDS;
             if fresh {
-                if let Some(twap) = read_twap_token0_in_token1(&obs, now, TWAP_WINDOW_SECONDS) {
-                    if let Some(floor) = q32_to_floor(twap, token_0, token_1, *base_mint, *quote_mint) {
+                if let Some((dcum, dt)) = read_twap_sample(&obs, now, TWAP_WINDOW_SECONDS) {
+                    if let Some(floor) = q32_to_floor(dcum, dt, token_0, token_1, *base_mint, *quote_mint) {
                         if floor > 0 {
                             return Some(floor);
                         }
@@ -450,4 +478,53 @@ pub fn pinned_pool_accounts_valid(
         );
     }
     ok
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // 6/9-dec pair shaped like the live devnet pool: 250M AFHO (9 dp) against
+    // 625 USDC (6 dp) → price 2.5e-6 USDC/AFHO → floor 2500.
+    const AFHO_RAW: u128 = 250_000_000_000_000_000;
+    const USDC_RAW: u128 = 625_000_000;
+    const DT: u64 = 600;
+    const AFHO: Pubkey = Pubkey::new_from_array([1u8; 32]);
+    const USDC: Pubkey = Pubkey::new_from_array([2u8; 32]);
+
+    #[test]
+    fn q32_floor_direct_orientation() {
+        // token_0 = AFHO (base), token_1 = USDC (quote): dcum accumulates
+        // USDC_raw/AFHO_raw × Q32 × dt.
+        let dcum = USDC_RAW.checked_mul(Q32).unwrap().checked_mul(DT as u128).unwrap() / AFHO_RAW;
+        let floor = q32_to_floor(dcum, DT, AFHO, USDC, AFHO, USDC).unwrap();
+        // Ideal 2500; scaling before the divisions keeps truncation <0.05%.
+        assert!(floor > 0);
+        assert!(floor.abs_diff(2500) <= 2, "floor {floor} too far from 2500");
+    }
+
+    #[test]
+    fn q32_floor_inverted_orientation() {
+        // Live pool's actual mint order: token_0 = USDC (quote), token_1 = AFHO
+        // (base). The reader must invert the TWAP; the floor must still be the
+        // USDC-per-AFHO price (~2500), not Q32/raw_ratio-scaled garbage.
+        let dcum = AFHO_RAW.checked_mul(Q32).unwrap().checked_mul(DT as u128).unwrap() / USDC_RAW;
+        let floor = q32_to_floor(dcum, DT, USDC, AFHO, AFHO, USDC).unwrap();
+        assert!(floor > 0);
+        assert!(floor.abs_diff(2500) <= 2, "floor {floor} too far from 2500");
+        // Sanity: the old path (1e9 scale on a pre-divided twap) produced 2 —
+        // under the band the min-out math then fails the swap as ExceededSlippage.
+        assert!(floor > 100);
+    }
+
+    #[test]
+    fn q32_floor_rejects_foreign_pair() {
+        assert!(q32_to_floor(1_000u128, DT, AFHO, USDC, AFHO, AFHO).is_none());
+        assert!(q32_to_floor(1_000u128, DT, AFHO, USDC, USDC, USDC).is_none());
+    }
+
+    #[test]
+    fn q32_floor_inverted_zero_cumulative() {
+        assert!(q32_to_floor(0u128, DT, USDC, AFHO, AFHO, USDC).is_none());
+    }
 }

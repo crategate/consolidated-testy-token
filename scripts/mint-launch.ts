@@ -140,7 +140,7 @@ async function main() {
     // NOTE: wallet AFHO balance after amm-init's 75% vault sweep is 249,999,978,
     // so the LP leg must stay below that when re-running on an existing mint.
     const AFHO_TO_LP = 250000000;
-    const USDC_TO_LP = 1250;
+    const USDC_TO_LP = 625;
     const AFHO_TO_VAULT = 745000000;  // change in amm-init
 
     /// MINT TOKENS & TEST TRANSFER
