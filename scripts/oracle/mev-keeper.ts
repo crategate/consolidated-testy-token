@@ -266,6 +266,7 @@ async function main() {
         try {
             const marketStatus = await program.account.marketStatus.fetch(marketStatusPda);
             const bountyConfig = await program.account.bountyConfig.fetch(bountyConfigPda);
+            await logSlotTimeOnce(connection);
             let prevState: number = marketStatus.currentState as number;
             let newStatus: any = null;
             let quoteAccountInfo: any = null;
@@ -605,7 +606,7 @@ async function main() {
                         0,
                         Math.floor(Date.now() / 1000) - Number(bn(statusNow.lastUpdatedTimestamp))
                     );
-                    const bbWeight = bbElapsed < 3600 ? 190n : 500n;
+                    const bbWeight = bbElapsed < 3600 ? 150n : 500n;
                     const slotNow = BigInt(await connection.getSlot());
                     const bbX =
                         slotNow ^ (bn(statusNow.tradingDayIndex) << 16n) ^ bn(ammState.bbSliceCount);
@@ -613,8 +614,9 @@ async function main() {
                     const estSlice = (bbSpendable * bbWeight * bbFactor) / 100_000_000n;
                     const estSliceCapped = estSlice > bbSpendable ? bbSpendable : estSlice;
                     const pacingLeft =
-                        bn(ammState.bbLastSlot) > 0n && slotNow - bn(ammState.bbLastSlot) < 150n
-                            ? Number(150n - (slotNow - bn(ammState.bbLastSlot)))
+                        bn(ammState.bbLastSlot) > 0n &&
+                        slotNow - bn(ammState.bbLastSlot) < BigInt(PACE_SLOTS)
+                            ? Number(BigInt(PACE_SLOTS) - (slotNow - bn(ammState.bbLastSlot)))
                             : 0;
                     console.log(
                         ` dex_buyback: budget=${fmtUsdc(bbBudget)} spent=${fmtUsdc(bbSpent)} ` +
@@ -749,8 +751,9 @@ async function main() {
                 const dipEstSlice = dipSliceRaw > dipCapLeft ? dipCapLeft : dipSliceRaw;
                 const dipSlot = BigInt(await connection.getSlot());
                 const dipPacingLeft =
-                    bn(ammState.dipLastSlot) > 0n && dipSlot - bn(ammState.dipLastSlot) < 800n
-                        ? Number(800n - (dipSlot - bn(ammState.dipLastSlot)))
+                    bn(ammState.dipLastSlot) > 0n &&
+                    dipSlot - bn(ammState.dipLastSlot) < BigInt(PACE_SLOTS)
+                        ? Number(BigInt(PACE_SLOTS) - (dipSlot - bn(ammState.dipLastSlot)))
                         : 0;
                 console.log(
                     ` buy_the_dip: reserve=${fmtUsdc(dipReserve)} dayBudget=${fmtUsdc(bn(ammState.dipDayUsdc))} ` +
@@ -940,6 +943,40 @@ async function main() {
 
 function sleep(ms: number) {
     return new Promise((r) => setTimeout(r, ms));
+}
+
+// ── Slot-time assumption watch ─────────────────────────────────────────────
+// All on-chain pacing (MIN_SLICE_SLOTS / DIP_MIN_SLICE_SLOTS / SPOT_SAMPLE_SLOTS)
+// is slot-denominated and derives from NOMINAL_SLOT_MS in dex_buyback.rs at
+// compile time. Solana's nominal slot time is 400ms today; a ~200ms target is
+// ATTEMPTED (Alpenglow-class consensus change), not guaranteed — if it lands,
+// flip NOMINAL_SLOT_MS to 200 and redeploy (pacing re-derives: 300/300/150),
+// BEFORE `solana program set-upgrade-authority --final`. This log prints the
+// chain's MEASURED slot time (getRecentPerformanceSamples) against that
+// assumption every ~5 min so drift — devnet already runs slower than nominal —
+// is visible next to the pacing math.
+const NOMINAL_SLOT_MS = 400; // mirrors dex_buyback.rs — flip both together
+const PACE_SLOTS = 60_000 / NOMINAL_SLOT_MS; // ~1 slice/min — mirrors MIN_SLICE_SLOTS
+let lastSlotTimeCheck = 0;
+async function logSlotTimeOnce(connection: anchor.web3.Connection) {
+    const now = Date.now();
+    if (now - lastSlotTimeCheck < 300_000) return;
+    lastSlotTimeCheck = now;
+    try {
+        const samples = await connection.getRecentPerformanceSamples(3);
+        if (samples.length < 2) return;
+        const span = samples[0].slot - samples[samples.length - 1].slot;
+        const secs = samples.reduce((acc, s) => acc + s.samplePeriodSecs, 0);
+        if (span > 0) {
+            const msPerSlot = (secs * 1000) / span;
+            console.log(
+                ` slot time: ~${msPerSlot.toFixed(0)}ms/slot measured vs ${NOMINAL_SLOT_MS}ms ` +
+                    `assumed for pacing constants (MIN_SLICE = ${PACE_SLOTS} slots ≈ 60s)`
+            );
+        }
+    } catch {
+        // informational only — perf samples unavailable on this RPC
+    }
 }
 
 main();

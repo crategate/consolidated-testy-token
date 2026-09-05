@@ -2,13 +2,29 @@ use crate::state::offersState::{AcceptedOffers, AmmState};
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
-// Minimum slots between slices (~1 min) — pacing so one crank burst can't
-// drain the day's budget in a single block.
-const MIN_SLICE_SLOTS: u64 = 400;
-// Slice weights: 1.9% of remaining budget during the first hour after open,
-// 5% after. With ~1 slice/min (36 first-hour slices) ~50% of the day's volume
-// lands in the first hour on average; the 5% tail spends the rest by close.
-const FIRST_HOUR_WEIGHT_BPS: u64 = 190;
+// Nominal slot duration every slot-denominated interval in this program is
+// derived from — single source of truth (buy_the_dip imports it). Solana's
+// target is 400ms today; a ~200ms target is ATTEMPTED (Alpenglow-class
+// consensus change), not guaranteed. If it ships on mainnet: flip this to 200
+// and redeploy — MIN_SLICE_SLOTS re-derives to 300 (~1 slice/min of wall
+// clock), and buy_the_dip's DIP_MIN_SLICE_SLOTS → 300 / SPOT_SAMPLE_SLOTS →
+// 150 automatically. Make that call BEFORE finalizing upgrade authority — a
+// `--final` program can never be re-tuned. Wall-clock windows (the 1h
+// first-hour weight gate, the 600s TWAP, day caps) are timestamp-based and
+// need nothing. The keeper logs measured ms/slot vs this assumption.
+pub(crate) const NOMINAL_SLOT_MS: u64 = 400;
+// Pacing intent: ~1 slice per minute of wall clock (150 slots @ 400ms,
+// 300 @ 200ms).
+pub(crate) const SLICE_INTERVAL_MS: u64 = 60_000;
+// Minimum slots between slices — pacing so one crank burst can't drain the
+// day's budget in a single block.
+const MIN_SLICE_SLOTS: u64 = SLICE_INTERVAL_MS / NOMINAL_SLOT_MS;
+// Slice weights: 1.5% of remaining budget during the first hour after open,
+// 5% after. With ~1 slice/min the hour-1 spend is 1 - (1 - 0.015)^n: with
+// n ≈ 36-60 first-hour slices (slot-time dependent) that lands ~40-60% of the
+// day's budget (the vault snapshot) in the first hour, ~50% at ~0.5s slots;
+// the 5% tail spends the rest by close.
+const FIRST_HOUR_WEIGHT_BPS: u64 = 150;
 const TAIL_WEIGHT_BPS: u64 = 500;
 
 // M3 — per-fill sanity band vs the spot oracle: a fill whose exec price

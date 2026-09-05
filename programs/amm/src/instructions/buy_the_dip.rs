@@ -33,11 +33,16 @@ use crate::state::offersState::{AmmState, MarketMetrics};
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
-use super::dex_buyback::{execute_swap, ratchet_within_band, SwapInfos, MAX_SLIPPAGE_BPS};
+use super::dex_buyback::{
+    execute_swap, ratchet_within_band, SwapInfos, MAX_SLIPPAGE_BPS, NOMINAL_SLOT_MS,
+    SLICE_INTERVAL_MS,
+};
 
-// Spot ring: ~30s between samples, 32 slots of history, 5 samples before the
+// Spot ring: ~30s between samples (derived from dex_buyback::NOMINAL_SLOT_MS —
+// 75 slots @ 400ms, 150 @ 200ms), 32 slots of history, 5 samples before the
 // trigger arms (cold start = no dip buys).
-const SPOT_SAMPLE_SLOTS: u64 = 75;
+const SPOT_SAMPLE_INTERVAL_MS: u64 = 30_000;
+const SPOT_SAMPLE_SLOTS: u64 = SPOT_SAMPLE_INTERVAL_MS / NOMINAL_SLOT_MS;
 const SPOT_MIN_SAMPLES: usize = 5;
 
 // Trigger/sizing (bps of reference depth, bps of reserve).
@@ -48,7 +53,12 @@ const DIP_TREND_GAIN: i64 = 10; // multiplier bps per centi-percent of slope
 const DIP_TREND_FLOOR_BPS: i64 = 2_500; // knife guard: 25% of base
 const DIP_TREND_CAP_BPS: i64 = 12_500; // uptrend boost: 125% of base
 const DIP_DAY_CAP_BPS: u64 = 4_000; // <=40% of the day-start reserve per leg
-const DIP_MIN_SLICE_SLOTS: u64 = 800;
+// Same rhythm as dex_buyback (~1 slice/min of wall clock — re-derives with
+// NOMINAL_SLOT_MS). This — not the trigger — is what throttles QUICK dips:
+// at 3.5% depth a slice is only
+// ~3% of the reserve, so a slow pacing window means a minutes-long dip gets
+// one small slice and the ring mean re-adapts before the next one.
+const DIP_MIN_SLICE_SLOTS: u64 = SLICE_INTERVAL_MS / NOMINAL_SLOT_MS;
 
 // Same per-sample clamp as calculate_momentum_score.
 const SAMPLE_CAP_CP: i64 = 1_000;

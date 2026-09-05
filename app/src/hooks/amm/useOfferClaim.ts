@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { BN } from '@coral-xyz/anchor';
-import { PublicKey, SendTransactionError, SystemProgram, Transaction } from '@solana/web3.js';
+import { ComputeBudgetProgram, PublicKey, SendTransactionError, SystemProgram, Transaction } from '@solana/web3.js';
 import {
     ASSOCIATED_TOKEN_PROGRAM_ID,
     getAccount,
@@ -114,6 +114,41 @@ export function useOfferClaim(
                 }
             }
 
+            // ── Pre-flight the on-chain gates against FRESH state ──
+            // The wallet's preflight simulation runs the real claim logic,
+            // whose gates (DeskClosed / StaleOfferSheet / InsufficientOffer)
+            // read the market-status PDA and the sheet AT EXECUTION TIME. The
+            // UI's polled snapshot can be stale at click time (in watch mode
+            // the state only moves on a manual set-oracle flip), so a click
+            // that passed the UI gate can still fail the wallet's simulation — and the wallet's
+            // immediate "try again" re-simulates the SAME transaction, failing
+            // again. Re-read both accounts here and fail with an actionable
+            // message instead of a raw simulation error.
+            const statusInfo = await connection.getAccountInfo(accounts.marketStatus);
+            const onChainState = statusInfo && statusInfo.data.length >= 9 ? statusInfo.data[8] : 99;
+            if (onChainState !== 1 && onChainState !== 2) {
+                throw new Error(
+                    `The desk just closed (market state ${onChainState}) — offers are claimable in ` +
+                        'after-hours (1) and closed (2) sessions only. Try again once the state cycles back.'
+                );
+            }
+            const freshSheet = (await program.account.offerList.fetch(
+                accounts.offerList
+            )) as unknown as Record<string, unknown>;
+            const tierNames = ['sml', 'med', 'big'] as const;
+            for (const s of active) {
+                const name = tierNames[s.tier];
+                const offer = (freshSheet[`${name}Offer`] ?? freshSheet[`${name}_offer`]) as
+                    | { remaining: number }
+                    | undefined;
+                const remaining = offer ? Number(offer.remaining) : 0;
+                if (remaining < s.units) {
+                    throw new Error(
+                        `Only ${remaining} lot(s) remain in that tier — someone claimed while you were checking out. Pick a smaller amount or another tier.`
+                    );
+                }
+            }
+
             const [userIndexPda] = PublicKey.findProgramAddressSync(
                 [Buffer.from('user_index'), buyer.toBuffer()], STAKING_PROGRAM_ID
             );
@@ -125,6 +160,10 @@ export function useOfferClaim(
             }
 
             const tx = new Transaction();
+            // Raise the CU ceiling: a transaction with no compute-budget
+            // instruction defaults to 200k CU per instruction. The limit is
+            // free — fees bill CONSUMED CU, not the limit.
+            tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 1_000_000 }));
             // Chunking: the USDC instruction is ~950 bytes, so all tiers fit in
             // one transaction. A single SOL instruction is ~1180 bytes (+33 for
             // the CPMM program remaining account), so two would exceed the
@@ -180,6 +219,13 @@ export function useOfferClaim(
                         throw new Error('SOL payments need the SOL/USDC pool pinned — run anchor run set-sol-usdc-pool.');
                     }
                     const solTx = new Transaction();
+                    // NOTE: no compute-budget instruction here. This tx is
+                    // ~1213 bytes — only ~19 under the 1232-byte packet
+                    // limit — and a ComputeBudgetProgram instruction costs
+                    // ~41 bytes, pushing serialization to 1254 > 1232
+                    // ("Transaction too large"). If the 200k per-instruction
+                    // CU default ever actually binds here, the durable fix is
+                    // a v0 transaction + address lookup table, not a CB ix.
                     const solIx = await program.methods
                         .offerClaimSol(tier, units, new BN(index.toString()))
                         .accounts({

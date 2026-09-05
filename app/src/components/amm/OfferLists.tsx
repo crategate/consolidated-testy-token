@@ -257,6 +257,9 @@ export default function OfferLists() {
                     quantities={quantities}
                     livePrice={data.livePrice}
                     floorBasis={data.floorBasis}
+                    currency={currency}
+                    solPrice={data.solPrice}
+                    afhoDecimals={data.afhoDecimals}
                     disabled={!data.deskOpen || status === 'pending'}
                     onQtyChange={setQty}
                 />

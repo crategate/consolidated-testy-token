@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { formatTokens, pricePerToken, effectivePrice } from '../../hooks/amm/offerMath.ts';
+import { formatSol, formatTokens, lamportsForCost, pricePerToken, quoteCostRaw, effectivePrice } from '../../hooks/amm/offerMath.ts';
 import type { OfferTierData } from '../../hooks/amm/useAmmData.ts';
 
 interface SingleOfferProps {
@@ -7,6 +7,9 @@ interface SingleOfferProps {
     qty: number;
     livePrice: bigint | null;
     floorBasis: bigint;
+    currency: 'usdc' | 'sol';
+    solPrice: bigint | null;
+    afhoDecimals: number;
     disabled: boolean;
     onQtyChange: (qty: number) => void;
 }
@@ -16,6 +19,9 @@ export default function SingleOffer({
     qty,
     livePrice,
     floorBasis,
+    currency,
+    solPrice,
+    afhoDecimals,
     disabled,
     onQtyChange,
 }: SingleOfferProps) {
@@ -35,16 +41,27 @@ export default function SingleOffer({
         onQtyChange(Math.min(Math.max(parsed, 0), offer.remaining));
     };
 
-    // Approximate per-lot price in USDC — the final price is fixed on-chain
-    // at claim time from the same oracle read this estimate uses. Sums the
-    // closed-session bonus so the estimate matches the on-chain quote.
+    // Approximate per-lot price in the SELECTED payment currency — the final
+    // price is fixed on-chain at claim time from the same pool read this
+    // estimate uses. Sums the closed-session bonus so the estimate matches
+    // the on-chain quote. SOL mirrors the claim handler's own conversion
+    // (lamportsForCost: cost × 1.0025 headroom / SOL price).
     let perLot: string | null = null;
+    let perLotUnit = 'USDC';
     if (livePrice !== null && livePrice > 0n) {
-        const eff = effectivePrice(livePrice, offer.discountBps + offer.bonusBps, floorBasis);
-        const usd = pricePerToken(eff) * offer.lotTokens;
-        perLot = usd >= 1
-            ? usd.toLocaleString('en-US', { maximumFractionDigits: 2 })
-            : usd.toPrecision(3);
+        if (currency === 'sol' && solPrice !== null && solPrice > 0n) {
+            const usdcRaw = quoteCostRaw(
+                livePrice, offer.discountBps + offer.bonusBps, floorBasis, offer.lotTier, 1, afhoDecimals,
+            );
+            perLot = formatSol(lamportsForCost(usdcRaw, solPrice));
+            perLotUnit = 'SOL';
+        } else if (currency === 'usdc') {
+            const eff = effectivePrice(livePrice, offer.discountBps + offer.bonusBps, floorBasis);
+            const usd = pricePerToken(eff) * offer.lotTokens;
+            perLot = usd >= 1
+                ? usd.toLocaleString('en-US', { maximumFractionDigits: 2 })
+                : usd.toPrecision(3);
+        }
     }
 
     const excite = qty > 0 ? Math.min(1 + (qty - 1) * 0.35, 2.4) : 1;
@@ -83,7 +100,7 @@ export default function SingleOffer({
                 </div>
                 <div>
                     <dt>≈ Price / lot</dt>
-                    <dd>{perLot !== null ? `${perLot} USDC` : '—'}</dd>
+                    <dd>{perLot !== null ? `${perLot} ${perLotUnit}` : '—'}</dd>
                 </div>
             </dl>
 

@@ -41,7 +41,11 @@ pub struct CalcCompletedOffers<'info> {
 
 // Ratchet decay: trading days with no fills before the floor starts decaying,
 // and the fraction of the (floor - live) gap cut per locked day after that.
-const FLOOR_LOCK_GRACE_DAYS: u16 = 15;
+// Grace cut 15 → 3 (2026-09-04): a dead desk for two+ weeks starves the
+// buyback/dip flywheel; 3 trading days still denies same-crash desk farming.
+// NOTE the STEP still dominates convergence: at 2%/day the gap halves in ~34
+// days, so the desk only becomes competitive again after ~100+ days of decay.
+const FLOOR_LOCK_GRACE_DAYS: u16 = 3;
 const FLOOR_DECAY_PCT: u64 = 2;
 
 pub fn handler(ctx: Context<CalcCompletedOffers>) -> Result<()> {
