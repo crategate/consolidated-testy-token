@@ -107,9 +107,11 @@ pub struct AmmState {
     pub dip_last_slot: u64,
     // --- align 2 (u16) block ---
     pub bb_slice_count: u16,
-    // Ratchet decay: consecutive trading days with no offers taken. After
-    // FLOOR_LOCK_GRACE_DAYS straight, highest_buyback_basis decays toward the
-    // live price. Reset to 0 by any fill.
+    // Ratchet decay: consecutive LOCKED trading days (live < floor). After
+    // FLOOR_LOCK_GRACE_DAYS straight, highest_buyback_basis decays toward
+    // the live price, fill-modulated + depth-accelerated (see
+    // calc_completed_offers). Fills do NOT reset it — only price recovery
+    // (live >= floor) does.
     pub untaken_days: u16,
     pub dip_slice_count: u16,
     // --- align 1 (u8) block ---

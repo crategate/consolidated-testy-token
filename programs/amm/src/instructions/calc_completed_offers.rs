@@ -39,14 +39,45 @@ pub struct CalcCompletedOffers<'info> {
     pub cpmm_output_vault: Option<AccountInfo<'info>>,
 }
 
-// Ratchet decay: trading days with no fills before the floor starts decaying,
-// and the fraction of the (floor - live) gap cut per locked day after that.
-// Grace cut 15 → 3 (2026-09-04): a dead desk for two+ weeks starves the
-// buyback/dip flywheel; 3 trading days still denies same-crash desk farming.
-// NOTE the STEP still dominates convergence: at 2%/day the gap halves in ~34
-// days, so the desk only becomes competitive again after ~100+ days of decay.
+// Ratchet floor decay — fill-modulated, depth-accelerated:
+//   grace = locked trading days (live < floor) before decay starts,
+//   step  = FLOOR_DECAY_PCT% of the (floor − live) gap per locked day,
+//   scaled by DEPTH (×1 at ≤10% gap up to ×8 at ≥70% — deep crashes re-arm
+//   the desk in weeks, not quarters) and modulated by DEMAND (the scored
+//   sheet's tier-weighted fill %: a cleared sheet holds the floor, a single
+//   pity lot decays at ~full rate — fills can never BLOCK decay, only real
+//   demand can SLOW it). Decay is the desk's only bear-recovery path, so it
+//   must not be gameable: untaken_days counts consecutive LOCKED days
+//   (live < floor) and fills no longer reset it.
 const FLOOR_LOCK_GRACE_DAYS: u16 = 3;
 const FLOOR_DECAY_PCT: u64 = 2;
+// Depth scaling: multiplier = (NUM + depth_bps) / NUM capped at CAP — doubles
+// at a 10% gap (depth 1000 bps), 8× cap at ≥70%.
+const FLOOR_DEPTH_SCALE_NUM: u64 = 1_000;
+const FLOOR_DEPTH_SCALE_CAP: u64 = 8_000;
+
+/// One locked day's floor decay, in floor units:
+///   cut = gap × FLOOR_DECAY_PCT% × depth_factor × keep_pct%
+/// keep_pct = 100 − tier-weighted demand (0..=100; 0 = the sheet fully
+/// cleared — real demand holds the floor). Returns 0 when keep_pct is 0;
+/// otherwise at least 1 floor unit (integer stall guard) and at most `gap`
+/// (the floor lands exactly on live, never below).
+fn floor_decay_cut(gap: u64, live: u64, keep_pct: u64) -> u64 {
+    if keep_pct == 0 || gap == 0 {
+        return 0;
+    }
+    let factor = if live == 0 {
+        // Zero live price = unbounded depth: max acceleration.
+        FLOOR_DEPTH_SCALE_CAP
+    } else {
+        let depth_bps = (gap as u128 * 10_000 / live as u128) as u64;
+        (FLOOR_DEPTH_SCALE_NUM + depth_bps).min(FLOOR_DEPTH_SCALE_CAP)
+    };
+    let cut =
+        (gap as u128 * FLOOR_DECAY_PCT as u128 * factor as u128 * keep_pct as u128
+            / (100u128 * FLOOR_DEPTH_SCALE_NUM as u128 * 100u128)) as u64;
+    cut.max(1).min(gap)
+}
 
 pub fn handler(ctx: Context<CalcCompletedOffers>) -> Result<()> {
     let caller = ctx.accounts.cranker.key();
@@ -135,36 +166,35 @@ pub fn handler(ctx: Context<CalcCompletedOffers>) -> Result<()> {
     let amm_state = &mut ctx.accounts.amm_state;
     let floor = amm_state.highest_buyback_basis;
 
-    let any_taken = [&offer_list.big_offer, &offer_list.med_offer, &offer_list.sml_offer]
-        .iter()
-        .any(|o| o.total_offered > o.remaining);
-    let sheet_made = [&offer_list.big_offer, &offer_list.med_offer, &offer_list.sml_offer]
-        .iter()
-        .any(|o| o.total_offered > 0);
-
-    if any_taken {
+    // ── Ratchet floor decay (fill-modulated, depth-accelerated) ──
+    // Runs on EVERY locked trading day (live < floor) after the grace; fills
+    // only modulate the rate (see floor_decay_cut). untaken_days counts
+    // consecutive locked days and resets only when the price recovers to or
+    // above the floor — the old any-fill reset let a ~$0.05 lot freeze
+    // decay forever.
+    if live_price >= floor {
         amm_state.untaken_days = 0;
     } else {
-        // Count sheet-posted-but-ignored days, and dark-desk days where the
-        // floor is the binding constraint. No sheet with price >= floor means
-        // nothing is wrong — the counter holds.
-        if sheet_made || live_price < floor {
-            amm_state.untaken_days = amm_state.untaken_days.saturating_add(1);
-        }
-        if amm_state.untaken_days > FLOOR_LOCK_GRACE_DAYS && floor > live_price {
+        amm_state.untaken_days = amm_state.untaken_days.saturating_add(1);
+        if amm_state.untaken_days > FLOOR_LOCK_GRACE_DAYS {
             let gap = floor - live_price;
-            // max(1) keeps integer math from stalling at tiny gaps; min(gap)
-            // lands exactly on live, never below.
-            let cut = ((gap as u128 * FLOOR_DECAY_PCT as u128) / 100) as u64;
-            let cut = cut.max(1).min(gap);
-            amm_state.highest_buyback_basis = floor - cut;
-            msg!(
-                "floor decay day {}: {} -> {} (live {})",
-                amm_state.untaken_days,
-                floor,
-                amm_state.highest_buyback_basis,
-                live_price,
-            );
+            // Today's demand, tier-weighted like offer_accepted_aggression
+            // (big×4, med×2, sml×1; weight sum 700): 0 = nothing taken,
+            // 100 = the whole sheet cleared.
+            let demand = ((big_pct as u32 * 4 + med_pct as u32 * 2 + sml_pct as u32) * 100 / 700) as u64;
+            let cut = floor_decay_cut(gap, live_price, 100 - demand.min(100));
+            if cut > 0 {
+                amm_state.highest_buyback_basis = floor - cut;
+                msg!(
+                    "floor decay locked day {}: {} -> {} (live {}, demand {}%, cut {})",
+                    amm_state.untaken_days,
+                    floor,
+                    amm_state.highest_buyback_basis,
+                    live_price,
+                    demand,
+                    cut,
+                );
+            }
         }
     }
 
@@ -178,6 +208,56 @@ fn pct_accepted(offer: &Offer) -> u8 {
     }
     let cleared = (offer.total_offered - offer.remaining) as u64;
     (cleared * 100 / offer.total_offered as u64).min(100) as u8
+}
+
+#[cfg(test)]
+mod floor_decay_tests {
+    use super::*;
+
+    // The devnet case: floor 5110 vs live 3600 (42% gap). Depth 4194 bps →
+    // factor 5194 → 2% × 5.194 ≈ 10.4% of the gap per locked day.
+    #[test]
+    fn deep_gap_decays_fast() {
+        assert_eq!(floor_decay_cut(1510, 3600, 100), 156);
+    }
+
+    #[test]
+    fn full_demand_holds_the_floor() {
+        assert_eq!(floor_decay_cut(1510, 3600, 0), 0);
+    }
+
+    #[test]
+    fn a_pity_lot_decays_at_essentially_full_rate() {
+        // 1 lot of a 374-lot sml sheet ≈ 0.3% demand → demand rounds to 0 →
+        // keep 100; keep 99 is within one floor unit of full rate.
+        assert_eq!(floor_decay_cut(1510, 3600, 100), 156);
+        assert_eq!(floor_decay_cut(1510, 3600, 99), 155);
+    }
+
+    #[test]
+    fn depth_factor_caps_at_eight_x() {
+        // 90% gap: depth 9000 bps → factor capped at 8000 → 16%/day.
+        assert_eq!(floor_decay_cut(900, 1000, 100), 144);
+    }
+
+    #[test]
+    fn shallow_gap_stays_gentle_but_never_stalls() {
+        // 1% gap: depth 100 bps → factor 1100 → 2.2% of gap; below one
+        // floor unit the integer stall guard lifts the cut to 1.
+        assert_eq!(floor_decay_cut(10, 1000, 100), 1);
+        assert_eq!(floor_decay_cut(1000, 100_000, 100), 22);
+    }
+
+    #[test]
+    fn cut_never_exceeds_the_gap() {
+        assert_eq!(floor_decay_cut(2, 98, 100), 1);
+        assert_eq!(floor_decay_cut(1, 99, 100), 1);
+    }
+
+    #[test]
+    fn zero_live_price_uses_max_acceleration() {
+        assert_eq!(floor_decay_cut(1000, 0, 100), 160);
+    }
 }
 
 // Update percentages of the AcceptedOffers account
