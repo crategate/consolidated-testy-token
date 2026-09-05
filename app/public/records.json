@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "rows": [
+    {
+      "dayIndex": 0,
+      "recordedAt": 1788631230,
+      "date": "2026-09-05",
+      "marketState": 99,
+      "offerDesk": {
+        "big": {
+          "lotTier": 17,
+          "lotTokens": 250000,
+          "vestingDays": 12,
+          "discountBps": 49,
+          "remaining": 0,
+          "totalOffered": 3
+        },
+        "med": {
+          "lotTier": 15,
+          "lotTokens": 50000,
+          "vestingDays": 6,
+          "discountBps": 34,
+          "remaining": 1,
+          "totalOffered": 13
+        },
+        "sml": {
+          "lotTier": 0,
+          "lotTokens": 0,
+          "vestingDays": 0,
+          "discountBps": 0,
+          "remaining": 0,
+          "totalOffered": 0
+        },
+        "totalComplete": 3200000,
+        "sheetDayIndex": 35
+      },
+      "fills": {
+        "big": [
+          0,
+          0,
+          0,
+          100,
+          100
+        ],
+        "med": [
+          0,
+          0,
+          0,
+          100,
+          92
+        ],
+        "sml": [
+          0,
+          0,
+          0,
+          100,
+          0
+        ]
+      },
+      "market": {
+        "afhoPrice": "1666",
+        "spotMin": "1666",
+        "spotMax": "1719",
+        "spotSamples": 32,
+        "priceChanges": [
+          -1669,
+          -2248,
+          -4778,
+          877,
+          164,
+          -659,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "sampleHead": 6,
+        "momentum": 4360,
+        "momentumSamples": 6,
+        "highestBuybackBasis": "1673",
+        "afhoVault": null,
+        "usdcVault": null,
+        "usdcDip": "401652"
+      },
+      "staking": {
+        "totalStaked": null,
+        "totalWeightedStake": null,
+        "totalSupply": "1000000000000000000",
+        "stakedPct": null,
+        "trailingStakeHealth": [
+          2,
+          2,
+          2,
+          3,
+          5
+        ],
+        "stakeVault": null,
+        "rewardVault": null,
+        "penaltyVault": null,
+        "posrVault": null
+      }
+    }
+  ]
+}

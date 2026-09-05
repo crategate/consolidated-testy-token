@@ -85,6 +85,10 @@ export function StakeForm({ mint, marketStatusPda, onStakeSuccess }: StakeFormPr
                 disabled={loading}
                 max={balance || undefined}
             />
+            {Number(amount) >= 9006000 && (
+                <p className='stake-penalty-note' role="alert">
+                    <span>Max position size 9,006,000</span></p>
+            )}
             {amount !== '' && Number(amount) > 0 && (
                 <p className="stake-penalty-note" role="alert">
                     <span>

@@ -629,6 +629,18 @@ async function main() {
                     } catch (e) {
                         console.error("!! distribute_staker_rewards failed:", (e as Error).message);
                     }
+
+                    // Records ledger: snapshot the day-start state for the
+                    // /records page (app/public/records.json). Best-effort —
+                    // a failed snapshot never fails the crank loop.
+                    try {
+                        const { recordDaySnapshot, upsertRow } = await import("../record-day");
+                        const row = await recordDaySnapshot(connection);
+                        upsertRow(row);
+                        console.log(` records ledger: day ${row.dayIndex} (${row.date}) recorded`);
+                    } catch (e) {
+                        console.error("!! records snapshot failed:", (e as Error).message);
+                    }
                 }
                 }
             } else {

@@ -62,6 +62,57 @@ function fmtTs(unix: unknown): string {
     return new Date(n * 1000).toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
 }
 
+/* Momentum score — TS port of programs/amm/src/instructions/helpers_make_offers.rs
+ * ::calculate_momentum_score. Recency-weighted mean of the 20-day price_changes
+ * ring (centi-percent, each sample clamped to ±10%/day, 0 = no sample) plus
+ * half the recent-5 vs older trend delta, scaled around 5000 → 0-10000.
+ * Cold start: fewer than 5 nonzero samples → score 0. */
+const MOMENTUM_MIN_SAMPLES = 5;
+const MOMENTUM_CP_FULL_SCALE = 500; // 5.00% in centi-percent pins the scale
+const MOMENTUM_SAMPLE_CAP_CP = 1000; // ±10%/day effective per sample
+
+function momentumScore(priceChanges: number[], sampleHead: number): { score: number; samples: number } {
+    const n = priceChanges.length;
+    if (n === 0) return { score: 0, samples: 0 };
+    const head = ((sampleHead % n) + n) % n;
+    let count = 0, wSum = 0, wTotal = 0, recentSum = 0, recentN = 0, olderSum = 0, olderN = 0;
+    for (let age = 0; age < n; age++) {
+        const raw = priceChanges[(head + age) % n];
+        if (raw === 0) continue;
+        const v = Math.max(-MOMENTUM_SAMPLE_CAP_CP, Math.min(MOMENTUM_SAMPLE_CAP_CP, raw));
+        count += 1;
+        const w = age + 1; // newer days weigh more
+        wSum += v * w;
+        wTotal += w;
+        if (age >= n - 5) {
+            recentSum += v;
+            recentN += 1;
+        } else {
+            olderSum += v;
+            olderN += 1;
+        }
+    }
+    if (count < MOMENTUM_MIN_SAMPLES) return { score: 0, samples: count };
+    const weightedAvg = Math.trunc(wSum / wTotal);
+    const trend = recentN > 0 && olderN > 0 ? Math.trunc(recentSum / recentN) - Math.trunc(olderSum / olderN) : 0;
+    const blended = weightedAvg + Math.trunc(trend / 2);
+    const score = 5000 + Math.trunc((blended * 5000) / MOMENTUM_CP_FULL_SCALE);
+    return { score: Math.min(10000, Math.max(0, score)), samples: count };
+}
+
+/* Daily close→close price-change ring in chronological order (sample_head =
+ * next write = oldest slot), newest last, 0 entries (no sample) skipped. */
+function priceChangeRing(priceChanges: number[], sampleHead: number, take = 10): string {
+    const n = priceChanges.length;
+    if (n === 0) return '—';
+    const head = ((sampleHead % n) + n) % n;
+    const chrono: number[] = [];
+    for (let age = 0; age < n; age++) chrono.push(priceChanges[(head + age) % n]);
+    const samples = chrono.filter((v) => v !== 0).slice(-take);
+    if (samples.length === 0) return '—';
+    return samples.map((v) => `${v > 0 ? '+' : ''}${(v / 100).toFixed(2)}%`).join(' → ');
+}
+
 function pk(value?: string): PublicKey | null {
     if (!value) return null;
     try {
@@ -238,6 +289,16 @@ function buildDashData(
                 value: `${fmtToken(field(metrics, 'totalStaked', 'total_staked'), decimals)} / ${fmtToken(field(metrics, 'totalSupply', 'total_supply'), decimals)}`,
             },
             { label: 'Stake trend (5d)', value: trail.join(' → ') || '—' },
+        );
+        const changes = field<number[]>(metrics, 'priceChanges', 'price_changes') ?? [];
+        const sampleHead = Number(field(metrics, 'sampleHead', 'sample_head') ?? 0);
+        const mom = momentumScore(changes, sampleHead);
+        offerFields.push(
+            {
+                label: 'Momentum (0-10000)',
+                value: mom.samples < MOMENTUM_MIN_SAMPLES ? `— cold (${mom.samples}/${MOMENTUM_MIN_SAMPLES} samples)` : `${mom.score} / 10000 (5000 = flat)`,
+            },
+            { label: 'Price 24h change ring', value: priceChangeRing(changes, sampleHead) },
         );
     }
 

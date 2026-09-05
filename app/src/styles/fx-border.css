@@ -8,6 +8,38 @@
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ─── Keyframes ─── */
+@keyframes neonGlitch {
+
+    0%,
+    90%,
+    100% {
+        opacity: 0;
+        transform: translate(0);
+    }
+
+    91% {
+        opacity: .6;
+        box-shadow: 0 0 4px var(--neon-cyan), 0 0 12px #00f0ff4d, 2px 0 4px var(--neon-pink);
+        transform: translate(-1px, 1px);
+    }
+
+    93% {
+        opacity: .3;
+        box-shadow: 0 0 2px var(--neon-purple), -1px 0 4px var(--neon-green);
+        transform: translate(2px, -1px);
+    }
+
+    95% {
+        opacity: .8;
+        box-shadow: 0 0 6px var(--neon-cyan), 0 0 20px #00f0ff33;
+        transform: translate(-1px);
+    }
+
+    97% {
+        opacity: 0;
+        transform: translate(0);
+    }
+}
 
 /* Broken-neon flicker: intermittent, unpredictable */
 @keyframes neonFlicker {
@@ -27,7 +59,7 @@
         transform: translate(0, 1px);
         box-shadow:
             0 0 3px var(--neon-cyan),
-            0 0 8px rgba(0, 240, 255, 0.18),
+            0 0 8px rgba(0, 240, 255, 0.88),
             1px 0 3px var(--neon-pink);
     }
 
@@ -40,16 +72,16 @@
     }
 
     29% {
-        opacity: 0.34;
+        opacity: 0.74;
         transform: translate(1px, 0);
         box-shadow:
             0 0 4px var(--neon-cyan),
-            0 0 14px rgba(0, 240, 255, 0.16),
+            0 0 14px rgba(0, 240, 255, 0.86),
             -1px 0 3px var(--neon-pink);
     }
 
     30.8% {
-        opacity: 0.2;
+        opacity: 0.5;
         transform: translate(0);
         box-shadow:
             0 0 2px var(--neon-pink),
@@ -57,7 +89,7 @@
     }
 
     57% {
-        opacity: 0.14;
+        opacity: 0.44;
         transform: translate(-1px, -1px);
         box-shadow:
             0 0 2px var(--neon-purple),
@@ -74,7 +106,7 @@
     }
 
     78.2% {
-        opacity: 0.28;
+        opacity: 0.88;
         transform: translate(0);
         box-shadow:
             0 0 2px var(--neon-pink),
@@ -702,14 +734,15 @@
 }
 
 .neon-glitch::before {
-    content: '';
-    position: absolute;
-    inset: -1px;
+    content: "";
     border-radius: inherit;
     pointer-events: none;
-    animation: neonFlickerSlow calc(var(--fx-border-cycle) * 1.75 * var(--fx-tempo, 1)) infinite;
-    animation-delay: var(--glitch-delay, 0s);
-    border: 1px solid transparent;
+    animation: 4s infinite neonGlitch;
+    animation-delay: random(0s, 3s);
+    border: 1px solid #0000;
+    position: absolute;
+    inset: -1px;
+
 }
 
 /* Connected: the base glitch stays slow — the rhythm only shortens a

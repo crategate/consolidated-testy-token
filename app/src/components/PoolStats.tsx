@@ -27,7 +27,7 @@ export function PoolStats({ mint }: PoolStatsProps) {
         { label: 'Staked / Supply', value: `${pctStaked}%` },
         { label: 'Stakers', value: stats.userCount.toString() },
         { label: 'AFHO in Vault', value: fmt(stats.vaultBalance) },
-        { label: 'Total Supply', value: fmt(stats.totalSupply) },
+        { label: 'Total Supply', value: `1B` },
     ];
 
     return (
@@ -35,9 +35,9 @@ export function PoolStats({ mint }: PoolStatsProps) {
             {STAT_ITEMS.map((item, index) => (
                 <div
                     key={item.label}
-                    className={`stat neon-glitch neon-shadow glass-pane ${SHADOW_VARIANTS[index % SHADOW_VARIANTS.length]}`}
+                    className={`stat neon-shadow glass-pane ${SHADOW_VARIANTS[index % SHADOW_VARIANTS.length]} neon-glitch`}
                     style={{
-                        '--glitch-delay': `${(index * 0.5).toFixed(2)}s`,
+                        '--glitch-delay': `${(index * 0.8).toFixed(2)}s`,
                         '--shadow-delay': `${(index * 0.7 + 0.3).toFixed(2)}s`,
                     } as React.CSSProperties}
                 >

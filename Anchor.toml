@@ -41,6 +41,7 @@ set-cpmm-pool = "npx ts-node ./scripts/set-cpmm-pool.ts"
 set-sol-usdc-pool = "npx ts-node ./scripts/set-sol-usdc-pool.ts"
 
 set-oracle = "npx ts-node ./scripts/oracle/set-oracle-state.ts"
+record = "npx ts-node ./scripts/record-day.ts" # devnet: snapshot day-start metrics into app/public/records.json for /records
 
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
 test-staking = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/staking.test.ts"

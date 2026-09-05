@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useDashData, type DashSection } from '../hooks/useDashData';
 import './Dash.css';
 
@@ -43,6 +44,9 @@ export default function Dash() {
                 <h1>AFHO dev dashboard</h1>
                 <div className="dash-controls">
                     {data && <span className="dash-updated">updated {new Date(data.updatedAt).toLocaleTimeString()}</span>}
+                    <Link className="dash-toggle" to="/records">
+                        Records ledger →
+                    </Link>
                     <button className="dash-toggle" onClick={() => setHideAddresses((v) => !v)}>
                         {hideAddresses ? 'Show addresses' : 'Hide all addresses'}
                     </button>

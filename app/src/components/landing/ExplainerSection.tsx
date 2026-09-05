@@ -70,7 +70,7 @@ export function ExplainerSection() {
                             key={item.title}
                             className={`explainer-card neon-glitch neon-shadow glass-pane ${['glitch-violet', 'glitch-streetlight', 'glitch-ghost', 'glitch-rose'][index]} ${['shadow-corner-tl', 'shadow-corner-br', 'shadow-corner-bl', 'shadow-corner-tr'][index]}`}
                             style={{
-                                '--glitch-delay': `${(index * 0.7).toFixed(2)}s`,
+                                '--glitch-delay': `${(index * .2).toFixed(2)}s`,
                                 '--shadow-delay': `${(index * 0.9 + 0.4).toFixed(2)}s`,
                             } as React.CSSProperties}
                         >

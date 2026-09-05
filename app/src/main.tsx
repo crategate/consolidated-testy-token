@@ -10,6 +10,7 @@ import '@solana/wallet-adapter-react-ui/styles.css';
 import './index.css';
 import App from './App';
 import Dash from './pages/Dash';
+import Records from './pages/Records';
 import AmmPage from './pages/AmmPage';
 import { HomePageIndicator } from './components/amm/HomePageIndicator';
 import { ChainDataProvider } from './context/ChainDataProvider';
@@ -32,10 +33,16 @@ const connectionConfig = { disableRetryOnRateLimit: true };
 
 function Shell() {
     const { pathname } = useLocation();
-    const onOfferDesk = pathname === '/offer-desk' || pathname.startsWith('/offer-desk/');
+    // Hide the yellow "offers available" indicator on the offer desk itself
+    // (it links there) and on the Records ledger (kept dry for marketing).
+    const hideIndicator =
+        pathname === '/offer-desk' ||
+        pathname.startsWith('/offer-desk/') ||
+        pathname === '/records' ||
+        pathname.startsWith('/records/');
     return (
         <>
-            {!onOfferDesk && <HomePageIndicator />}
+            {!hideIndicator && <HomePageIndicator />}
             <Outlet />
         </>
     );
@@ -53,6 +60,7 @@ createRoot(document.getElementById('root')!).render(
                                     <Route element={<Shell />}>
                                         <Route path="/" element={<App />} />
                                         <Route path="/dash" element={<Dash />} />
+                                        <Route path="/records" element={<Records />} />
                                         <Route path="/offer-desk" element={<AmmPage />} />
                                     </Route>
                                 </Routes>
