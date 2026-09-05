@@ -149,6 +149,27 @@ async function main() {
         };
     }
 
+    // SOL/USDC pool vaults for the crank bounty's USD price read — null when
+    // the pool isn't pinned in the bounty config (fixed-lamport fallback).
+    // Shared by the production crank and the test-mode fee collection.
+    function solUsdcCrankVaults(cfg: any) {
+        if (!cfg.solUsdcPool || new PublicKey(cfg.solUsdcPool).equals(PublicKey.default)) {
+            return null;
+        }
+        const cpmmProgram = new PublicKey(cfg.cpmmProgram);
+        const pool = new PublicKey(cfg.solUsdcPool);
+        const usdcMint = new PublicKey(cfg.usdcMint);
+        const [wsolVault] = PublicKey.findProgramAddressSync(
+            [Buffer.from("pool_vault"), pool.toBuffer(), WSOL_MINT.toBuffer()],
+            cpmmProgram
+        );
+        const [usdcVault] = PublicKey.findProgramAddressSync(
+            [Buffer.from("pool_vault"), pool.toBuffer(), usdcMint.toBuffer()],
+            cpmmProgram
+        );
+        return { solUsdcWsolVault: wsolVault, solUsdcUsdcVault: usdcVault };
+    }
+
     // ── descriptive-log helpers (amounts + % of vaults) ───────────────────
     const fmtRaw = (raw: bigint, decimals: number, maxFrac = 4): string => {
         const unit = 10n ** BigInt(decimals);
@@ -340,11 +361,9 @@ async function main() {
                         ` TEST crank ${marketStatus.currentState} -> ${state} (day ${testDay}) [${setSig}]`
                     );
                     newStatus = await program.account.marketStatus.fetch(marketStatusPda);
-                } else if (TEST_STATE) {
-                    console.log(
-                        ` Stale crank! Oracle slot ${quoteSlot} > last ${bountyConfig.lastCrankSlot}`
-                    );
-
+                } else {
+                // Real Switchboard crank (production path): push a fresh
+                // managed quote + permissionless_crank in one transaction.
                 const overrides = {
                     MASSIVE_API_KEY: process.env.MASSIVE_API_KEY!,
                     EARNINGSAPI_KEY: process.env.EARNINGSAPI_KEY!,
@@ -364,24 +383,7 @@ async function main() {
                     marketStatus: marketStatusPda,
                     systemProgram: anchor.web3.SystemProgram.programId,
                 };
-                if (
-                    bountyConfig.solUsdcPool &&
-                    !new PublicKey(bountyConfig.solUsdcPool).equals(PublicKey.default)
-                ) {
-                    const cpmmProgram = new PublicKey(bountyConfig.cpmmProgram);
-                    const pool = new PublicKey(bountyConfig.solUsdcPool);
-                    const usdcMint = new PublicKey(bountyConfig.usdcMint);
-                    const [wsolVault] = PublicKey.findProgramAddressSync(
-                        [Buffer.from("pool_vault"), pool.toBuffer(), WSOL_MINT.toBuffer()],
-                        cpmmProgram
-                    );
-                    const [usdcVault] = PublicKey.findProgramAddressSync(
-                        [Buffer.from("pool_vault"), pool.toBuffer(), usdcMint.toBuffer()],
-                        cpmmProgram
-                    );
-                    crankAccounts.solUsdcWsolVault = wsolVault;
-                    crankAccounts.solUsdcUsdcVault = usdcVault;
-                }
+                Object.assign(crankAccounts, solUsdcCrankVaults(bountyConfig));
 
                 const crankIx = await program.methods.permissionlessCrank().accountsStrict(crankAccounts).instruction();
 
@@ -415,6 +417,51 @@ async function main() {
                     // watch mode, no state change this loop — skip the transition
                     // handlers; the always-on loops below still run.
                 } else {
+                // Test-mode crank fee: production pays the transition bounty
+                // to whoever lands the state change (permissionless_crank);
+                // test_set_state can't, so in --test-state modes the keeper
+                // collects the same bounty via the devnet-only
+                // test_collect_bounty on each transition it detects/drives.
+                // This drains the bounty vault "like testnet" so the
+                // bounty_top_up refill loop runs for real.
+                if (TEST_STATE) {
+                    try {
+                        const feeVaults = solUsdcCrankVaults(bountyConfig) ?? {
+                            solUsdcWsolVault: null,
+                            solUsdcUsdcVault: null,
+                        };
+                        const feeIx = await program.methods
+                            .testCollectBounty()
+                            .accountsStrict({
+                                cranker: keypair.publicKey,
+                                bountyConfig: bountyConfigPda,
+                                bountyVault: bountyVaultPda,
+                                ...feeVaults,
+                            })
+                            .instruction();
+                        const feeTx = await sb.asV0Tx({
+                            connection,
+                            ixs: [feeIx],
+                            signers: [keypair],
+                            computeUnitPrice: 20_000,
+                        });
+                        const feeSim = await connection.simulateTransaction(feeTx);
+                        if (feeSim.value.err) {
+                            console.log(" test_collect_bounty skipped:", JSON.stringify(feeSim.value.err));
+                            console.log("  last logs:", feeSim.value.logs?.slice(-4) ?? []);
+                        } else {
+                            const feeBalBefore = BigInt(await connection.getBalance(bountyVaultPda));
+                            const feeSig = await connection.sendTransaction(feeTx);
+                            await connection.confirmTransaction(feeSig, "confirmed");
+                            const feeBalAfter = BigInt(await connection.getBalance(bountyVaultPda));
+                            console.log(
+                                ` test crank fee collected: bounty vault ${fmtSolL(feeBalBefore)} → ${fmtSolL(feeBalAfter)} — ${feeSig}`
+                            );
+                        }
+                    } catch (e) {
+                        console.error("!! test_collect_bounty failed:", (e as Error).message);
+                    }
+                }
                 const dayEnded =
                     (prevState === 0 && (newStatus.currentState === 1 || newStatus.currentState === 2)) ||
                     (prevState === 3 && newStatus.currentState === 2);
@@ -585,7 +632,7 @@ async function main() {
                 }
                 }
             } else {
-                console.log("Oracle fresh, nothing to do.");
+                console.log("No fresh quote, nothing to do.");
             }
 
             // dex_buyback slices: attempt every loop while the market is open.

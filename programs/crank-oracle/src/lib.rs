@@ -257,11 +257,55 @@ pub mod crank_oracle {
         msg!("Test state set to: {} day {} ts {}", state, day, ts);
         Ok(())
     }
+
+    // DEVNET/TEST ONLY — remove before mainnet together with test_set_state
+    // (paired with the keeper's --test-state mode). Pays the standard crank
+    // bounty (same USD-priced/fixed rules as permissionless_crank) to the
+    // caller so the test loop exercises the real vault-drain → bounty_top_up
+    // refill cycle without a Switchboard quote. Unlike the production crank,
+    // a drained vault must not fail the call — it pays what the vault can
+    // cover above its rent floor (possibly 0); bounty_top_up is the refill.
+    pub fn test_collect_bounty(ctx: Context<TestCollectBounty>) -> Result<()> {
+        let bounty = bounty_lamports(
+            &ctx.accounts.bounty_config,
+            &ctx.accounts.sol_usdc_wsol_vault,
+            &ctx.accounts.sol_usdc_usdc_vault,
+            Clock::get()?.unix_timestamp,
+        )?;
+        let vault = ctx.accounts.bounty_vault.to_account_info();
+        let available = vault
+            .lamports()
+            .saturating_sub(Rent::get()?.minimum_balance(1));
+        let pay = bounty.min(available);
+        if pay > 0 {
+            pay_bounty(&vault, &ctx.accounts.cranker.to_account_info(), pay)?;
+        }
+        msg!("Test bounty collected: {} lamports", pay);
+        Ok(())
+    }
 }
 #[derive(Accounts)]
 pub struct TestSetState<'info> {
     #[account(mut, seeds = [b"market_status"], bump)]
     pub market_status: Account<'info, MarketStatus>,
+}
+
+#[derive(Accounts)]
+pub struct TestCollectBounty<'info> {
+    /// Cranker wallet — receives the test bounty (and pays the tx fee).
+    #[account(mut)]
+    pub cranker: Signer<'info>,
+    #[account(seeds = [b"bounty_config"], bump = bounty_config.bump)]
+    pub bounty_config: Account<'info, BountyConfig>,
+    /// CHECK: Lamport holding account for bounty payouts
+    #[account(mut, seeds = [b"bounty_vault"], bump)]
+    pub bounty_vault: AccountInfo<'info>,
+    /// CHECK: SOL/USDC pool wSOL vault (USD-priced bounty read). Optional —
+    /// pinned to the pool's derived PDAs inside bounty_lamports when the pool
+    /// is configured.
+    pub sol_usdc_wsol_vault: Option<AccountInfo<'info>>,
+    /// CHECK: SOL/USDC pool USDC vault. See above.
+    pub sol_usdc_usdc_vault: Option<AccountInfo<'info>>,
 }
 
 #[derive(Accounts)]
