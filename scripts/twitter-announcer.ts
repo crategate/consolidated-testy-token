@@ -121,8 +121,8 @@ export function unstakeFeeLabel(pool: any, state: number): string {
 // SEO-style "spinning": every `{a|b|c}` group picks one option at random
 // (nesting works), and each event also has several full-template variants,
 // so repeated announcements read differently. Builders return the template
-// with spin groups INTACT — announce() spins once per channel, so X and
-// Telegram get their own wording.
+// with spin groups INTACT — announce() spins once per event, so X and
+// Telegram always carry the same wording.
 
 export function spin(template: string): string {
     const out: string[] = [];
@@ -437,13 +437,12 @@ function postTweet(text: string): Promise<void> {
     });
 }
 
-// Post to every enabled channel. Spinning runs once per channel, so X and
-// Telegram each get their own variation of the same announcement.
+// Post to every enabled channel with the SAME text — the template is spun
+// once per event, so X and Telegram always mirror each other.
 async function announce(text: string): Promise<void> {
-    const template = DEVNET_MODE ? DEVNET_PREFIX + text : text;
+    const body = spin(DEVNET_MODE ? DEVNET_PREFIX + text : text);
 
     if (X_ENABLED) {
-        const body = spin(template);
         if (body.length > 280) {
             console.warn(`!! tweet exceeds 280 chars (${body.length}):\n${body}`);
         }
@@ -456,7 +455,6 @@ async function announce(text: string): Promise<void> {
     }
 
     if (TG_ENABLED) {
-        const body = spin(template);
         if (DRY_RUN) {
             console.log(`[dry-run][tg] would post:\n${body}\n`);
         } else {
@@ -648,6 +646,38 @@ async function tokenBalanceRaw(
     return Number(info.value.amount);
 }
 
+// Best real discount currently available on the night desk, in hundredths of
+// a percent (100 = 1.00%) — 0 when nothing is effectively discounted. Mirrors
+// quote_claim exactly: per tier with remaining lots, the discounted quote
+// (incl. the state-2 bonus) clamped by the ratchet floor with the bonus-depth
+// allowance, measured against the live pool price (vault-ratio spot).
+async function bestDeskDiscountBp100(
+    connection: Connection,
+    ammState: any,
+    offerList: any,
+    state: number,
+    liveFloor: bigint
+): Promise<number> {
+    if (liveFloor <= 0n) return 0;
+    const floor = BigInt(ammState.highestBuybackBasis.toString());
+    const bonusTenths = state === 2 ? 5 : 0;
+    let best = 0;
+    for (const key of ["bigOffer", "medOffer", "smlOffer"]) {
+        const o = (offerList as any)[key];
+        if (!o || num(o.remaining) <= 0) continue;
+        const d = num(o.discountBps);
+        const bps = BigInt(Math.min(255, d + bonusTenths)) * 10n;
+        const discounted = liveFloor - (liveFloor * bps) / 10_000n;
+        const allowance = (liveFloor * BigInt(bonusTenths) * 10n) / 10_000n;
+        const bound = floor > allowance ? floor - allowance : 0n;
+        const eff = discounted > bound ? discounted : bound;
+        if (eff >= liveFloor) continue; // at/above spot — no discount
+        const bp100 = Number((liveFloor - eff) * 10_000n / liveFloor);
+        if (bp100 > best) best = bp100;
+    }
+    return best;
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // MAIN
 // ════════════════════════════════════════════════════════════════════════════
@@ -787,6 +817,27 @@ async function main(): Promise<void> {
                 new PublicKey(ammState.usdcDip)
             );
 
+            // Live AFHO price (floor units, vault-ratio spot over the pinned
+            // CPMM pool) — feeds the desk-open discount gate below.
+            let liveFloor = 0n;
+            try {
+                const cpmmPool = new PublicKey(ammState.cpmmPoolState);
+                const vaultOf = (m: PublicKey) => PublicKey.findProgramAddressSync(
+                    [Buffer.from("pool_vault"), cpmmPool.toBuffer(), m.toBuffer()],
+                    new PublicKey(ammState.cpmmProgram)
+                )[0];
+                const [afhoPoolRaw, usdcPoolRaw] = await Promise.all([
+                    tokenBalanceRaw(connection, vaultOf(afhoMint)),
+                    tokenBalanceRaw(connection, vaultOf(new PublicKey(ammState.usdcMint))),
+                ]);
+                if (afhoPoolRaw > 0) liveFloor = BigInt(Math.floor(usdcPoolRaw * 1e12 / afhoPoolRaw));
+            } catch {
+                liveFloor = 0n; // unreadable pool → discount gate stays shut
+            }
+            const deskDiscount = await bestDeskDiscountBp100(
+                connection, ammState, offerList, state, liveFloor
+            );
+
             const bbDay = num(ammState.bbDayIndex);
             const bbSpentUsdc = num(ammState.bbSpentUsdc);
             const dipSpentUsdc = num(ammState.dipSpentUsdc);
@@ -794,8 +845,12 @@ async function main(): Promise<void> {
             const offerDay = num(offerList.dayIndex);
 
             // Buyback baseline: prefer the freshest pre-open afho_vault read when we
-            // first see market open; fall back to a mid-buyback startup snapshot.
-            if (initialized && prevState !== 0 && state === 0) {
+            // first see a day-start open (1→0 or 2→0 — the same pair the crank
+            // rolls trading_day_index on; a 3→0 halt lift is not a new day);
+            // fall back to a mid-buyback startup snapshot.
+            const dayStartedOpen =
+                initialized && (prevState === 1 || prevState === 2) && state === 0;
+            if (dayStartedOpen) {
                 buybackSnapshot = { day: marketDay, afhoRaw: prevAfhoVaultRaw };
             }
             if (
@@ -807,32 +862,19 @@ async function main(): Promise<void> {
             }
 
             if (initialized) {
-                // ── 1/5: market-state change ────────────────────────────
+                // States 1 and 2 stay SILENT in the state-change block: the
+                // night desk speaks through its own discount-gated
+                // announcement below (sheet post in after-hours, flash sale
+                // in closed) — never a bare "desk open/closed" tweet, and no
+                // end-of-day post when the desk never opened.
                 if (state !== prevState) {
                     const feeLabel = unstakeFeeLabel(stakingPool, state);
-                    // AFTER-HOURS → CLOSED with bonds left: closed-session flash
-                    // sale replaces the plain status post (the sale message
-                    // already says the market is closed). Gated on REMAINING
-                    // lots — sold-out tiers don't make a sale — and on the
-                    // desk-open latch: one desk announcement per calendar day.
-                    const lotsLeft =
-                        num(offerList.bigOffer.remaining) +
-                        num(offerList.medOffer.remaining) +
-                        num(offerList.smlOffer.remaining);
-                    const deskAlreadyAnnounced = deskAnnouncedDate === etDate();
-                    const closedSale =
-                        prevState === 1 && state === 2 && lotsLeft > 0 && !deskAlreadyAnnounced;
-                    if (closedSale) {
-                        const sheet = buildSheet(offerList);
-                        await announce(
-                            closedSaleMessage({
-                                big: { ...sheet.big, left: num(offerList.bigOffer.remaining), total: num(offerList.bigOffer.totalOffered) },
-                                med: { ...sheet.med, left: num(offerList.medOffer.remaining), total: num(offerList.medOffer.totalOffered) },
-                                sml: { ...sheet.sml, left: num(offerList.smlOffer.remaining), total: num(offerList.smlOffer.totalOffered) },
-                            })
-                        );
-                        deskAnnouncedDate = etDate();
-                    } else if (state === 0 && isMondayEt()) {
+                    // Morning-open announcements fire ONLY on the canonical
+                    // day-start pair (1→0 or 2→0) — the normal path is
+                    // 2→1→0 (extended hours between closed and open), so a
+                    // 3→0 halt lift (or any other →0) stays silent here; the
+                    // halt itself was announced when it landed.
+                    if (dayStartedOpen && isMondayEt()) {
                         const totalSupplyRaw = Number(
                             (await connection.getTokenSupply(afhoMint)).value.amount
                         );
@@ -847,7 +889,7 @@ async function main(): Promise<void> {
                                 toWhole(afhoVaultRaw, afhoDecimals)
                             )
                         );
-                    } else if (state === 0) {
+                    } else if (dayStartedOpen) {
                         // Morning open is a real daily event — announce it.
                         await announce(marketStateMessage(state, feeLabel));
                     } else if (state === 3) {
@@ -860,16 +902,36 @@ async function main(): Promise<void> {
                     // tweet. No desk opening that day = no end-of-day post.
                 }
 
-                // ── 2: bond sheet posted for the night desk ─────────────────────
-                // Latched per calendar day: the first desk open announces;
-                // re-opens/flaps the same day don't. A fresh sheet on a new
-                // calendar day (offers still available) announces again.
+                // ── 2: night desk opens (discount-gated, latched) ───────────────────
+                // The desk announces only when a REAL discount is actually
+                // buyable: fresh sheet, lots left, market in a night state,
+                // and the best tier's effective discount (post-ratchet, with
+                // the state-2 bonus allowance) reaches 1%. If the ratchet
+                // holds the desk at/above spot when after-hours starts, the
+                // announcement waits until the decay (or a price move) makes
+                // the bonds worth the click. One announcement per calendar
+                // day (ET): re-opens/flaps the same day stay silent; a new
+                // calendar day announces again. Message matches the session:
+                // sheet post in after-hours, flash sale in closed.
                 if (
-                    offerDay !== prevOfferDayIndex &&
+                    (state === 1 || state === 2) &&
+                    offerDay === marketDay &&
                     !offerListEmpty(offerList) &&
-                    deskAnnouncedDate !== etDate()
+                    deskAnnouncedDate !== etDate() &&
+                    deskDiscount >= 100
                 ) {
-                    await announce(bondsMessage(buildSheet(offerList)));
+                    const sheet = buildSheet(offerList);
+                    if (state === 2) {
+                        await announce(
+                            closedSaleMessage({
+                                big: { ...sheet.big, left: num(offerList.bigOffer.remaining), total: num(offerList.bigOffer.totalOffered) },
+                                med: { ...sheet.med, left: num(offerList.medOffer.remaining), total: num(offerList.medOffer.totalOffered) },
+                                sml: { ...sheet.sml, left: num(offerList.smlOffer.remaining), total: num(offerList.smlOffer.totalOffered) },
+                            })
+                        );
+                    } else {
+                        await announce(bondsMessage(sheet));
+                    }
                     deskAnnouncedDate = etDate();
                 }
 
@@ -920,13 +982,16 @@ async function main(): Promise<void> {
 
             // ── advance cross-poll memory ──────────────────────────────────────────
             if (!initialized) {
-                // Restart seed: if the desk is already live with a fresh sheet
-                // for today, treat it as already-announced — a mid-session
-                // restart must not re-tweet the same desk.
+                // Restart seed: treat the desk as already-announced ONLY if it
+                // is live AND currently passing the discount gate — a mid-
+                // session restart must not re-tweet, but a desk sitting below
+                // the 1% bar must stay eligible for the delayed announcement
+                // once the decay or a price move carries it through.
                 if (
                     (state === 1 || state === 2) &&
                     offerDay === marketDay &&
-                    !offerListEmpty(offerList)
+                    !offerListEmpty(offerList) &&
+                    deskDiscount >= 100
                 ) {
                     deskAnnouncedDate = etDate();
                 }

@@ -60,7 +60,7 @@ type RecordRow = {
 type Ledger = { version: number; rows: RecordRow[] };
 type ArchiveManifest = {
     version: number;
-    archives: { year: number; days: number; pdf: string }[];
+    archives: { firstDay: number; lastDay: number; days: number; pdf: string }[];
 };
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -221,9 +221,9 @@ function RecordRowTr({ row, prev }: { row: RecordRow; prev: RecordRow | null }) 
     );
 }
 
-/* /records renders the newest LATEST_DAYS days; the recorder caps the live
- * ledger at the same size and archives everything older into per-year PDFs
- * (listed below the table). */
+/* /records renders the newest LATEST_DAYS trading days; the recorder caps the
+ * live ledger at the same size and archives everything older into
+ * 60-trading-day PDF blocks (listed below the table). */
 const LATEST_DAYS = 100;
 
 function stateLabel(state: number): string {
@@ -240,28 +240,36 @@ export default function Records() {
 
     useEffect(() => {
         let cancelled = false;
-        fetch(`${import.meta.env.BASE_URL}records.json`)
-            .then((r) => {
-                if (!r.ok) throw new Error(`records.json HTTP ${r.status}`);
-                return r.json() as Promise<Ledger>;
-            })
-            .then((j) => {
-                if (!cancelled) setLedger(j);
-            })
-            .catch((e: Error) => {
-                if (!cancelled) setLoadError(e.message);
-            });
-        // Optional — only present once days have rolled off into the archive.
-        fetch(`${import.meta.env.BASE_URL}records/archives.json`)
-            .then((r) => (r.ok ? (r.json() as Promise<ArchiveManifest>) : null))
-            .then((j) => {
-                if (!cancelled) setArchives(j);
-            })
-            .catch(() => {
-                /* no archives yet — section stays hidden */
-            });
+        const load = () => {
+            fetch(`${import.meta.env.BASE_URL}records.json`)
+                .then((r) => {
+                    if (!r.ok) throw new Error(`records.json HTTP ${r.status}`);
+                    return r.json() as Promise<Ledger>;
+                })
+                .then((j) => {
+                    if (!cancelled) setLedger(j);
+                })
+                .catch((e: Error) => {
+                    if (!cancelled) setLoadError(e.message);
+                });
+            // Optional — only present once days have rolled off into the archive.
+            fetch(`${import.meta.env.BASE_URL}records/archives.json`)
+                .then((r) => (r.ok ? (r.json() as Promise<ArchiveManifest>) : null))
+                .then((j) => {
+                    if (!cancelled) setArchives(j);
+                })
+                .catch(() => {
+                    /* no archives yet — section stays hidden */
+                });
+        };
+        load();
+        // The keeper writes records.json while it runs (test cycles land a
+        // new row every full cycle) — poll so an open tab sees rows appear
+        // without a manual reload.
+        const id = window.setInterval(load, 20_000);
         return () => {
             cancelled = true;
+            window.clearInterval(id);
         };
     }, []);
 
@@ -307,12 +315,13 @@ export default function Records() {
                 <nav className="records-nav">
                     <Link to="/">AFHO</Link>
                     <Link to="/offer-desk">Offer desk</Link>
+                    <Link to="/litepaper">Litepaper</Link>
                     <Link to="/dash">Dev dash</Link>
                 </nav>
                 <h2 className="records-title">
                     <GlitchText text="Trading Day Metric Ledger" variant="ghost" split="group" step={0.2} />
                 </h2>
-                <p className="records-subtitle">numbers recorded at start of trade day</p>
+                <p className="records-subtitle">one row per trading day — numbers recorded at start of trade day</p>
             </header>
 
             {loadError && <div className="records-card">Could not load the ledger — {loadError}</div>}
@@ -344,17 +353,18 @@ export default function Records() {
                 <section className="records-archives">
                     <h3>Older trading days</h3>
                     <p className="records-archives-note">
-                        The table above shows the last {LATEST_DAYS} trading days. Full-year ledgers:
+                        The table above shows the last {LATEST_DAYS} trading days. Every 60 trading days rolls off
+                        into a PDF:
                     </p>
                     <ul>
                         {archives.archives.map((a) => (
-                            <li key={a.year}>
+                            <li key={a.pdf}>
                                 <a
                                     href={`${import.meta.env.BASE_URL}records/${a.pdf}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                 >
-                                    {a.year} archive — {a.days} days (PDF)
+                                    Trading days #{a.firstDay}–#{a.lastDay} — {a.days} days (PDF)
                                 </a>
                             </li>
                         ))}

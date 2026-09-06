@@ -9,19 +9,22 @@ import { renderLinesPdf } from "./pdf";
 // DAILY RECORDS LEDGER — DEVNET OPS TOOL
 // =============================================================================
 // Snapshots the day-start on-chain state (one row per trading day) for the
-// /records page (Trading Day Metric Ledger). Fired by the keeper on any →0
+// /records page (Trading Day Metric Ledger). Fired by the keeper on a
+// day-start transition (1→0 or 2→0)
 // market transition and runnable by hand: `anchor run record` (--dry-run to
 // print without writing).
 //
 // Storage model (no database):
-//   app/public/records.json            — the newest LATEST_DAYS days (live
-//                                        ledger the page renders)
-//   app/public/records/archive-<y>.json — raw rows for days older than that,
-//                                        grouped by calendar year
-//   app/public/records/archive-<y>.pdf  — human-readable archive, regenerated
-//                                        whenever the year's archive changes
-//   app/public/records/archives.json    — manifest the page lists as
-//                                        downloadable PDFs
+//   app/public/records.json                 — the newest LATEST_DAYS trading
+//                                             days (live ledger the page renders)
+//   app/public/records/archive-<a>-<b>.json — raw rows for days older than that,
+//                                             grouped into 60-trading-day blocks
+//                                             (a..b = trading-day-index range)
+//   app/public/records/archive-<a>-<b>.pdf  — human-readable archive for the
+//                                             block, regenerated whenever the
+//                                             block changes
+//   app/public/records/archives.json        — manifest the page lists as
+//                                             downloadable PDFs
 //
 // Rows are keyed by trading_day_index and UPSERTED — re-running for a day
 // replaces that day's row (before it has been archived).
@@ -35,6 +38,7 @@ const LEDGER_PATH = path.join(process.cwd(), "app", "public", "records.json");
 const ARCHIVE_DIR = path.join(process.cwd(), "app", "public", "records");
 const DEPLOYMENT_PATH = path.join(process.cwd(), "app", "public", "deployment.json");
 const LATEST_DAYS = 100; // live ledger size; overflow archives to PDF
+const ARCHIVE_BLOCK_DAYS = 60; // trading days per archive block (one PDF per block)
 
 // lot_sizer ladder — programs/amm/src/state/offersState.rs (tiers 0-22,
 // whole AFHO tokens per lot). Offer.lot_size stores the TIER index.
@@ -95,10 +99,10 @@ export type RecordRow = {
 };
 
 type Ledger = { version: number; rows: RecordRow[] };
-type Archive = { version: number; year: number; rows: RecordRow[] };
+type Archive = { version: number; firstDay: number; lastDay: number; rows: RecordRow[] };
 type ArchiveManifest = {
     version: number;
-    archives: { year: number; days: number; pdf: string; updatedAt: number }[];
+    archives: { firstDay: number; lastDay: number; days: number; pdf: string; updatedAt: number }[];
 };
 
 function u64At(data: Uint8Array, offset: number): bigint {
@@ -235,13 +239,23 @@ export async function recordDaySnapshot(connection: Connection): Promise<RecordR
     };
 
     // ── market status (raw layout: state u8 @8, ts i64 @9, day u64 @17) ──
-    let marketState = 99;
-    let dayIndex = 0;
-    const statusInfo = acc(optionalKey(deployment.marketStatus));
-    if (statusInfo && statusInfo.data.length >= 25) {
-        marketState = statusInfo.data[8];
-        dayIndex = Number(u64At(statusInfo.data, 17));
+    // Never fall back to the 99 sentinel silently: a missing read used to
+    // default to state 99 / day 0 and write phantom rows. If the batch read
+    // came back null (RPC pressure), retry the account directly, then fail
+    // with a clear message instead of fabricating a day.
+    const marketStatusKey = optionalKey(deployment.marketStatus);
+    let statusInfo = acc(marketStatusKey);
+    if (!statusInfo && marketStatusKey) {
+        statusInfo = await connection.getAccountInfo(marketStatusKey, "confirmed");
     }
+    if (!statusInfo || statusInfo.data.length < 25) {
+        throw new Error(
+            "market status account missing/unreadable — is deployment.marketStatus current? " +
+                "(refusing to record a phantom state-99 row)",
+        );
+    }
+    const marketState = statusInfo.data[8];
+    const dayIndex = Number(u64At(statusInfo.data, 17));
 
     // ── metrics ──
     const metrics = decodeAmm<Record<string, unknown>>("MarketMetrics", metricsPda);
@@ -355,7 +369,13 @@ export async function recordDaySnapshot(connection: Connection): Promise<RecordR
 function readLedger(): Ledger {
     try {
         const parsed = JSON.parse(fs.readFileSync(LEDGER_PATH, "utf-8")) as Ledger;
-        if (parsed && Array.isArray(parsed.rows)) return { version: 1, rows: parsed.rows };
+        if (parsed && Array.isArray(parsed.rows)) {
+            // Self-heal: a snapshot taken at the crank's fail-closed sentinel
+            // (state 99) is not a trading day — drop it so the page never
+            // renders a phantom "state 99" row.
+            const rows = parsed.rows.filter((r) => r.marketState !== 99);
+            return { version: 1, rows };
+        }
     } catch {
         // missing/corrupt ledger → start fresh
     }
@@ -422,58 +442,116 @@ function rowPdfLines(r: RecordRow): string[] {
     ];
 }
 
-/* Move rows older than the live ledger into per-year archive JSON + PDF and
- * refresh the manifest the /records page lists. */
+/* ── 60-trading-day archive blocks ─────────────────────────────────────── */
+
+/** Trading days 0..59 are block 0, 60..119 block 1, etc. — one archive PDF
+ * per block, matching the /records page's "new PDF every 60 trading days". */
+function blockForDay(dayIndex: number): number {
+    return Math.floor(dayIndex / ARCHIVE_BLOCK_DAYS);
+}
+
+/* Move rows older than the live ledger into 60-trading-day archive blocks
+ * (JSON + PDF) and refresh the manifest the /records page lists. */
 function archiveRows(rows: RecordRow[]): void {
     fs.mkdirSync(ARCHIVE_DIR, { recursive: true });
-    const byYear = new Map<number, RecordRow[]>();
+    const byBlock = new Map<number, RecordRow[]>();
     for (const r of rows) {
-        const year = parseInt(r.date.slice(0, 4), 10);
-        if (!byYear.has(year)) byYear.set(year, []);
-        byYear.get(year)!.push(r);
+        const block = blockForDay(r.dayIndex);
+        if (!byBlock.has(block)) byBlock.set(block, []);
+        byBlock.get(block)!.push(r);
     }
     const manifest = readManifest();
-    for (const [year, yearRows] of byYear) {
-        const jsonPath = path.join(ARCHIVE_DIR, `archive-${year}.json`);
-        let merged: RecordRow[] = yearRows;
-        try {
-            const existing = JSON.parse(fs.readFileSync(jsonPath, "utf-8")) as Archive;
-            const known = new Set((existing.rows ?? []).map((r) => r.dayIndex));
-            merged = [...(existing.rows ?? []), ...yearRows.filter((r) => !known.has(r.dayIndex))];
-        } catch {
-            // new archive file
+    for (const [block, blockRows] of byBlock) {
+        blockRows.sort((a, b) => a.dayIndex - b.dayIndex);
+        // Merge with whatever this block already archived (the block's day
+        // range GROWS as days roll off the live 100 one at a time, so the
+        // existing file may carry an older, narrower range — e.g.
+        // archive-60-74.json once day 75 rolls in).
+        let merged: RecordRow[] = blockRows;
+        for (const f of fs.readdirSync(ARCHIVE_DIR)) {
+            const m = /^archive-(\d+)-(\d+)\.json$/.exec(f);
+            if (!m || blockForDay(Number(m[1])) !== block) continue;
+            try {
+                const existing = JSON.parse(fs.readFileSync(path.join(ARCHIVE_DIR, f), "utf-8")) as Archive;
+                const known = new Set((existing.rows ?? []).map((r) => r.dayIndex));
+                merged = [...(existing.rows ?? []), ...merged.filter((r) => !known.has(r.dayIndex))];
+            } catch {
+                // unreadable stale file — ignore
+            }
         }
         merged.sort((a, b) => a.dayIndex - b.dayIndex);
-        fs.writeFileSync(jsonPath, JSON.stringify({ version: 1, year, rows: merged }, null, 2) + "\n");
+        const firstDay = merged[0].dayIndex;
+        const lastDay = merged[merged.length - 1].dayIndex;
+        const jsonPath = path.join(ARCHIVE_DIR, `archive-${firstDay}-${lastDay}.json`);
+        const pdfName = `archive-${firstDay}-${lastDay}.pdf`;
+        fs.writeFileSync(jsonPath, JSON.stringify({ version: 1, firstDay, lastDay, rows: merged }, null, 2) + "\n");
         fs.writeFileSync(
-            path.join(ARCHIVE_DIR, `archive-${year}.pdf`),
-            renderLinesPdf(`AFHO Trading Day Metric Ledger — ${year} (days #${merged[0].dayIndex}-#${merged[merged.length - 1].dayIndex})`, merged.flatMap(rowPdfLines)),
+            path.join(ARCHIVE_DIR, pdfName),
+            renderLinesPdf(
+                `AFHO Trading Day Metric Ledger — trading days #${firstDay}–#${lastDay} (${merged.length} days)`,
+                merged.flatMap(rowPdfLines),
+            ),
         );
+        // Drop stale files from an older, narrower range of the same block.
+        for (const f of fs.readdirSync(ARCHIVE_DIR)) {
+            const m = /^archive-(\d+)-(\d+)\.(json|pdf)$/.exec(f);
+            if (m && blockForDay(Number(m[1])) === block && f !== path.basename(jsonPath) && f !== pdfName) {
+                fs.rmSync(path.join(ARCHIVE_DIR, f));
+            }
+        }
         const entry = {
-            year,
+            firstDay,
+            lastDay,
             days: merged.length,
-            pdf: `archive-${year}.pdf`,
+            pdf: pdfName,
             updatedAt: Math.floor(Date.now() / 1000),
         };
-        const idx = manifest.archives.findIndex((a) => a.year === year);
+        const idx = manifest.archives.findIndex((a) => blockForDay(a.firstDay) === block);
         if (idx >= 0) manifest.archives[idx] = entry;
         else manifest.archives.push(entry);
-        manifest.archives.sort((a, b) => b.year - a.year);
     }
+    // Prune manifest entries whose PDF no longer exists (range renamed).
+    manifest.archives = manifest.archives.filter((a) => fs.existsSync(path.join(ARCHIVE_DIR, a.pdf)));
+    manifest.archives.sort((a, b) => b.firstDay - a.firstDay);
     fs.writeFileSync(path.join(ARCHIVE_DIR, "archives.json"), JSON.stringify(manifest, null, 2) + "\n");
 }
 
-export function upsertRow(row: RecordRow): void {
+export function upsertRow(row: RecordRow): { row: RecordRow; inserted: boolean } {
     const ledger = readLedger();
+    const inserted = !ledger.rows.some((r) => r.dayIndex === row.dayIndex);
     const rows = ledger.rows.filter((r) => r.dayIndex !== row.dayIndex);
     rows.push(row);
     rows.sort((a, b) => a.dayIndex - b.dayIndex);
     // The newest LATEST_DAYS stay in the live ledger the page renders;
-    // anything older archives into per-year JSON + PDF.
+    // anything older archives into 60-trading-day JSON + PDF blocks.
     const overflow = rows.length > LATEST_DAYS ? rows.slice(0, rows.length - LATEST_DAYS) : [];
     const live = rows.slice(-LATEST_DAYS);
-    fs.writeFileSync(LEDGER_PATH, JSON.stringify({ version: 1, rows: live }, null, 2) + "\n");
+    // Archive FIRST: if the archive write fails, the ledger is untouched and
+    // the next run retries (archives dedupe by dayIndex, so a retry is
+    // idempotent). The old order could lose the overflow rows for good.
     if (overflow.length > 0) archiveRows(overflow);
+    fs.writeFileSync(LEDGER_PATH, JSON.stringify({ version: 1, rows: live }, null, 2) + "\n");
+    return { row, inserted };
+}
+
+/** Refuse snapshots taken at the crank's fail-closed sentinel (state 99) —
+ * that is not a trading day, and recording it would leave a phantom row on
+ * /records. Callers decide how to surface the message. */
+export function ensureRecordable(row: RecordRow): void {
+    if (row.marketState === 99) {
+        throw new Error(
+            `market status is the init sentinel (99) — not a trading day, nothing recorded. ` +
+                `Drive a real state first (anchor run set-oracle -- <state>) or cycle the keeper test state.`,
+        );
+    }
+}
+
+/** Snapshot + guard + upsert in one step. Throws (with a clear message) when
+ * the market status is still at the init sentinel. */
+export async function recordDay(connection: Connection): Promise<{ row: RecordRow; inserted: boolean }> {
+    const row = await recordDaySnapshot(connection);
+    ensureRecordable(row);
+    return upsertRow(row);
 }
 
 async function main() {
@@ -484,8 +562,12 @@ async function main() {
         console.log(JSON.stringify(row, null, 2));
         return;
     }
-    upsertRow(row);
-    console.log(` records: day ${row.dayIndex} (${row.date}) written to app/public/records.json`);
+    ensureRecordable(row);
+    const { inserted } = upsertRow(row);
+    console.log(
+        ` records: ${inserted ? "NEW trading day" : "updated existing day"} #${row.dayIndex} ` +
+            `(${row.date}, state ${row.marketState}) -> app/public/records.json`,
+    );
 }
 
 if (require.main === module) {

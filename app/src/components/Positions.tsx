@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { usePositions } from '../hooks/stake/usePositions';
 import { usePositionRewards } from '../hooks/stake/usePositionRewards';
 import { useClaimAll } from '../hooks/stake/useClaimAll';
@@ -57,16 +58,34 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
     };
 
     const handleExitAll = async () => {
+        setExitingAll(true);
         for (const pos of positions) {
             try {
                 await unstake(pos);
             } catch (e) {
                 alert('Failed to exit a position: ' + (e as Error).message);
-                break;
+                setExitingAll(false);
+                setConfirmingExitAll(false);
+                refreshPositions();
+                return;
             }
         }
+        setExitingAll(false);
+        setConfirmingExitAll(false);
         refreshPositions();
     };
+
+    // ── Exit-all confirmation ──
+    // Exiting wipes the stacked multiplier bonuses (the weighted-stake climb
+    // that boosts reward accrual) — re-staking restarts the climb from 1x.
+    // The modal makes that cost explicit before any transaction is signed.
+    const [confirmingExitAll, setConfirmingExitAll] = useState(false);
+    const [exitingAll, setExitingAll] = useState(false);
+    const maxMultiplier = enriched.reduce((max, pos) => {
+        const m = 'multiplierDisplay' in pos ? parseFloat(pos.multiplierDisplay) : NaN;
+        return Number.isFinite(m) && m > max ? m : max;
+    }, 0);
+    const maxMultiplierLabel = maxMultiplier > 1 ? maxMultiplier.toFixed(maxMultiplier % 1 === 0 ? 0 : 2) : null;
 
     if (positionsLoading && !positions.length) return <div>Loading positions…</div>;
     if (positions.length === 0) return <div className="no-positions">No active stakes.</div>;
@@ -120,7 +139,7 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
                 </button>
                 <button
                     className="exit-all-button"
-                    onClick={handleExitAll}
+                    onClick={() => setConfirmingExitAll(true)}
                     disabled={positions.length === 0}
                 >
                     Exit All Positions
@@ -201,6 +220,44 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
                     );
                 })}
             </div>
+
+            {confirmingExitAll && (
+                <div className="modal-overlay" onClick={() => !exitingAll && setConfirmingExitAll(false)}>
+                    <div
+                        className="exit-all-confirm glass-pane neon-glitch"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <h3 className="text-glitch-light">Exit all positions?</h3>
+                        <p>
+                            Exiting {positions.length} position{positions.length !== 1 ? 's' : ''} forfeits
+                            your <strong>stacked multiplier bonuses</strong>
+                            {maxMultiplierLabel ? ` (currently up to ${maxMultiplierLabel}x)` : ''} —
+                            re-staking restarts every multiplier climb from 1x.
+                        </p>
+                        <p>
+                            Exit penalties apply on the way out
+                            ({exitPenaltyPct}% of principal in the current session), and rewards
+                            still vesting stay locked until their vesting ends.
+                        </p>
+                        <div className="exit-all-confirm-actions">
+                            <button
+                                className="exit-all-cancel"
+                                onClick={() => setConfirmingExitAll(false)}
+                                disabled={exitingAll}
+                            >
+                                Keep staking
+                            </button>
+                            <button
+                                className="exit-all-confirm-button"
+                                onClick={handleExitAll}
+                                disabled={exitingAll}
+                            >
+                                {exitingAll ? 'Exiting…' : 'Confirm — exit everything'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

@@ -617,23 +617,25 @@
    blue = late-nite bonus is the live discount; blue↔green pulse = full
    discount + bonus stacked; muted = the buyback floor ate part of the
    discount (ratchet active, no bonus). */
-.offer-price--full {
+/* Scoped to .offer-facts to out-rank the `.offer-facts dd` color rule —
+   these were silently overridden before the scoping. */
+.offer-facts .offer-price--full {
     color: var(--neon-green);
-    text-shadow: 0 0 10px rgba(60, 200, 120, 0.25);
+    text-shadow: 0 0 8px rgba(60, 220, 130, 0.55), 0 0 18px rgba(60, 220, 130, 0.3);
 }
 
-.offer-price--full-bonus {
+.offer-facts .offer-price--full-bonus {
     color: var(--neon-green);
-    text-shadow: 0 0 10px currentColor;
+    text-shadow: 0 0 8px currentColor, 0 0 18px currentColor;
     animation: priceDiscountTide 4.8s ease-in-out infinite;
 }
 
-.offer-price--bonus-only {
+.offer-facts .offer-price--bonus-only {
     color: var(--neon-blue);
-    text-shadow: 0 0 10px rgba(80, 160, 255, 0.25);
+    text-shadow: 0 0 8px rgba(80, 170, 255, 0.55), 0 0 18px rgba(80, 170, 255, 0.3);
 }
 
-.offer-price--reduced {
+.offer-facts .offer-price--reduced {
     color: var(--text-muted);
 }
 

@@ -23,6 +23,7 @@ export function useTokenBalance(
     mint: PublicKey | null,
     owner: PublicKey | null,
     decimals = 9,
+    offCurve = false,
 ): { balance: number | null; rawBalance: bigint | null; refresh: () => Promise<void> } {
     const { connection } = useConnection();
     const [balance, setBalance] = useState<number | null>(null);
@@ -44,13 +45,13 @@ export function useTokenBalance(
             return;
         }
         try {
-            const ata = getAssociatedTokenAddressSync(mint, owner, false, TOKEN_2022_PROGRAM_ID);
+            const ata = getAssociatedTokenAddressSync(mint, owner, offCurve, TOKEN_2022_PROGRAM_ID);
             const info = await connection.getAccountInfo(ata, 'confirmed');
             applyAmount(info);
         } catch {
             applyAmount(null);
         }
-    }, [connection, mint, owner, applyAmount]);
+    }, [connection, mint, owner, offCurve, applyAmount]);
 
     useEffect(() => {
         if (!connection || !mint || !owner) {
@@ -61,7 +62,7 @@ export function useTokenBalance(
             return;
         }
 
-        const ata = getAssociatedTokenAddressSync(mint, owner, false, TOKEN_2022_PROGRAM_ID);
+        const ata = getAssociatedTokenAddressSync(mint, owner, offCurve, TOKEN_2022_PROGRAM_ID);
         let cancelled = false;
 
         void Promise.resolve().then(async () => {
@@ -87,7 +88,7 @@ export function useTokenBalance(
             cancelled = true;
             void connection.removeAccountChangeListener(subscriptionId);
         };
-    }, [connection, mint, owner, applyAmount]);
+    }, [connection, mint, owner, offCurve, applyAmount]);
 
     return { balance, rawBalance, refresh };
 }

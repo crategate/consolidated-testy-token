@@ -11,6 +11,7 @@ import './index.css';
 import App from './App';
 import Dash from './pages/Dash';
 import Records from './pages/Records';
+import Litepaper from './pages/Litepaper';
 import AmmPage from './pages/AmmPage';
 import { HomePageIndicator } from './components/amm/HomePageIndicator';
 import { ChainDataProvider } from './context/ChainDataProvider';
@@ -61,6 +62,7 @@ createRoot(document.getElementById('root')!).render(
                                         <Route path="/" element={<App />} />
                                         <Route path="/dash" element={<Dash />} />
                                         <Route path="/records" element={<Records />} />
+                                        <Route path="/litepaper" element={<Litepaper />} />
                                         <Route path="/offer-desk" element={<AmmPage />} />
                                     </Route>
                                 </Routes>

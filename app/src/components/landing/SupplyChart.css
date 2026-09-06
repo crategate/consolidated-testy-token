@@ -1,0 +1,123 @@
+/* ═══════════════════════════════════════════════════════════════════
+   SupplyStakeChart — two lines (available supply, locked/staked supply),
+   each with a shaded region filling to the baseline. Geometry only;
+   glass material comes from glass.css, the backlit shadow from
+   fx-shadow.css.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.supply-chart {
+    border: 1px solid var(--glass-border);
+    border-radius: 10px;
+    padding: 1.25rem 1.25rem 1rem;
+    text-align: left;
+}
+
+.supply-chart.loading {
+    color: var(--text-muted);
+    text-align: center;
+    padding: 2.5rem 1rem;
+}
+
+.supply-chart-head {
+    margin-bottom: 0.75rem;
+}
+
+.supply-chart-title {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: var(--text-primary);
+}
+
+.supply-chart-sub {
+    margin: 0.2rem 0 0;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    letter-spacing: 0.04em;
+}
+
+.supply-chart-svg {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+.supply-chart-gridline {
+    stroke: var(--border-subtle);
+    stroke-width: 1;
+}
+
+.supply-chart-ytick,
+.supply-chart-xtick {
+    fill: var(--text-muted);
+    font-size: 10px;
+    font-family: var(--font-mono);
+}
+
+/* Region under the available line — bottom layer, light. */
+.supply-chart-area-available {
+    fill: rgba(0, 240, 255, 0.07); /* --neon-blue tint */
+    stroke: none;
+}
+
+/* Region under the locked line — drawn over the blue, a step stronger. */
+.supply-chart-area-locked {
+    fill: rgba(5, 255, 161, 0.18); /* --neon-green tint */
+    stroke: none;
+}
+
+/* Available supply line. */
+.supply-chart-line {
+    fill: none;
+    stroke: var(--neon-blue);
+    stroke-width: 1.6;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    filter: drop-shadow(0 0 4px rgba(0, 240, 255, 0.55));
+}
+
+/* Locked (staked) supply line. */
+.supply-chart-line-locked {
+    fill: none;
+    stroke: var(--neon-green);
+    stroke-width: 1.6;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    filter: drop-shadow(0 0 4px rgba(5, 255, 161, 0.55));
+}
+
+.supply-chart-legend {
+    display: flex;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+    margin-top: 0.6rem;
+}
+
+.supply-chart-key {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    letter-spacing: 0.03em;
+}
+
+.supply-chart-swatch {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+}
+
+.swatch-available {
+    background: rgba(0, 240, 255, 0.2);
+    border: 1px solid rgba(0, 240, 255, 0.5);
+}
+
+.swatch-staked {
+    background: rgba(5, 255, 161, 0.35);
+    border: 1px solid rgba(5, 255, 161, 0.7);
+}

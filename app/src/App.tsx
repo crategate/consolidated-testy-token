@@ -3,6 +3,7 @@ import { useRef } from 'react';
 import { useDeployment } from './hooks/useDeployment';
 import { useMarketStatus } from './hooks/useMarketStatus';
 import { useGlitchBurst } from './hooks/useGlitchBurst';
+import { SiteNav } from './components/SiteNav';
 import LandingPage from './pages/LandingPage';
 
 function App() {
@@ -27,6 +28,7 @@ function App() {
             data-connected={connected}
             data-market-state={marketData?.state ?? 99}
         >
+            <SiteNav />
             <LandingPage deployment={deployment} />
         </div>
     );

@@ -1,3 +1,34 @@
+// ─────────────────────────────────────────────────────────────────────
+// mev-keeper-mainnet — PRODUCTION keeper (mainnet).
+//
+// Production-only copy of scripts/oracle/mev-keeper.ts: no --test-state,
+// no test_set_state / test_collect_bounty, no devnet genesis gate, no
+// TEST_* env/argv knobs. Cranks the real Switchboard managed quote and
+// fires the same transition sequences (update_tradeday_stats →
+// make_offers, calc_completed_offers, dex_buyback, buy_the_dip,
+// bounty_top_up) and the records snapshot.
+//
+// MAINNET CONFIG CHECKLIST (everything this file assumes):
+//   1. ANCHOR_PROVIDER_URL = mainnet RPC (helius/quicknode/etc — not the
+//      public api.mainnet-beta.solana.com for a crank loop) and
+//      ANCHOR_WALLET = the keeper keypair (rotate off authority via
+//      set_keeper; the keeper does NOT need authority).
+//   2. deployment.json points at the MAINNET deployment (program IDs,
+//      mint, Switchboard queue/feed, marketStatusFeedId, oracleQuoteAccount).
+//   3. AmmState pool pins: cpmm_pool_state = the AFHO/USDC pool created by
+//      mint-launch, cpmm_sol_usdc_pool = the deep canonical wSOL/USDC pool
+//      (creator fee OFF) — set via set-cpmm-pool / set-sol-usdc-pool with
+//      DEVNET_SOL_USDC_POOL/_CONFIG pointing at it. Bounty pricing and
+//      SOL claims read these pins from bounty_config/amm_state, so nothing
+//      is hardcoded here.
+//   4. Env: MASSIVE_API_KEY + EARNINGSAPI_KEY (Switchboard variableOverrides
+//      for the managed quote). BOUNTY_RECYCLE=0 to disable bounty recycling
+//      (ON by default — see the note below). Optional VITE-style RPC url is
+//      NOT used here; the provider URL above is the single endpoint.
+//   5. Solana price sanity: the bounty is USD-denominated but converts at
+//      the pinned pool's price, so keep an eye on the logged sol_price
+//      until the canonical pool proves anchored.
+// ─────────────────────────────────────────────────────────────────────
 import * as anchor from "@coral-xyz/anchor";
 import { BN } from "@coral-xyz/anchor";  // Anchor re-exports BN
 import * as sb from "@switchboard-xyz/on-demand";
@@ -204,82 +235,22 @@ async function main() {
         return new DataView(a.data.buffer, a.data.byteOffset, a.data.byteLength).getBigUint64(64, true);
     }
 
+    // Bounty recycling: immediately re-fund the bounty vault with whatever
+    // the crank just paid out. While this keeper is the only earner the
+    // operator is effectively paying themselves (the keeper nets ~0 minus
+    // the recycle tx fee), and the vault stays above the 0.2 SOL
+    // bounty_top_up threshold so AFHO-funded top-ups never fire. Set
+    // BOUNTY_RECYCLE=0 once third-party keepers win transitions — their
+    // collections then drain the vault and top-ups resume as designed.
+    const RECYCLE = process.env.BOUNTY_RECYCLE ?? "1";
+    const recycleBounty = RECYCLE === "1";
+
     console.log(" Keeper started");
     console.log("Program ID:", programId.toBase58());
     console.log("Market Status:", marketStatusPda.toBase58());
     console.log("Bounty Config:", bountyConfigPda.toBase58());
     console.log("Bounty Vault:", bountyVaultPda.toBase58());
-
-    // ── TEST-STATE MODE (devnet/localnet only) ─────────────────────────────
-    // `--test-state` drives the market-status PDA through a scripted state
-    // cycle via crank test_set_state INSTEAD of cranking the real Switchboard
-    // feed, then runs the exact same transition sequences (end-of-day stats +
-    // make_offers, start-of-day calc_completed_offers, dex_buyback slices,
-    // buy_the_dip, bounty_top_up) as the real keeper loop. For exercising the
-    // offer desk without waiting for NYSE hours.
-    //   --test-day <n>          start trading-day index (default: on-chain)
-    //   --test-interval-ms <n>  ms per scripted state (default: 15000)
-    //   TEST_STATE_SEQUENCE     env override, e.g. "0,1,2,1,0" (default cycle:
-    //                           close → closed → extended hours → open, so the
-    //                           trading day rolls on the realistic 1→0 open —
-    //                           the crank also counts 2→0 opens, but real days
-    //                           nearly always pass through extended hours)
-    // DEVNET/TEST ONLY — remove before mainnet together with crank
-    // test_set_state and scripts/oracle/set-oracle-state.ts.
-    const DEVNET_GENESIS_HASH = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
-    const TEST_STATE = process.argv.includes("--test-state");
-    const testStateIdx = process.argv.indexOf("--test-state");
-    const TEST_STATE_MODE: "cycle" | "watch" =
-        TEST_STATE && process.argv[testStateIdx + 1] === "watch" ? "watch" : "cycle";
-    let lastSeenState: number | null = null;
-    let lastSeenDay: number | null = null; // trading_day_index at the previous poll
-    const testDayArg = process.argv.indexOf("--test-day");
-    const TEST_DAY = testDayArg !== -1 ? parseInt(process.argv[testDayArg + 1], 10) : null;
-    const testIntervalArg = process.argv.indexOf("--test-interval-ms");
-    const TEST_INTERVAL_MS =
-        testIntervalArg !== -1 ? parseInt(process.argv[testIntervalArg + 1], 10) : 15_000;
-    const TEST_SEQUENCE = (process.env.TEST_STATE_SEQUENCE ?? "0,1,2,1,0")
-        .split(",")
-        .map((s) => parseInt(s.trim(), 10));
-    let testCursor = 0;
-    let testDay: number | null = TEST_DAY;
-
-    // Bounty recycling: immediately re-fund the bounty vault with whatever
-    // the crank just paid out, so the vault stays above the 0.2 SOL
-    // bounty_top_up threshold while this keeper is the only earner (the
-    // operator is effectively paying themselves; the keeper nets ~0 minus
-    // the recycle tx fee). Default ON in production, OFF under --test-state
-    // (the test harness drains the vault on purpose so the bounty_top_up
-    // refill loop runs for real). BOUNTY_RECYCLE=0/1 overrides either way.
-    const RECYCLE = process.env.BOUNTY_RECYCLE ?? (TEST_STATE ? "0" : "1");
-    const recycleBounty = RECYCLE === "1";
-
-    if (TEST_STATE) {
-        const endpoint = connection.rpcEndpoint;
-        const genesisHash = await connection.getGenesisHash();
-        const host = (() => {
-            try {
-                return new URL(endpoint).hostname;
-            } catch {
-                return "";
-            }
-        })();
-        const isLocalnet = ["localhost", "127.0.0.1", "::1", "[::1]"].includes(host);
-        if (!isLocalnet && genesisHash !== DEVNET_GENESIS_HASH) {
-            throw new Error(
-                `REFUSING: --test-state is a DEVNET/LOCALNET test mode ` +
-                    `(endpoint ${endpoint}, genesis ${genesisHash.slice(0, 8)}…). ` +
-                    `Run the real keeper without --test-state.`
-            );
-        }
-        console.log(
-            TEST_STATE_MODE === "watch"
-                ? ` TEST WATCH MODE: idle + react to external state changes, polling every ${TEST_INTERVAL_MS}ms. ` +
-                      `Drive transitions with \`anchor run set-oracle -- <state> [day]\` ` +
-                      `(0=open 1=after-hours 2=closed 3=halted). Pause = don't change the state.`
-                : ` TEST-STATE MODE: cycle ${TEST_SEQUENCE.join(" → ")} every ${TEST_INTERVAL_MS}ms`
-        );
-    }
+    if (recycleBounty) console.log("Bounty recycling: ON (BOUNTY_RECYCLE=0 to disable)");
 
     function getSleepDuration(): number {
         const now = new Date();
@@ -298,23 +269,19 @@ async function main() {
     }
 
     while (true) {
-        const sleepMs = TEST_STATE ? TEST_INTERVAL_MS : getSleepDuration();
+        const sleepMs = getSleepDuration();
         try {
             const marketStatus = await program.account.marketStatus.fetch(marketStatusPda);
             const bountyConfig = await program.account.bountyConfig.fetch(bountyConfigPda);
             await logSlotTimeOnce(connection);
             let prevState: number = marketStatus.currentState as number;
             let newStatus: any = null;
-            let dayRolled = false; // day index advanced since the previous poll
-            let quoteAccountInfo: any = null;
-            if (!TEST_STATE) {
-                quoteAccountInfo = await connection.getAccountInfo(quoteAccount);
+            const quoteAccountInfo = await connection.getAccountInfo(quoteAccount);
 
-                if (!quoteAccountInfo) {
-                    console.log("Quote account not found, sleeping...");
-                    await sleep(sleepMs);
-                    continue;
-                }
+            if (!quoteAccountInfo) {
+                console.log("Quote account not found, sleeping...");
+                await sleep(sleepMs);
+                continue;
             }
 
             // Switchboard quote layout: discriminator(8) + queue(32) + slot(8) ...
@@ -322,77 +289,7 @@ async function main() {
                 ? new BN(quoteAccountInfo.data.readBigUInt64LE(40).toString())
                 : new BN(0);
 
-            if (TEST_STATE || quoteSlot.gt(bountyConfig.lastCrankSlot)) {
-                if (TEST_STATE && TEST_STATE_MODE === "watch") {
-                    // Watch mode: the keeper never writes the market status.
-                    // The loop-start fetch IS the (possibly new) on-chain
-                    // state; compare with the previous loop and react to any
-                    // change exactly like the real keeper reacts to the feed.
-                    // The trading_day_index is ALSO watched: state changes
-                    // can be driven faster than the poll interval, so a
-                    // collapsed 2→1→0 cycle may present as 0→0 — the day
-                    // index roll is the canonical proof a new trading day
-                    // started and must not be missed.
-                    const dayChanged =
-                        lastSeenDay !== null &&
-                        marketStatus.tradingDayIndex.toNumber() !== lastSeenDay;
-                    if (
-                        lastSeenState !== null &&
-                        (marketStatus.currentState !== lastSeenState || dayChanged)
-                    ) {
-                        prevState = lastSeenState;
-                        newStatus = marketStatus;
-                        dayRolled = dayChanged;
-                        console.log(
-                            ` watch: ${lastSeenState} -> ${marketStatus.currentState} (day ${marketStatus.tradingDayIndex})` +
-                                (dayRolled ? " [day rolled]" : "")
-                        );
-                    } else if (lastSeenState === null) {
-                        console.log(
-                            ` watch: first observation (state ${marketStatus.currentState}, day ${marketStatus.tradingDayIndex}) — transition handlers fire from the next state change`
-                        );
-                    }
-                    lastSeenState = marketStatus.currentState as number;
-                    lastSeenDay = marketStatus.tradingDayIndex.toNumber();
-                } else if (TEST_STATE) {
-                    // Scripted fake crank: advance the test cycle via crank
-                    // test_set_state (devnet-only) instead of the Switchboard
-                    // managed update. The transition handlers below (end of
-                    // day / start of day) run identically to the real path.
-                    if (testDay === null) testDay = marketStatus.tradingDayIndex.toNumber();
-                    const state = TEST_SEQUENCE[testCursor % TEST_SEQUENCE.length];
-                    testCursor++;
-                    if (
-                        state === 0 &&
-                        (marketStatus.currentState === 1 || marketStatus.currentState === 2)
-                    ) {
-                        testDay++; // mirror the crank: 1/2 → 0 rolls the day forward
-                    }
-                    const ts = Math.floor(Date.now() / 1000);
-                    const setTx = await sb.asV0Tx({
-                        connection,
-                        ixs: [
-                            await program.methods
-                                .testSetState(state, new BN(testDay), new BN(ts))
-                                .accounts({ marketStatus: marketStatusPda })
-                                .instruction(),
-                        ],
-                        signers: [keypair],
-                        computeUnitPrice: 20_000,
-                    });
-                    const setSim = await connection.simulateTransaction(setTx);
-                    if (setSim.value.err) {
-                        console.error("test_set_state simulation failed:", setSim.value.err);
-                        await sleep(sleepMs);
-                        continue;
-                    }
-                    const setSig = await connection.sendTransaction(setTx);
-                    await connection.confirmTransaction(setSig, "confirmed");
-                    console.log(
-                        ` TEST crank ${marketStatus.currentState} -> ${state} (day ${testDay}) [${setSig}]`
-                    );
-                    newStatus = await program.account.marketStatus.fetch(marketStatusPda);
-                } else {
+            if (quoteSlot.gt(bountyConfig.lastCrankSlot)) {
                 // Real Switchboard crank (production path): push a fresh
                 // managed quote + permissionless_crank in one transaction.
                 const overrides = {
@@ -471,75 +368,7 @@ async function main() {
                 // Trading day ends on 0→1 (open→after-hours), 0→2 (open→closed, holiday),
                 // or 3→2 (halted→closed). Fire update_tradeday_stats FIRST (it owns all
                 // end-of-day metric writes), then make_offers (read-only + posts sheet).
-                if (newStatus === null) {
-                    // watch mode, no state change this loop — skip the transition
-                    // handlers; the always-on loops below still run.
-                } else {
-                // Test-mode crank fee: production pays the transition bounty
-                // to whoever lands the state change (permissionless_crank);
-                // test_set_state can't, so in --test-state modes the keeper
-                // collects the same bounty via the devnet-only
-                // test_collect_bounty on each transition it detects/drives.
-                // This drains the bounty vault "like testnet" so the
-                // bounty_top_up refill loop runs for real.
-                if (TEST_STATE) {
-                    try {
-                        const feeVaults = solUsdcCrankVaults(bountyConfig) ?? {
-                            solUsdcWsolVault: null,
-                            solUsdcUsdcVault: null,
-                        };
-                        const feeIx = await program.methods
-                            .testCollectBounty()
-                            .accountsStrict({
-                                cranker: keypair.publicKey,
-                                bountyConfig: bountyConfigPda,
-                                bountyVault: bountyVaultPda,
-                                ...feeVaults,
-                            })
-                            .instruction();
-                        const feeTx = await sb.asV0Tx({
-                            connection,
-                            ixs: [feeIx],
-                            signers: [keypair],
-                            computeUnitPrice: 20_000,
-                        });
-                        const feeSim = await connection.simulateTransaction(feeTx);
-                        if (feeSim.value.err) {
-                            console.log(" test_collect_bounty skipped:", JSON.stringify(feeSim.value.err));
-                            console.log("  last logs:", feeSim.value.logs?.slice(-4) ?? []);
-                        } else {
-                            const feeBalBefore = BigInt(await connection.getBalance(bountyVaultPda));
-                            const feeSig = await connection.sendTransaction(feeTx);
-                            await connection.confirmTransaction(feeSig, "confirmed");
-                            const feeBalAfter = BigInt(await connection.getBalance(bountyVaultPda));
-                            console.log(
-                                ` test crank fee collected: bounty vault ${fmtSolL(feeBalBefore)} → ${fmtSolL(feeBalAfter)} — ${feeSig}`
-                            );
-                            if (recycleBounty) {
-                                const paid = feeBalAfter - feeBalBefore;
-                                if (paid > 0n) {
-                                    const recycleTx = await sb.asV0Tx({
-                                        connection,
-                                        ixs: [
-                                            anchor.web3.SystemProgram.transfer({
-                                                fromPubkey: keypair.publicKey,
-                                                toPubkey: bountyVaultPda,
-                                                lamports: Number(paid),
-                                            }),
-                                        ],
-                                        signers: [keypair],
-                                        computeUnitPrice: 20_000,
-                                    });
-                                    const recycleSig = await connection.sendTransaction(recycleTx);
-                                    await connection.confirmTransaction(recycleSig, "confirmed");
-                                    console.log(` bounty recycled: ${fmtSolL(paid)} back into the bounty vault — ${recycleSig}`);
-                                }
-                            }
-                        }
-                    } catch (e) {
-                        console.error("!! test_collect_bounty failed:", (e as Error).message);
-                    }
-                }
+                if (newStatus !== null) {
                 const dayEnded =
                     (prevState === 0 && (newStatus.currentState === 1 || newStatus.currentState === 2)) ||
                     (prevState === 3 && newStatus.currentState === 2);
@@ -618,15 +447,11 @@ async function main() {
                 // canonical pair the crank increments trading_day_index on.
                 // Never any other →0 (3→0 is a halt lift, not a new day; the
                 // normal path is 2→1→0, so a watcher must not require a
-                // direct 2→0). Watch mode ALSO accepts a day-index roll with
-                // the state at 0: transitions driven faster than the poll
-                // interval can collapse to 0→0, and the rollover is the
-                // canonical proof the day started.
+                // direct 2→0).
                 const dayStarted =
-                    newStatus.currentState === 0 &&
-                    ((prevState === 1 || prevState === 2) || dayRolled);
+                    (prevState === 1 || prevState === 2) && newStatus.currentState === 0;
                 if (dayStarted) {
-                    console.log(` Day started (${prevState} → 0${dayRolled ? ", day rolled" : ""}). Firing calc_completed_offers...`);
+                    console.log(` Day started (${prevState} → 0). Firing calc_completed_offers...`);
                     try {
                         // Live price for ratchet decay: the pinned CPMM pool
                         // (TWAP / vault-ratio) — the only price source.
@@ -734,7 +559,6 @@ async function main() {
                     } catch (e) {
                         console.error("!! records snapshot failed:", (e as Error).message);
                     }
-                }
                 }
             } else {
                 console.log("No fresh quote, nothing to do.");

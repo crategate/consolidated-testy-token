@@ -1,5 +1,9 @@
 import { usePoolStats } from '../hooks/usePoolStats';
+import { useTokenBalance } from '../hooks/useTokenBalance';
+import { useChainData } from '../context/useChainData';
+import { AMM_PROGRAM_ID, deriveAmmStatePda } from '../context/chainDataHelpers';
 import { PublicKey } from '@solana/web3.js';
+import { useMemo } from 'react';
 
 /* Stat tiles: one or two directions each, with two of them wandering
    between corners on their own slow clocks */
@@ -11,6 +15,16 @@ interface PoolStatsProps {
 
 export function PoolStats({ mint }: PoolStatsProps) {
     const { stats, loading } = usePoolStats(mint);
+    // Bond desk vault: the AMM's AFHO vault (ATA of the amm_state PDA) — the
+    // token stock the offer desk sells from and dex buybacks feed into. Live
+    // via an onAccountChange subscription, so buyback fills tick it up.
+    const { deployment } = useChainData();
+    const ammProgram = useMemo(
+        () => (deployment?.ammProgram ? new PublicKey(deployment.ammProgram) : AMM_PROGRAM_ID),
+        [deployment?.ammProgram],
+    );
+    const ammStatePda = useMemo(() => deriveAmmStatePda(mint, ammProgram), [mint, ammProgram]);
+    const { balance: vaultBalance } = useTokenBalance(mint, ammStatePda, 9, true);
 
     if (loading || !stats) {
         return <div className="pool-stats loading">Loading on-chain stats…</div>;
@@ -23,10 +37,10 @@ export function PoolStats({ mint }: PoolStatsProps) {
     const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 
     const STAT_ITEMS = [
-        { label: 'Total Staked', value: fmt(stats.totalStaked) },
+        { label: 'Total Staked', value: fmt(Math.trunc(stats.totalStaked)) },
         { label: 'Staked / Supply', value: `${pctStaked}%` },
         { label: 'Stakers', value: stats.userCount.toString() },
-        { label: 'AFHO in Vault', value: fmt(stats.vaultBalance) },
+        { label: 'Bond Desk Vault', value: vaultBalance !== null ? fmt(Math.trunc(vaultBalance)) : '—' },
         { label: 'Total Supply', value: `1B` },
     ];
 
