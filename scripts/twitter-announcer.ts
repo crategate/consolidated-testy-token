@@ -732,7 +732,7 @@ async function main(): Promise<void> {
     console.log("  dry run:", DRY_RUN);
     console.log("  poll interval (ms):", POLL_INTERVAL_MS);
 
-    // ── cross-poll event memory ────────────────────────────────────────────────
+    // ── cross-poll event memory ────────────────────────────────────────────
     let initialized = false;
     let prevState = -1;
     let prevOfferDayIndex = -1;
@@ -742,6 +742,19 @@ async function main(): Promise<void> {
     // Snapshot of the AFHO bond vault at the start of today's buyback window.
     let buybackSnapshot: { day: number; afhoRaw: number } | null = null;
     let lastReportedBuybackDay = -1;
+    // Desk-open latch: one desk announcement per CALENDAR day (ET — the
+    // night session spans midnight UTC, so UTC days would split it). The
+    // sheet post and the 1→2 flash sale share the latch: whichever fires
+    // first announces the desk; later opens/closes the same calendar day
+    // stay silent (price-flap reopenings are noise, not events).
+    let deskAnnouncedDate: string | null = null;
+    const etDate = (): string =>
+        new Intl.DateTimeFormat("en-CA", {
+            timeZone: "America/New_York",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+        }).format(new Date());
 
     while (true) {
         try {
@@ -794,18 +807,21 @@ async function main(): Promise<void> {
             }
 
             if (initialized) {
-                // ── 1/5: market-state change (Monday open gets the richer message) ──
+                // ── 1/5: market-state change ────────────────────────────
                 if (state !== prevState) {
                     const feeLabel = unstakeFeeLabel(stakingPool, state);
                     // AFTER-HOURS → CLOSED with bonds left: closed-session flash
                     // sale replaces the plain status post (the sale message
                     // already says the market is closed). Gated on REMAINING
-                    // lots — sold-out tiers don't make a sale.
+                    // lots — sold-out tiers don't make a sale — and on the
+                    // desk-open latch: one desk announcement per calendar day.
                     const lotsLeft =
                         num(offerList.bigOffer.remaining) +
                         num(offerList.medOffer.remaining) +
                         num(offerList.smlOffer.remaining);
-                    const closedSale = prevState === 1 && state === 2 && lotsLeft > 0;
+                    const deskAlreadyAnnounced = deskAnnouncedDate === etDate();
+                    const closedSale =
+                        prevState === 1 && state === 2 && lotsLeft > 0 && !deskAlreadyAnnounced;
                     if (closedSale) {
                         const sheet = buildSheet(offerList);
                         await announce(
@@ -815,6 +831,7 @@ async function main(): Promise<void> {
                                 sml: { ...sheet.sml, left: num(offerList.smlOffer.remaining), total: num(offerList.smlOffer.totalOffered) },
                             })
                         );
+                        deskAnnouncedDate = etDate();
                     } else if (state === 0 && isMondayEt()) {
                         const totalSupplyRaw = Number(
                             (await connection.getTokenSupply(afhoMint)).value.amount
@@ -830,14 +847,30 @@ async function main(): Promise<void> {
                                 toWhole(afhoVaultRaw, afhoDecimals)
                             )
                         );
-                    } else {
+                    } else if (state === 0) {
+                        // Morning open is a real daily event — announce it.
+                        await announce(marketStateMessage(state, feeLabel));
+                    } else if (state === 3) {
+                        // Halts are safety-relevant — announce the change.
                         await announce(marketStateMessage(state, feeLabel));
                     }
+                    // States 1 and 2 stay SILENT here: the night desk speaks
+                    // through its own announcements (sheet post below, or the
+                    // flash sale above) — never a bare "desk open/closed"
+                    // tweet. No desk opening that day = no end-of-day post.
                 }
 
-                // ── 2: bond sheet posted for the night desk ─────────────────────────
-                if (offerDay !== prevOfferDayIndex && !offerListEmpty(offerList)) {
+                // ── 2: bond sheet posted for the night desk ─────────────────────
+                // Latched per calendar day: the first desk open announces;
+                // re-opens/flaps the same day don't. A fresh sheet on a new
+                // calendar day (offers still available) announces again.
+                if (
+                    offerDay !== prevOfferDayIndex &&
+                    !offerListEmpty(offerList) &&
+                    deskAnnouncedDate !== etDate()
+                ) {
                     await announce(bondsMessage(buildSheet(offerList)));
+                    deskAnnouncedDate = etDate();
                 }
 
                 // ── 3: daily buyback drained the buyback vault ──────────────────────
@@ -886,6 +919,18 @@ async function main(): Promise<void> {
             }
 
             // ── advance cross-poll memory ──────────────────────────────────────────
+            if (!initialized) {
+                // Restart seed: if the desk is already live with a fresh sheet
+                // for today, treat it as already-announced — a mid-session
+                // restart must not re-tweet the same desk.
+                if (
+                    (state === 1 || state === 2) &&
+                    offerDay === marketDay &&
+                    !offerListEmpty(offerList)
+                ) {
+                    deskAnnouncedDate = etDate();
+                }
+            }
             prevState = state;
             prevOfferDayIndex = offerDay;
             prevAfhoVaultRaw = afhoVaultRaw;

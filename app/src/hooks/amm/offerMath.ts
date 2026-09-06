@@ -19,16 +19,36 @@ export function lotTokens(lotTier: number): number {
 //   (usdc_raw × 1e12) / afho_raw   — "floor units" = price per whole token
 //   × 1e9 (nano-dollar). Represents sub-cent launch prices ($5.2e-6 → 5,200).
 // discount_bps is stored in tenths of a percent (115 = 11.5%) → ×10 = bps.
-export function effectivePrice(livePrice: bigint, discountTenths: number, floor: bigint): bigint {
-    const bps = BigInt(discountTenths) * 10n;
+// bonusTenths > 0 means the late-nite bonus is live (market state 2). It
+// buys exactly its own depth below the ratchet floor — the sale bound
+// relaxes from `floor` to `floor − live × bonus_bps / 10000` — while the
+// base discount stays ratchet-restricted (mirrors quote_claim).
+export function effectivePrice(
+    livePrice: bigint,
+    discountTenths: number,
+    bonusTenths: number,
+    floor: bigint,
+): bigint {
+    const bps = BigInt(Math.min(255, discountTenths + bonusTenths)) * 10n;
     const discounted = livePrice - (livePrice * bps) / 10_000n;
-    return discounted > floor ? discounted : floor;
+    const allowance = (livePrice * BigInt(bonusTenths) * 10n) / 10_000n;
+    const bound = floor > allowance ? floor - allowance : 0n;
+    return discounted > bound ? discounted : bound;
 }
 
-export function ratchetActive(livePrice: bigint, discountTenths: number, floor: bigint): boolean {
-    const bps = BigInt(discountTenths) * 10n;
+export function ratchetActive(
+    livePrice: bigint,
+    discountTenths: number,
+    bonusTenths: number,
+    floor: bigint,
+): boolean {
+    // "Ratchet active" = the (bonus-relaxed) floor still holds the price
+    // above the discounted quote, i.e. part of the listed discount is eaten.
+    const bps = BigInt(Math.min(255, discountTenths + bonusTenths)) * 10n;
     const discounted = livePrice - (livePrice * bps) / 10_000n;
-    return floor > discounted;
+    const allowance = (livePrice * BigInt(bonusTenths) * 10n) / 10_000n;
+    const bound = floor > allowance ? floor - allowance : 0n;
+    return bound > discounted;
 }
 
 // Cost in raw USDC for `units` lots — mirrors quote_claim:
@@ -39,6 +59,7 @@ export function ratchetActive(livePrice: bigint, discountTenths: number, floor: 
 export function quoteCostRaw(
     livePrice: bigint,
     discountTenths: number,
+    bonusTenths: number,
     floor: bigint,
     lotTier: number,
     units: number,
@@ -47,7 +68,7 @@ export function quoteCostRaw(
     if (units <= 0 || livePrice <= 0n) return 0n;
     const unit = 10n ** BigInt(afhoDecimals);
     const totalRaw = BigInt(lotTokens(lotTier)) * BigInt(units) * unit;
-    return (totalRaw * effectivePrice(livePrice, discountTenths, floor)) / 1_000_000_000_000n;
+    return (totalRaw * effectivePrice(livePrice, discountTenths, bonusTenths, floor)) / 1_000_000_000_000n;
 }
 
 export function formatUsdc(raw: bigint, usdcDecimals = 6): string {

@@ -612,10 +612,11 @@
 }
 
 /* Price/lot discount confirmation: the header pill promises "up to X% off"
-   — the price line reports what the tier actually delivers. Green = full
-   listed discount (same green as the pill); blue↔green pulse = full
-   discount + late-nite bonus stacked; muted = the buyback floor ate part
-   of the discount (ratchet active). */
+   — the price line reports what the tier actually delivers, in the color of
+   what's applied. Green = full listed discount (same green as the pill);
+   blue = late-nite bonus is the live discount; blue↔green pulse = full
+   discount + bonus stacked; muted = the buyback floor ate part of the
+   discount (ratchet active, no bonus). */
 .offer-price--full {
     color: var(--neon-green);
     text-shadow: 0 0 10px rgba(60, 200, 120, 0.25);
@@ -625,6 +626,11 @@
     color: var(--neon-green);
     text-shadow: 0 0 10px currentColor;
     animation: priceDiscountTide 4.8s ease-in-out infinite;
+}
+
+.offer-price--bonus-only {
+    color: var(--neon-blue);
+    text-shadow: 0 0 10px rgba(80, 160, 255, 0.25);
 }
 
 .offer-price--reduced {

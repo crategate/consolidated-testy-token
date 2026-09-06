@@ -118,7 +118,7 @@ export default function OfferLists() {
     );
     const estCostRaw = data.tiers.reduce(
         (sum, t) => sum + quoteCostRaw(
-            data.livePrice ?? 0n, t.discountBps + t.bonusBps, data.floorBasis,
+            data.livePrice ?? 0n, t.discountBps, t.bonusBps, data.floorBasis,
             t.lotTier, quantities[t.key] ?? 0, data.afhoDecimals,
         ),
         0n,
@@ -138,19 +138,18 @@ export default function OfferLists() {
         currency === 'sol' && solPriceKnown && totalLots > 0 &&
         data.solPoolReserves !== null && solCharge(estCostRaw) === null;
     const ratchet = priceKnown && data.tiers.some(
-        (t) => (quantities[t.key] ?? 0) > 0 && ratchetActive(data.livePrice as bigint, t.discountBps + t.bonusBps, data.floorBasis)
+        (t) => (quantities[t.key] ?? 0) > 0 && ratchetActive(data.livePrice as bigint, t.discountBps, t.bonusBps, data.floorBasis)
     );
-    // At-or-above spot: the buyback floor holds the effective price at/above
-    // the live pool price — the listed discount is gone entirely, and a
-    // spot-priced, vesting-locked bond is strictly dominated by buying on
-    // the pool. BLOCKED in the UI (the on-chain floor stays the protocol
-    // invariant; a CLI buyer can still transact). Blocking also accelerates
-    // the fix: fills slow the floor's decay (demand keep in
-    // calc_completed_offers), so unfilled sheets decay at full rate and
-    // prices return below spot sooner.
+    // At-or-above spot: the effective price (floor-held, with only the
+    // bonus's own depth allowed below the floor at night) loses its entire
+    // discount — mirrored 1:1 with quote_claim's FloorHeldAtSpot revert,
+    // which enforces this on-chain. A spot-priced, vesting-locked bond is
+    // strictly dominated by buying on the pool, and fills slow the floor's
+    // decay (demand keep in calc_completed_offers), so gating these
+    // accelerates the return to real discounts.
     const atOrAboveSpot = priceKnown && data.tiers.some(
         (t) => (quantities[t.key] ?? 0) > 0 &&
-            effectivePrice(data.livePrice as bigint, t.discountBps + t.bonusBps, data.floorBasis) >= (data.livePrice as bigint)
+            effectivePrice(data.livePrice as bigint, t.discountBps, t.bonusBps, data.floorBasis) >= (data.livePrice as bigint)
     );
 
     // Per-lot cost in the SELECTED currency. SOL uses the spot-ratio estimate
@@ -158,7 +157,7 @@ export default function OfferLists() {
     // mirror — spot + the order's own price impact — is applied to the whole
     // order in displayCost / handleBuy / useOfferClaim below.
     const costPerLot = (t: OfferTierData): bigint => {
-        const c = quoteCostRaw(data.livePrice ?? 0n, t.discountBps + t.bonusBps, data.floorBasis, t.lotTier, 1, data.afhoDecimals);
+        const c = quoteCostRaw(data.livePrice ?? 0n, t.discountBps, t.bonusBps, data.floorBasis, t.lotTier, 1, data.afhoDecimals);
         return currency === 'usdc' ? c : lamportsForCost(c, data.solPrice ?? 0n);
     };
 

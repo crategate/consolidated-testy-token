@@ -22,6 +22,14 @@
 // the swap nets the full USDC cost after the pool fee and the trade's own
 // price impact; the swap min-out and the vault-delta check enforce it
 // fail-closed.
+//
+// Pricing policy (quote_claim):
+//   state 1  effective = max(discounted, floor)   — the floor is the bound
+//   state 2  effective = max(discounted, floor − bonus_allowance) — only the
+//            bonus's own depth (0.5%) may price below the basis; the base
+//            discount stays ratchet-restricted
+//   any      require!(effective < live)           — above-spot claims revert
+//            (FloorHeldAtSpot): no discount, no sale.
 
 use crate::state::offersState::{lot_sizer, AmmState, OfferList};
 use anchor_lang::prelude::*;
@@ -722,7 +730,7 @@ fn quote_claim(
     // offers price at the sheet's base discount again. Deliberately a pure
     // function of the market state: the stored sheet is untouched, nothing to
     // mutate/revert, no keeper dependency — a state-1 claim simply reads the
-    // base discount. Still clamped by the ratchet floor below like any price.
+    // base discount.
     let boosted_stored = if current_state == 2 {
         msg!("closed-session boost: +0.5% (state 2)");
         discount_stored.saturating_add(5)
@@ -732,9 +740,23 @@ fn quote_claim(
     let discount_bps = boosted_stored as u64 * 10;
     let discounted = live_price.saturating_sub(live_price.saturating_mul(discount_bps) / 10_000);
 
-    // ── RATCHET: never sell below highest realized buyback basis ──
+    // ── RATCHET vs LATE-NITE ALLOWANCE ──
+    // The ratchet floor (highest realized buyback basis) stays the hard bound
+    // for the BASE discount in every session. In the closed session (state 2)
+    // the late-nite bonus buys exactly its own depth below that bound: the
+    // sale floor relaxes from `floor` to `floor − live × bonus_bps / 10000`,
+    // so only the bonus's 0.5% can price under the basis — the green % off
+    // amount is still ratchet-restricted.
     let floor = amm_state.highest_buyback_basis;
-    let effective_price = discounted.max(floor);
+    let effective_price = if current_state == 2 {
+        let bonus_stored = boosted_stored.saturating_sub(discount_stored);
+        let bonus_bps = bonus_stored as u64 * 10;
+        let allowance = live_price.saturating_mul(bonus_bps) / 10_000;
+        let night_floor = floor.saturating_sub(allowance);
+        discounted.max(night_floor)
+    } else {
+        discounted.max(floor)
+    };
     if effective_price > discounted {
         msg!(
             "Ratchet active: floor {} vs discounted {}",
@@ -742,6 +764,19 @@ fn quote_claim(
             discounted
         );
     }
+
+    // ── ABOVE-SPOT GATE: no discount, no sale ──
+    // A claim priced at/above the live pool price is refused outright — a
+    // spot-priced, vesting-locked bond is strictly dominated by the open
+    // market, and fills only slow the floor's decay (demand keep in
+    // calc_completed_offers). With the floor binding this is exactly the
+    // "floor ≥ spot" state; the desk stays dark until the decay (or price
+    // recovery) restores a real discount. In state 2 the bonus override
+    // guarantees discounted < live, so the night desk always trades.
+    require!(
+        effective_price < live_price,
+        ErrorCode::FloorHeldAtSpot
+    );
 
     // lot_size is a TIER INDEX — translate via lot_sizer to whole tokens,
     // then to raw units. Price units: (usdc_raw × 1e12) / afho_raw
@@ -910,4 +945,6 @@ pub enum ErrorCode {
     InsufficientSwapOutput,
     #[msg("SOL/USDC pool cannot serve this claim cost")]
     InsufficientPoolLiquidity,
+    #[msg("Offer priced at/above spot — the ratchet floor holds, no discount available")]
+    FloorHeldAtSpot,
 }

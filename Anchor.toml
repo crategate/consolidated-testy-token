@@ -19,7 +19,7 @@ wallet = "~/.config/solana/id.json"
 
 [scripts]
 # current flow after feed is set:
-# anchor run mint → anchor run amm-init → anchor run set-cpmm-pool → anchor run set-sol-usdc-pool -> anchor run create-claim-alt -> anchor run init → anchor run bount
+# anchor run mint → anchor run amm-init → set-pools ->anchor run init → anchor run bount
 
 # or anchor run bount-test-watch with anchor run set-oracle -- 1 to update
 

@@ -57,7 +57,7 @@ export default function SingleOffer({
     if (livePrice !== null && livePrice > 0n) {
         if (currency === 'sol' && solPrice !== null && solPrice > 0n) {
             const usdcRaw = quoteCostRaw(
-                livePrice, offer.discountBps + offer.bonusBps, floorBasis, offer.lotTier, 1, afhoDecimals,
+                livePrice, offer.discountBps, offer.bonusBps, floorBasis, offer.lotTier, 1, afhoDecimals,
             );
             const exact = lamportsForCostExact(usdcRaw, solPoolReserves);
             if (exact !== null) {
@@ -69,7 +69,7 @@ export default function SingleOffer({
             }
             perLotUnit = 'SOL';
         } else if (currency === 'usdc') {
-            const eff = effectivePrice(livePrice, offer.discountBps + offer.bonusBps, floorBasis);
+            const eff = effectivePrice(livePrice, offer.discountBps, offer.bonusBps, floorBasis);
             const usd = pricePerToken(eff) * offer.lotTokens;
             perLot = usd >= 1
                 ? usd.toLocaleString('en-US', { maximumFractionDigits: 2 })
@@ -80,25 +80,35 @@ export default function SingleOffer({
     const excite = qty > 0 ? Math.min(1 + (qty - 1) * 0.35, 2.4) : 1;
 
     // Real delivered discount vs live spot, shown on the price line: the
-    // header pill only promises "up to" — the buyback floor can hold the
-    // effective price above the discounted quote and shrink the actual %.
-    // Green when the tier delivers its full listed discount (matching the
-    // pill); blue↔green pulse when the late-nite bonus stacks on top;
-    // muted when the ratchet eats part of it.
+    // header pill only promises "up to" — outside the bonus window the
+    // buyback floor can shrink the actual %. Tones (mirroring quote_claim):
+    //   full discount, no bonus       → green  (same as the "up to" pill)
+    //   full discount + late-nite     → slow green↔blue pulse
+    //   bonus only (floor would bind) → blue   (bonus is the live discount)
+    //   ratchet holds, no bonus       → muted  (partial discount)
     const eff = livePrice !== null && livePrice > 0n
-        ? effectivePrice(livePrice, offer.discountBps + offer.bonusBps, floorBasis)
+        ? effectivePrice(livePrice, offer.discountBps, offer.bonusBps, floorBasis)
         : null;
     const realPct = eff !== null && livePrice !== null
         ? Math.max(0, (1 - Number(eff) / Number(livePrice)) * 100)
         : null;
-    const fullDiscount = eff !== null && livePrice !== null && eff < livePrice;
+    // "Maximum discount applied": the effective price carries the tier's
+    // full listed discount — i.e. it equals the discounted quote itself,
+    // with no floor uplift. (With the bonus override this is always true at
+    // night; in state 1 it is false whenever the ratchet binds.)
+    const fullDiscount = eff !== null && livePrice !== null && livePrice > 0n && eff < livePrice
+        ? eff <= livePrice - (livePrice * BigInt(Math.min(255, offer.discountBps + offer.bonusBps)) * 10n) / 10_000n
+        : false;
+    const bonusApplied = offer.bonusBps > 0;
     const priceTone = perLot === null || realPct === null
         ? undefined
         : fullDiscount
-            ? offer.bonusBps > 0
+            ? bonusApplied
                 ? 'offer-price--full-bonus'
                 : 'offer-price--full'
-            : 'offer-price--reduced';
+            : bonusApplied
+                ? 'offer-price--bonus-only'
+                : 'offer-price--reduced';
 
     return (
         <article
