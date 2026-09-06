@@ -5,10 +5,12 @@ import { getAccount, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from '@so
 import { useAmmData, type OfferTierData } from '../../hooks/amm/useAmmData.ts';
 import { useOfferClaim, type ClaimCurrency } from '../../hooks/amm/useOfferClaim.ts';
 import {
+    effectivePrice,
     formatSol,
     formatTokens,
     formatUsdc,
     lamportsForCost,
+    lamportsForCostExact,
     pricePerToken,
     quoteCostRaw,
     ratchetActive,
@@ -16,7 +18,7 @@ import {
 import SizedOffers from './SizedOffers.tsx';
 import { GlitchText } from '../GlitchText.tsx';
 
-const PERCENT_STEPS = [25, 50, 75] as const;
+const PERCENT_STEPS = [25, 50, 75, 100] as const;
 
 function deskMessage(state: number | null, sheetStale: boolean, offersLive: boolean): string {
     if (state === 0) return 'Desk opens after market close — check back at the end of the trading day.';
@@ -124,12 +126,37 @@ export default function OfferLists() {
 
     const priceKnown = data.livePrice !== null && data.livePrice > 0n;
     const solPriceKnown = data.solPrice !== null && data.solPrice > 0n;
+    // Exact SOL charge mirror: the on-chain offer_claim_sol handler solves
+    // its wSOL input from the pool's LIVE reserves (spot + the trade's own
+    // price impact), so the estimate that matches the charge does the same.
+    // Falls back to the spot-ratio estimate while reserves load; a null
+    // solve with known reserves means the pool's USDC side cannot cover the
+    // order — the claim would revert on-chain (InsufficientPoolLiquidity).
+    const solCharge = (costRaw: bigint): bigint | null =>
+        lamportsForCostExact(costRaw, data.solPoolReserves);
+    const solPoolShort =
+        currency === 'sol' && solPriceKnown && totalLots > 0 &&
+        data.solPoolReserves !== null && solCharge(estCostRaw) === null;
     const ratchet = priceKnown && data.tiers.some(
         (t) => (quantities[t.key] ?? 0) > 0 && ratchetActive(data.livePrice as bigint, t.discountBps + t.bonusBps, data.floorBasis)
     );
+    // At-or-above spot: the buyback floor holds the effective price at/above
+    // the live pool price — the listed discount is gone entirely, and a
+    // spot-priced, vesting-locked bond is strictly dominated by buying on
+    // the pool. BLOCKED in the UI (the on-chain floor stays the protocol
+    // invariant; a CLI buyer can still transact). Blocking also accelerates
+    // the fix: fills slow the floor's decay (demand keep in
+    // calc_completed_offers), so unfilled sheets decay at full rate and
+    // prices return below spot sooner.
+    const atOrAboveSpot = priceKnown && data.tiers.some(
+        (t) => (quantities[t.key] ?? 0) > 0 &&
+            effectivePrice(data.livePrice as bigint, t.discountBps + t.bonusBps, data.floorBasis) >= (data.livePrice as bigint)
+    );
 
-    // Per-lot cost in the SELECTED currency (SOL estimates use the same
-    // lamports math the on-chain handler applies at claim time).
+    // Per-lot cost in the SELECTED currency. SOL uses the spot-ratio estimate
+    // here (it only sizes the %-of-balance quick-fill); the exact charge
+    // mirror — spot + the order's own price impact — is applied to the whole
+    // order in displayCost / handleBuy / useOfferClaim below.
     const costPerLot = (t: OfferTierData): bigint => {
         const c = quoteCostRaw(data.livePrice ?? 0n, t.discountBps + t.bonusBps, data.floorBasis, t.lotTier, 1, data.afhoDecimals);
         return currency === 'usdc' ? c : lamportsForCost(c, data.solPrice ?? 0n);
@@ -138,18 +165,28 @@ export default function OfferLists() {
     const solReady = data.solAccounts !== null && solPriceKnown;
 
     const canBuy = connected && data.deskOpen && totalLots > 0 && priceKnown &&
-        status !== 'pending' && (currency === 'usdc' ? data.accounts !== null : solReady);
+        status !== 'pending' && !atOrAboveSpot &&
+        (currency === 'usdc' ? data.accounts !== null : solReady && !solPoolShort);
 
     const buyLabel = !connected
         ? 'Connect wallet to buy'
         : !data.deskOpen
             ? 'Desk closed'
-            : status === 'pending'
-                ? 'Claiming…'
-                : 'Buy selected offers';
+            : atOrAboveSpot
+                ? 'Offer prices not below spot'
+                : solPoolShort
+                    ? 'SOL pool too thin'
+                    : status === 'pending'
+                        ? 'Claiming…'
+                        : 'Buy selected offers';
 
     const handleBuy = async () => {
-        const ok = await claim(selections, estCostRaw, { currency, solPrice: data.solPrice });
+        const ok = await claim(selections, estCostRaw, {
+            currency,
+            solPrice: data.solPrice,
+            solPoolReserves: data.solPoolReserves,
+            claimLookupTable: data.claimLookupTable,
+        });
         if (ok) setQuantities({ big: 0, med: 0, sml: 0 });
         setTimeout(data.refresh, 2000);
     };
@@ -228,9 +265,11 @@ export default function OfferLists() {
     const displayCost = totalLots > 0 && priceKnown
         ? currency === 'usdc'
             ? `≈ ${formatUsdc(estCostRaw, data.usdcDecimals)}`
-            : solPriceKnown
-                ? `≈ ${formatSol(lamportsForCost(estCostRaw, data.solPrice as bigint))}`
-                : '—'
+            : !solPriceKnown
+                ? '—'
+                : solCharge(estCostRaw) !== null
+                    ? `≈ ${formatSol(solCharge(estCostRaw) as bigint)}`
+                    : 'SOL pool too thin'
         : '—';
 
     const balanceLabel = currency === 'usdc'
@@ -239,6 +278,14 @@ export default function OfferLists() {
 
     return (
         <section className="offer-desk">
+            {status === 'success' && txSig && (
+                <div className="desk-banner success glass-pane desk-banner--sticky">
+                    Claim submitted — AFHO is vesting in your stake positions.{' '}
+                    <a href={`https://explorer.solana.com/tx/${txSig}?cluster=devnet`} target="_blank" rel="noreferrer">
+                        View transaction
+                    </a>
+                </div>
+            )}
             {data.error && <div className="desk-banner error glass-pane">RPC error: {data.error} — showing last known state</div>}
             {data.loading && !data.tiers.length && <div className="desk-banner glass-pane">Loading offer sheet…</div>}
 
@@ -259,6 +306,7 @@ export default function OfferLists() {
                     floorBasis={data.floorBasis}
                     currency={currency}
                     solPrice={data.solPrice}
+                    solPoolReserves={data.solPoolReserves}
                     afhoDecimals={data.afhoDecimals}
                     disabled={!data.deskOpen || status === 'pending'}
                     onQtyChange={setQty}
@@ -324,7 +372,7 @@ export default function OfferLists() {
                                 disabled={!priceKnown || (currency === 'usdc' ? balances.usdc === null || balances.usdc <= 0n : balances.sol === null || balances.sol <= 0n)}
                                 onClick={() => applyPercent(pct)}
                             >
-                                {pct}%
+                                {pct === 100 ? 'MAX' : `${pct}%`}
                             </button>
                         ))}
                         {balanceLabel && <span className="order-balance">{balanceLabel}</span>}
@@ -332,7 +380,11 @@ export default function OfferLists() {
                     {totalLots > 0 && (
                         <span className="order-total-sub">
                             {formatTokens(totalTokens)} AFHO · {totalLots} lot{totalLots !== 1 ? 's' : ''}
-                            {ratchet && ' · buyback-floor ratchet active'}
+                            {atOrAboveSpot
+                                ? ' · buyback floor ≥ spot — sales paused until it decays below spot'
+                                : ratchet
+                                    ? ' · buyback-floor ratchet active (still below spot)'
+                                    : ''}
                         </span>
                     )}
                     {priceKnown && (
@@ -371,14 +423,6 @@ export default function OfferLists() {
                 {currency === 'sol' && ' SOL payments swap to USDC at claim (you cover the 0.25% pool fee).'}
             </p>
 
-            {status === 'success' && txSig && (
-                <div className="desk-banner success glass-pane">
-                    Claim submitted — AFHO is vesting in your stake positions.{' '}
-                    <a href={`https://explorer.solana.com/tx/${txSig}?cluster=devnet`} target="_blank" rel="noreferrer">
-                        View transaction
-                    </a>
-                </div>
-            )}
             {status === 'error' && claimError && (
                 <div className="desk-banner error glass-pane">Claim failed: {claimError}</div>
             )}

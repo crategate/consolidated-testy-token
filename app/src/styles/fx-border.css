@@ -326,85 +326,155 @@
 }
 
 /* Palette varieties — streetlight (amber/green), violet (purple/pink/
-   blue), ghost (pale white/blue). Same flicker language, different
-   color worlds. */
+   blue), ghost (pale white/cyan). Same flicker language as neonGlitch:
+   a long dark rest, then one clustered burst window — three chromatic,
+   jittered stutters (flare / dip / bigger flare) that collapse to dead.
+   Each variant's window sits at a different point in the cycle so two
+   variants on one page never share a beat. No pulsing anywhere. */
 @keyframes neonFlickerStreetlight {
 
     0%,
-    90%,
-    93%,
-    96%,
-    98%,
+    84%,
+    92.5%,
     100% {
         opacity: 0;
+        transform: translate(0);
     }
 
-    90.8% {
-        opacity: 0.75;
-        box-shadow: 0 0 4px var(--neon-amber), 0 0 14px rgba(255, 170, 0, 0.35), 2px 0 4px var(--neon-green);
+    85% {
+        opacity: 0.55;
+        box-shadow:
+            0 0 4px var(--neon-amber),
+            0 0 12px rgba(255, 170, 0, 0.4),
+            2px 0 4px var(--neon-green);
+        transform: translate(1px, -1px);
     }
 
-    93.4% {
-        opacity: 0.25;
-        box-shadow: 0 0 2px var(--neon-green), -1px 0 5px rgba(5, 255, 161, 0.35);
+    87.2% {
+        opacity: 0.22;
+        box-shadow:
+            0 0 2px var(--neon-green),
+            -1px 0 5px rgba(5, 255, 161, 0.3);
+        transform: translate(-1px, 0);
     }
 
-    96.2% {
+    89.8% {
         opacity: 0.8;
-        box-shadow: 0 0 7px var(--neon-amber), 0 0 18px rgba(255, 170, 0, 0.3);
+        box-shadow:
+            0 0 7px var(--neon-amber),
+            0 0 18px rgba(255, 170, 0, 0.28),
+            -2px 0 4px var(--neon-green);
+        transform: translate(0, 1px);
     }
 }
 
 @keyframes neonFlickerViolet {
 
     0%,
-    89%,
-    92%,
-    95%,
-    98%,
+    78%,
+    87.5%,
     100% {
         opacity: 0;
+        transform: translate(0);
     }
 
-    89.7% {
-        opacity: 0.7;
-        box-shadow: 0 0 4px var(--neon-purple), 0 0 12px rgba(211, 0, 249, 0.4), 2px 0 4px var(--neon-blue);
+    79% {
+        opacity: 0.65;
+        box-shadow:
+            0 0 4px var(--neon-purple),
+            0 0 12px rgba(211, 0, 249, 0.38),
+            2px 0 4px var(--neon-blue);
+        transform: translate(-1px, 1px);
     }
 
-    92.5% {
-        opacity: 0.3;
-        box-shadow: 0 0 3px var(--neon-pink), -1px 0 5px rgba(255, 42, 109, 0.35);
+    81.4% {
+        opacity: 0.28;
+        box-shadow:
+            0 0 2px var(--neon-pink),
+            -1px 0 5px rgba(255, 42, 109, 0.32);
+        transform: translate(2px, -1px);
     }
 
-    95.4% {
+    84.6% {
         opacity: 0.85;
-        box-shadow: 0 0 6px var(--neon-purple), 0 0 16px rgba(0, 240, 255, 0.3);
+        box-shadow:
+            0 0 6px var(--neon-purple),
+            0 0 18px rgba(211, 0, 249, 0.26),
+            1px 0 4px var(--neon-blue);
+        transform: translate(-1px, 0);
     }
 }
 
 @keyframes neonFlickerGhost {
 
     0%,
-    92%,
-    95%,
-    98%,
+    90%,
+    97.5%,
     100% {
         opacity: 0;
+        transform: translate(0);
     }
 
-    92.6% {
+    91% {
         opacity: 0.5;
-        box-shadow: 0 0 3px rgba(240, 238, 245, 0.7), 0 0 10px rgba(0, 240, 255, 0.25);
+        box-shadow:
+            0 0 3px rgba(240, 238, 245, 0.7),
+            0 0 10px rgba(0, 240, 255, 0.28),
+            1px 0 4px rgba(240, 238, 245, 0.4);
+        transform: translate(1px, 0);
     }
 
-    95.3% {
-        opacity: 0.2;
-        box-shadow: 0 0 2px rgba(0, 240, 255, 0.6);
+    93.4% {
+        opacity: 0.18;
+        box-shadow:
+            0 0 2px rgba(0, 240, 255, 0.55),
+            -1px 0 4px rgba(240, 238, 245, 0.3);
+        transform: translate(-1px, 1px);
     }
 
-    98.1% {
+    95.6% {
+        opacity: 0.65;
+        box-shadow:
+            0 0 5px rgba(240, 238, 245, 0.6),
+            0 0 14px rgba(0, 240, 255, 0.2);
+        transform: translate(0, -1px);
+    }
+}
+
+@keyframes neonFlickerRose {
+
+    0%,
+    72%,
+    81.5%,
+    100% {
+        opacity: 0;
+        transform: translate(0);
+    }
+
+    73% {
         opacity: 0.6;
-        box-shadow: 0 0 5px rgba(240, 238, 245, 0.5);
+        box-shadow:
+            0 0 4px var(--neon-pink),
+            0 0 12px rgba(255, 42, 109, 0.35),
+            2px 0 4px var(--neon-amber);
+        transform: translate(-1px, -1px);
+    }
+
+    75.4% {
+        opacity: 0.2;
+        box-shadow:
+            0 0 2px var(--neon-amber),
+            -1px 0 4px rgba(255, 170, 0, 0.32);
+        transform: translate(1px, 0);
+    }
+
+    78.2% {
+        opacity: 0.75;
+        box-shadow:
+            0 0 6px var(--neon-pink),
+            0 0 16px rgba(255, 42, 109, 0.26),
+            -1px 0 4px var(--neon-amber);
+        transform: translate(0, 1px);
     }
 }
 
@@ -412,105 +482,95 @@
 @keyframes neonBuzz {
 
     0%,
+    74%,
+    93.5%,
     100% {
-        opacity: 0.1;
+        opacity: 0;
+        transform: translate(0);
     }
 
-    5% {
+    75% {
+        opacity: 0.5;
+        box-shadow:
+            0 0 3px var(--neon-cyan),
+            0 0 10px rgba(0, 240, 255, 0.3),
+            1px 0 3px var(--neon-pink);
+        transform: translate(1px, 0);
+    }
+
+    77.4% {
         opacity: 0.18;
+        box-shadow:
+            0 0 2px var(--neon-purple),
+            -1px 0 3px var(--neon-green);
+        transform: translate(-1px, 1px);
     }
 
-    9% {
+    80% {
+        opacity: 0.62;
+        box-shadow:
+            0 0 5px var(--neon-cyan),
+            0 0 14px rgba(0, 240, 255, 0.24);
+        transform: translate(0, -1px);
+    }
+
+    82.2% {
         opacity: 0.08;
+        transform: translate(0);
     }
 
-    14% {
-        opacity: 0.16;
-    }
-
-    20% {
-        opacity: 0.05;
-    }
-
-    24% {
-        opacity: 0.14;
-    }
-
-    31% {
-        opacity: 0.08;
-    }
-
-    38% {
-        opacity: 0.18;
-    }
-
-    47% {
-        opacity: 0.06;
-    }
-
-    53% {
-        opacity: 0.14;
-    }
-
-    61% {
-        opacity: 0.09;
-    }
-
-    70% {
-        opacity: 0.16;
-    }
-
-    78% {
-        opacity: 0.05;
-    }
-
-    84% {
-        opacity: 0.13;
-    }
-
-    92% {
-        opacity: 0.17;
+    88.6% {
+        opacity: 0.55;
+        box-shadow:
+            0 0 4px var(--neon-pink),
+            0 0 12px rgba(255, 42, 109, 0.26),
+            1px 0 3px var(--neon-cyan);
+        transform: translate(-1px, 0);
     }
 }
 
-/* Slow color-shift flicker: dim, mostly quiet, with irregular bumps
-   rather than a steady cycle */
+/* Slow color-shift flicker: dark for almost the whole cycle, then one
+   late burst where the color world jumps cyan → amber → pink between
+   stutters — the multi-color version of the neonGlitch burst. */
 @keyframes neonShift {
 
     0%,
-    14%,
-    30%,
-    52%,
-    68%,
-    85%,
+    80%,
+    91.5%,
     100% {
-        opacity: 0.3;
-        box-shadow: 0 0 4px var(--neon-cyan), 0 0 10px rgba(0, 240, 255, 0.15);
-    }
-
-    11% {
-        opacity: 0.48;
-        box-shadow: 0 0 5px var(--neon-purple), 0 0 14px rgba(211, 0, 249, 0.22);
-    }
-
-    26% {
-        opacity: 0.38;
-        box-shadow: 0 0 4px var(--neon-amber), 0 0 10px rgba(255, 170, 0, 0.18);
-    }
-
-    47% {
-        opacity: 0.52;
-        box-shadow: 0 0 6px var(--neon-pink), 0 0 14px rgba(255, 42, 109, 0.2);
-    }
-
-    64% {
-        opacity: 0.34;
-        box-shadow: 0 0 3px var(--neon-green), 0 0 9px rgba(5, 255, 161, 0.16);
+        opacity: 0;
+        transform: translate(0);
     }
 
     81% {
-        opacity: 0.46;
-        box-shadow: 0 0 5px var(--neon-purple), 0 0 12px rgba(211, 0, 249, 0.2);
+        opacity: 0.5;
+        box-shadow:
+            0 0 4px var(--neon-cyan),
+            0 0 11px rgba(0, 240, 255, 0.3),
+            1px 0 4px var(--neon-amber);
+        transform: translate(1px, 0);
+    }
+
+    83.2% {
+        opacity: 0.16;
+        box-shadow:
+            0 0 2px var(--neon-amber),
+            -1px 0 4px rgba(255, 170, 0, 0.28);
+        transform: translate(-1px, 1px);
+    }
+
+    86.4% {
+        opacity: 0.72;
+        box-shadow:
+            0 0 6px var(--neon-pink),
+            0 0 15px rgba(255, 42, 109, 0.24),
+            1px 0 4px var(--neon-green);
+        transform: translate(0, -1px);
+    }
+
+    89% {
+        opacity: 0.12;
+        transform: translate(0);
     }
 }
 
@@ -542,8 +602,9 @@
     }
 }
 
-/* Double-tap pattern: two quick soft flares, then a long rest. Dark the
-   rest of the time — slow and unpredictable, never a constant pulse. */
+/* Double-tap pattern: two quick flares with a dip between, then a long
+   rest. Same flicker-then-fade direction as neonGlitch, just fewer
+   stutters. Dark the rest of the time — never a constant pulse. */
 @keyframes neonPulseTwo {
 
     0%,
@@ -557,123 +618,127 @@
     }
 
     12.8% {
-        opacity: 0.34;
+        opacity: 0.58;
         transform: translate(1px, 0);
-        box-shadow: 0 0 4px var(--neon-cyan), 0 0 10px rgba(0, 240, 255, 0.2);
+        box-shadow:
+            0 0 5px var(--neon-cyan),
+            0 0 12px rgba(0, 240, 255, 0.28);
     }
 
     13.4% {
-        opacity: 0.12;
+        opacity: 0.16;
         transform: translate(-1px, 0);
-        box-shadow: 0 0 2px var(--neon-pink), 0 0 6px rgba(255, 42, 109, 0.12);
+        box-shadow:
+            0 0 2px var(--neon-pink),
+            0 0 6px rgba(255, 42, 109, 0.18);
     }
 
     63.8% {
-        opacity: 0.28;
+        opacity: 0.66;
         transform: translate(0, 1px);
-        box-shadow: 0 0 5px var(--neon-purple), 0 0 12px rgba(211, 0, 249, 0.2);
+        box-shadow:
+            0 0 6px var(--neon-purple),
+            0 0 15px rgba(211, 0, 249, 0.26);
     }
 
     64.6% {
-        opacity: 0.1;
+        opacity: 0.14;
         transform: translate(0);
     }
 }
 
-/* Offer tier cards: broken sputter in the tier's own palette,
-   stages spread across the whole cycle */
+/* Offer tier cards: same broken-neon language as neonGlitch — a long
+   dark rest, then one clustered burst in the tier's own palette:
+   three chromatic, jittered stutters (flare / dip / bigger flare) that
+   collapse to dead. Stages no longer spread across the whole cycle. */
 @keyframes tierFlicker {
 
     0%,
-    10.5%,
-    34%,
-    60.5%,
-    84%,
+    86%,
+    95.5%,
     100% {
-        opacity: 0.04;
+        opacity: 0;
+        transform: translate(0);
     }
 
-    8% {
-        opacity: 0.2;
-        box-shadow: 0 0 3px var(--card-glow-a), 0 0 7px var(--card-glow-a-soft);
+    87% {
+        opacity: 0.5;
+        box-shadow:
+            0 0 3px var(--card-glow-a),
+            0 0 9px var(--card-glow-a-soft),
+            1px 0 3px var(--card-glow-b);
+        transform: translate(1px, -1px);
     }
 
-    9.6% {
-        opacity: 0.06;
+    89.4% {
+        opacity: 0.18;
+        box-shadow:
+            0 0 2px var(--card-glow-b),
+            -1px 0 3px var(--card-glow-a);
+        transform: translate(-1px, 0);
     }
 
-    31% {
-        opacity: 0.16;
-        box-shadow: 0 0 2px var(--card-glow-b), -0.5px 0 2px var(--card-glow-a);
-    }
-
-    32.6% {
-        opacity: 0.06;
-    }
-
-    57% {
-        opacity: 0.2;
-        box-shadow: 0 0 3px var(--card-glow-a), 0 0 8px var(--card-glow-a-soft), 1px 0 3px var(--card-glow-b);
-    }
-
-    59.2% {
-        opacity: 0.06;
-    }
-
-    80% {
-        opacity: 0.14;
-        box-shadow: 0 0 2px var(--card-glow-b), 0 0 6px var(--card-glow-a-soft);
-    }
-
-    82.3% {
-        opacity: 0.05;
+    92.2% {
+        opacity: 0.68;
+        box-shadow:
+            0 0 4px var(--card-glow-a),
+            0 0 11px var(--card-glow-a-soft),
+            -1px 0 4px var(--card-glow-b);
+        transform: translate(0, 1px);
     }
 }
 
-/* Selected tier: stronger sputter in the tier palette, still irregular
-   and spread out */
+/* Selected tier: the same burst shape, tighter window and higher peaks
+   in the tier palette — still irregular, still no pulse. */
 @keyframes tierFlickerFast {
 
     0%,
-    9%,
-    26%,
-    45%,
-    62%,
-    80%,
-    97%,
+    76%,
+    90.5%,
     100% {
-        opacity: 0.08;
-        box-shadow: none;
+        opacity: 0;
+        transform: translate(0);
     }
 
-    6% {
-        opacity: 0.32;
-        box-shadow: 0 0 4px var(--card-glow-a), 0 0 9px var(--card-glow-a-soft);
+    77% {
+        opacity: 0.72;
+        box-shadow:
+            0 0 4px var(--card-glow-a),
+            0 0 10px var(--card-glow-a-soft);
+        transform: translate(-1px, 0);
     }
 
-    23% {
-        opacity: 0.2;
-        box-shadow: 0 0 3px var(--card-glow-b), 1px 0 4px var(--card-glow-a);
-    }
-
-    41% {
-        opacity: 0.36;
-        box-shadow: 0 0 5px var(--card-glow-a), 0 0 12px var(--card-glow-a-soft), 1px 0 4px var(--card-glow-b);
-    }
-
-    58% {
-        opacity: 0.18;
-        box-shadow: 0 0 2px var(--card-glow-b), -1px 0 3px var(--card-glow-a);
-    }
-
-    76% {
+    79.6% {
         opacity: 0.3;
-        box-shadow: 0 0 4px var(--card-glow-a), 0 0 10px var(--card-glow-a-soft);
+        box-shadow:
+            0 0 3px var(--card-glow-b),
+            1px 0 4px var(--card-glow-a);
+        transform: translate(1px, 1px);
     }
 
-    93% {
-        opacity: 0.24;
-        box-shadow: 0 0 3px var(--card-glow-b), 0 0 8px var(--card-glow-a-soft);
+    83% {
+        opacity: 0.9;
+        box-shadow:
+            0 0 6px var(--card-glow-a),
+            0 0 15px var(--card-glow-a-soft),
+            1px 0 4px var(--card-glow-b);
+        transform: translate(0, -1px);
+    }
+
+    86.4% {
+        opacity: 0.2;
+        box-shadow:
+            0 0 2px var(--card-glow-b),
+            -1px 0 3px var(--card-glow-a);
+        transform: translate(0);
+    }
+
+    89% {
+        opacity: 0.55;
+        box-shadow:
+            0 0 4px var(--card-glow-a),
+            0 0 10px var(--card-glow-a-soft);
+        transform: translate(0);
     }
 }
 
@@ -733,11 +798,16 @@
     position: relative;
 }
 
+/* Glitch border — the base flicker applied via ::before.
+   Delay: per-element --glitch-delay (set inline by the tile grids) is the
+   portable fallback; browsers with CSS random() (Chromium 135+) replace it
+   with a stable per-element random offset so tiles never share a beat. */
 .neon-glitch::before {
     content: "";
     border-radius: inherit;
     pointer-events: none;
     animation: 4s infinite neonGlitch;
+    animation-delay: var(--glitch-delay, 0s);
     animation-delay: random(0s, 3s);
     border: 1px solid #0000;
     position: absolute;
@@ -745,24 +815,23 @@
 
 }
 
-/* Connected: the base glitch stays slow — the rhythm only shortens a
-   little, it never becomes a strobe. */
+/* Connected: the rhythm shortens a little — it never becomes a strobe. */
 .app-shell[data-connected='true'] .neon-glitch::before,
 .amm-page-shell[data-connected='true'] .neon-glitch::before {
-    animation-duration: calc(var(--fx-border-cycle) * 1.3 * var(--fx-tempo, 1));
+    animation-duration: 3.4s;
 }
 
 /* Hover: gently quicken the rhythm instead of strobing */
 .neon-glitch:hover::before,
 .app-shell[data-connected='true'] .neon-glitch:hover::before,
 .amm-page-shell[data-connected='true'] .neon-glitch:hover::before {
-    animation-duration: calc(var(--fx-border-cycle) * var(--fx-tempo, 1) * 0.75);
+    animation-duration: 3s;
 }
 
 /* Burst mode: click/focus/scroll flare quickens all border glitches */
 .app-shell[data-glitch-burst='true'] .neon-glitch::before,
 .amm-page-shell[data-glitch-burst='true'] .neon-glitch::before {
-    animation-duration: calc(var(--fx-border-cycle) * 0.45) !important;
+    animation-duration: 1.8s !important;
 }
 
 /* ─── Variant hooks — same flicker language, different color worlds ─── */
@@ -836,57 +905,49 @@
     animation-duration: calc(var(--fx-border-cycle) * 0.6) !important;
 }
 
-/* ─── Out-of-sync timers: each group runs its own multiplier and
-       offset so nothing shares a beat. These stay varied in BOTH
-       states — connecting only speeds the base tick. ─── */
+/* ─── Out-of-sync timers: each group runs its own long multiplier so
+       neighboring tile groups sit on different clocks. Per-TILE offsets
+       come from the inline --glitch-delay vars (or the base random()) —
+       no group-level delays here, so tiles inside a group stay off-beat
+       from each other too. ─── */
 .app-shell .stats-section .neon-glitch::before {
     animation-duration: calc(var(--fx-border-cycle) * 1.5);
-    animation-delay: 0.3s;
 }
 
 .app-shell .explainer-grid .neon-glitch::before {
     animation-duration: calc(var(--fx-border-cycle) * 2.4);
-    animation-delay: 1.1s;
 }
 
 .app-shell .built-with-grid .neon-glitch::before {
     animation-duration: calc(var(--fx-border-cycle) * 1.8);
-    animation-delay: 0.8s;
 }
 
 .app-shell .positions-shell.neon-glitch::before {
     animation-duration: calc(var(--fx-border-cycle) * 2.1);
-    animation-delay: 1.5s;
 }
 
 .app-shell .connect-prompt .glitch-border {
     animation-duration: calc(var(--fx-border-cycle) * 1.6) !important;
-    animation-delay: 0.6s;
 }
 
-/* Connected: keep the variety, just shift the offsets so the two
-   states never land on the same rhythm either */
+/* Connected: keep the variety, just shorten each group a little so the
+   two states never land on the same rhythm either */
 .app-shell[data-connected='true'] .stats-section .neon-glitch::before {
     animation-duration: calc(var(--fx-border-cycle) * 1.2);
-    animation-delay: 1.9s;
 }
 
 .app-shell[data-connected='true'] .explainer-grid .neon-glitch::before {
     animation-duration: calc(var(--fx-border-cycle) * 2.1);
-    animation-delay: 0.7s;
 }
 
 .app-shell[data-connected='true'] .built-with-grid .neon-glitch::before {
     animation-duration: calc(var(--fx-border-cycle) * 1.5);
-    animation-delay: 1.6s;
 }
 
 .app-shell[data-connected='true'] .positions-shell.neon-glitch::before {
     animation-duration: calc(var(--fx-border-cycle) * 1.7);
-    animation-delay: 0.3s;
 }
 
 .app-shell[data-connected='true'] .connect-prompt .glitch-border {
     animation-duration: calc(var(--fx-border-cycle) * 1.3) !important;
-    animation-delay: 1.2s;
 }

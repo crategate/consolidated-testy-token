@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { BN } from '@coral-xyz/anchor';
-import { ComputeBudgetProgram, PublicKey, SendTransactionError, SystemProgram, Transaction } from '@solana/web3.js';
+import { ComputeBudgetProgram, PublicKey, SendTransactionError, SystemProgram, Transaction, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import {
     ASSOCIATED_TOKEN_PROGRAM_ID,
     getAccount,
@@ -10,7 +10,7 @@ import {
     TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
 import { STAKING_PROGRAM_ID, useAmmProgram } from '../../anchor/setup.ts';
-import { formatSol, formatUsdc, lamportsForCost } from './offerMath.ts';
+import { formatSol, formatUsdc, lamportsForCost, lamportsForCostExact } from './offerMath.ts';
 import type { ClaimAccounts, SolClaimAccounts } from './useAmmData.ts';
 
 export interface ClaimSelection {
@@ -26,7 +26,12 @@ export interface UseOfferClaimReturn {
     claim: (
         selections: ClaimSelection[],
         estCostRaw: bigint,
-        opts: { currency: ClaimCurrency; solPrice: bigint | null },
+        opts: {
+            currency: ClaimCurrency;
+            solPrice: bigint | null;
+            solPoolReserves?: { wsolRaw: bigint; usdcRaw: bigint } | null;
+            claimLookupTable?: string | null;
+        },
     ) => Promise<boolean>;
     status: ClaimStatus;
     txSig: string | null;
@@ -63,7 +68,12 @@ export function useOfferClaim(
     const claim = useCallback(async (
         selections: ClaimSelection[],
         estCostRaw: bigint,
-        opts: { currency: ClaimCurrency; solPrice: bigint | null },
+        opts: {
+            currency: ClaimCurrency;
+            solPrice: bigint | null;
+            solPoolReserves?: { wsolRaw: bigint; usdcRaw: bigint } | null;
+            claimLookupTable?: string | null;
+        },
     ): Promise<boolean> => {
         if (!program || !accounts) return false;
         const active = selections.filter((s) => s.units > 0);
@@ -105,7 +115,19 @@ export function useOfferClaim(
                 if (!opts.solPrice || opts.solPrice <= 0n) {
                     throw new Error('SOL price unavailable — cannot estimate the SOL cost.');
                 }
-                const lamportsEst = lamportsForCost(estCostRaw, opts.solPrice);
+                // Mirror the on-chain charge exactly: offer_claim_sol solves
+                // its wSOL input from the SOL/USDC pool's live reserves
+                // (cpmm_swap_input_for_out). With reserves loaded the
+                // estimate IS the charge (until they move); a null solve is
+                // the on-chain InsufficientPoolLiquidity revert — surface it
+                // here instead of failing at the wallet prompt.
+                const exact = lamportsForCostExact(estCostRaw, opts.solPoolReserves);
+                if (opts.solPoolReserves && exact === null) {
+                    throw new Error(
+                        'SOL/USDC pool cannot serve this order — its USDC reserve is smaller than the order cost. Try a smaller order or wait for the pool to be re-seeded.'
+                    );
+                }
+                const lamportsEst = exact ?? lamportsForCost(estCostRaw, opts.solPrice);
                 const haveLamports = await connection.getBalance(buyer);
                 if (BigInt(haveLamports) < lamportsEst) {
                     throw new Error(
@@ -169,7 +191,7 @@ export function useOfferClaim(
             // the CPMM program remaining account), so two would exceed the
             // 1232-byte packet limit — SOL claims go out as one transaction per
             // tier (one wallet prompt each).
-            const txs: Transaction[] = currency === 'usdc' ? [tx] : [];
+            const txs: (Transaction | VersionedTransaction)[] = currency === 'usdc' ? [tx] : [];
             for (let i = 0; i < active.length; i++) {
                 const { tier, units } = active[i];
                 const index = nextIndex + BigInt(i);
@@ -218,14 +240,6 @@ export function useOfferClaim(
                     if (!sol) {
                         throw new Error('SOL payments need the SOL/USDC pool pinned — run anchor run set-sol-usdc-pool.');
                     }
-                    const solTx = new Transaction();
-                    // NOTE: no compute-budget instruction here. This tx is
-                    // ~1213 bytes — only ~19 under the 1232-byte packet
-                    // limit — and a ComputeBudgetProgram instruction costs
-                    // ~41 bytes, pushing serialization to 1254 > 1232
-                    // ("Transaction too large"). If the 200k per-instruction
-                    // CU default ever actually binds here, the durable fix is
-                    // a v0 transaction + address lookup table, not a CB ix.
                     const solIx = await program.methods
                         .offerClaimSol(tier, units, new BN(index.toString()))
                         .accounts({
@@ -286,8 +300,43 @@ export function useOfferClaim(
                             },
                         ])
                         .instruction();
+                    // ── v0 + address lookup table when available ──────────
+                    // The legacy SOL claim tx is ~1213 bytes — 19 under the
+                    // packet limit — so it cannot carry a compute-budget
+                    // instruction and runs on the 200k CU default while
+                    // consuming 141-166k; wallet sims sit right at that edge
+                    // (failed simulation, then a manual retry lands). With
+                    // the claim ALT (scripts/create-claim-alt.ts) the same
+                    // instruction rides a v0 message at ~⅓ the size, freeing
+                    // room for setComputeUnitLimit(400k) — 2.4× observed
+                    // consumption, so the sim and the send agree.
+                    const solTx = new Transaction();
                     solTx.add(solIx);
-                    txs.push(solTx);
+                    let pushed = false;
+                    if (opts.claimLookupTable) {
+                        try {
+                            const lookup = (await connection.getAddressLookupTable(
+                                new PublicKey(opts.claimLookupTable), { commitment: 'confirmed' }
+                            )).value;
+                            if (lookup) {
+                                const { blockhash } = await connection.getLatestBlockhash('confirmed');
+                                const msg = new TransactionMessage({
+                                    payerKey: buyer,
+                                    recentBlockhash: blockhash,
+                                    instructions: [
+                                        ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
+                                        solIx,
+                                    ],
+                                }).compileToV0Message([lookup]);
+                                txs.push(new VersionedTransaction(msg));
+                                pushed = true;
+                            }
+                        } catch {
+                            // Missing table or a key absent from it — fall
+                            // through to the legacy transaction.
+                        }
+                    }
+                    if (!pushed) txs.push(solTx);
                 }
             }
 

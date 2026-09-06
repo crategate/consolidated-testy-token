@@ -507,31 +507,31 @@
 }
 
 .neon-shadow.shadow-right::after {
-    box-shadow: 8px 0 16px -4px rgba(0, 240, 255, 0.32), 2px 0 6px -2px rgba(255, 42, 109, 0.18);
+    box-shadow: 8px 0 16px -4px rgba(0, 240, 255, 0.62), 2px 0 6px -2px rgba(255, 42, 109, 0.6);
 }
 
 .neon-shadow.shadow-left::after {
-    box-shadow: -8px 0 16px -4px rgba(255, 42, 109, 0.32), -2px 0 6px -2px rgba(0, 240, 255, 0.18);
+    box-shadow: -8px 0 16px -4px rgba(255, 42, 109, 0.72), -2px 0 6px -2px rgba(0, 240, 255, 0.6);
 }
 
 .neon-shadow.shadow-top::after {
-    box-shadow: 0 -8px 16px -4px rgba(211, 0, 249, 0.32), 0 -2px 6px -2px rgba(0, 240, 255, 0.18);
+    box-shadow: 0 -8px 16px -4px rgba(211, 0, 249, 0.82), 0 -2px 6px -2px rgba(0, 240, 255, 0.68);
 }
 
 .neon-shadow.shadow-bottom::after {
-    box-shadow: 0 8px 16px -4px rgba(255, 170, 0, 0.32), 0 2px 6px -2px rgba(5, 255, 161, 0.18);
+    box-shadow: 0 8px 16px -4px rgba(255, 170, 0, 0.52), 0 2px 6px -2px rgba(5, 255, 161, 0.58);
 }
 
 .neon-shadow.shadow-split::after {
-    box-shadow: -7px 0 14px -4px rgba(255, 42, 109, 0.3), 7px 0 14px -4px rgba(0, 240, 255, 0.3);
+    box-shadow: -7px 0 14px -4px rgba(255, 42, 109, 0.8), 7px 0 14px -4px rgba(0, 240, 255, 0.8);
 }
 
 .neon-shadow.shadow-diag::after {
-    box-shadow: -7px -7px 14px -4px rgba(211, 0, 249, 0.3), 7px 7px 14px -4px rgba(5, 255, 161, 0.26);
+    box-shadow: -7px -7px 14px -4px rgba(211, 0, 249, 0.6), 7px 7px 14px -4px rgba(5, 255, 161, 0.76);
 }
 
 .neon-shadow.shadow-under::after {
-    box-shadow: 0 9px 18px -4px rgba(255, 42, 109, 0.36), 0 16px 34px -8px rgba(211, 0, 249, 0.22);
+    box-shadow: 0 9px 18px -4px rgba(255, 42, 109, 0.56), 0 16px 34px -8px rgba(211, 0, 249, 0.92);
 }
 
 /* Cornered: two adjacent sides lit, like light spilling around a corner */

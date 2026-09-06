@@ -11,6 +11,7 @@ import {
     CRANK_PROGRAM_ID,
     field,
     type AmmStateData,
+    type LivePriceData,
     type MarketStatusData,
     type OfferListData,
     type StakePoolData,
@@ -227,6 +228,79 @@ async function fetchRemainingAccounts(
     };
 }
 
+/* ── Ratchet (buyback floor) history ──
+ *
+ * highest_buyback_basis only stores its CURRENT value, so "last % change"
+ * comes from tx logs: calc_completed_offers logs every decay cut
+ * ("floor decay locked day N: OLD -> NEW (live L, demand D%)"). Buyback/dip
+ * fills can also ratchet the floor UP (to the fill's exec price, unlogged)
+ * — the gap between the last decay's end value and the live floor exposes
+ * those. Scanned from recent amm_state txs; devnet-grade RPC cost, so this
+ * query refetches only on the dash's manual refresh.
+ */
+export interface RatchetDecayEvent {
+    slot: number;
+    time: number | null;
+    day: number;
+    from: bigint;
+    to: bigint;
+    live: bigint;
+    demand: number;
+}
+
+export interface RatchetHistory {
+    events: RatchetDecayEvent[]; // chronological, oldest first
+    scanned: number; // txs scanned
+}
+
+const DECAY_LOG_RE = /floor decay locked day (\d+): (\d+) -> (\d+) \(live (\d+), demand (\d+)%/;
+
+async function rpcRetry<T>(fn: () => Promise<T>): Promise<T> {
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    for (let i = 0; ; i++) {
+        try {
+            return await fn();
+        } catch (e) {
+            if (!/429|Too Many|rate/i.test(String(e)) || i > 5) throw e;
+            await sleep(1500 * (i + 1));
+        }
+    }
+}
+
+async function fetchRatchetHistory(
+    connection: Connection,
+    ammStatePda: PublicKey,
+): Promise<RatchetHistory> {
+    const sigs = await rpcRetry(() =>
+        connection.getSignaturesForAddress(ammStatePda, { limit: 30 }, 'confirmed')
+    );
+    const events: RatchetDecayEvent[] = [];
+    let scanned = 0;
+    for (const s of sigs.slice().reverse()) {
+        const t = await rpcRetry(() =>
+            connection.getTransaction(s.signature, { maxSupportedTransactionVersion: 0 })
+        );
+        scanned += 1;
+        if (!t || t.meta?.err) continue;
+        for (const line of t.meta?.logMessages ?? []) {
+            const m = line.match(DECAY_LOG_RE);
+            if (m) {
+                events.push({
+                    slot: t.slot,
+                    time: t.blockTime ?? null,
+                    day: Number(m[1]),
+                    from: BigInt(m[2]),
+                    to: BigInt(m[3]),
+                    live: BigInt(m[4]),
+                    demand: Number(m[5]),
+                });
+            }
+        }
+        await new Promise((r) => setTimeout(r, 900)); // devnet rate limits
+    }
+    return { events, scanned };
+}
+
 function buildDashData(
     deployment: ResolvedDeployment,
     marketStatus: MarketStatusData | null,
@@ -236,6 +310,8 @@ function buildDashData(
     remaining: RemainingAccounts,
     ammProgram: PublicKey,
     crankProgram: PublicKey,
+    livePrice: LivePriceData | null,
+    ratchet: RatchetHistory | null,
 ): DashData {
     const missing: string[] = [];
 
@@ -321,18 +397,59 @@ function buildDashData(
     // ---- AMM ----
     const ammFields: DashField[] = [];
     if (ammState) {
+        const floor = BigInt(field(ammState, 'highestBuybackBasis', 'highest_buyback_basis') ?? 0n);
+        const untaken = Number(field(ammState, 'untakenDays', 'untaken_days') ?? 0);
+        const spot = livePrice?.afhoUsdc ?? null;
+        const solSpot = livePrice?.solUsdc ?? null;
+        const pct = (a: bigint, b: bigint): string => `${((Number(a) - Number(b)) / Number(b) * 100).toFixed(2)}%`;
+        const usd = (f: bigint): string => `$${(Number(f) / 1e9).toFixed(9)}`;
         ammFields.push(
             {
                 label: 'SOL / USDC proceeds',
                 value: `${fmtSol(field(ammState, 'totalSolProceeds', 'total_sol_proceeds'))} / ${fmtToken(field(ammState, 'totalUsdcProceeds', 'total_usdc_proceeds'), 6)} USDC`,
             },
             {
-                label: 'Highest buyback basis',
+                label: 'Ratchet floor (USDC)',
                 // Stored in floor units (price × 1e9 nano-USD per token):
-                // 4505 = $0.000004505/AFHO. Display it as a dollar price.
-                value: `$${(Number(field(ammState, 'highestBuybackBasis', 'highest_buyback_basis')) / 1e9).toFixed(9)}`,
+                // 4505 = $0.000004505/AFHO.
+                value: usd(floor),
             },
+            {
+                label: 'Ratchet floor (SOL)',
+                // Same floor-unit convention on both legs → a plain ratio
+                // gives the whole-token AFHO price in SOL.
+                value: solSpot && solSpot > 0n ? `${(Number(floor) / Number(solSpot)).toFixed(12)} SOL` : '—',
+            },
+            {
+                label: 'Floor vs spot',
+                value: spot && spot > 0n
+                    ? `${pct(floor, spot)} ${floor >= spot ? 'above — decay territory' : 'below — desk trades over the floor'}`
+                    : '—',
+            },
+            { label: 'Untaken days', value: `${untaken} (decay kicks in after 3)` },
         );
+        const last = ratchet?.events[ratchet.events.length - 1] ?? null;
+        if (last) {
+            const decayPct = ((Number(last.to) - Number(last.from)) / Number(last.from) * 100).toFixed(2);
+            const since = ((Number(floor) - Number(last.to)) / Number(last.to) * 100).toFixed(2);
+            const ago = last.time
+                ? `${Math.max(1, Math.round((Date.now() / 1000 - last.time) / 3600))}h ago`
+                : '';
+            ammFields.push(
+                {
+                    label: 'Last floor decay',
+                    value: `${decayPct}% (${last.from} → ${last.to}) · day ${last.day} · demand ${last.demand}%${ago ? ` · ${ago}` : ''}`,
+                },
+                {
+                    label: 'Floor Δ since last decay',
+                    // Positive = buyback/dip fills ratcheted the floor back
+                    // up after that cut; ~0% = it has only decayed since.
+                    value: `${since.startsWith('-') || since === '0.00' ? '' : '+'}${since}%`,
+                },
+            );
+        } else {
+            ammFields.push({ label: 'Last floor decay', value: ratchet ? 'none in recent history' : '—' });
+        }
     }
     const ammAfho = token(remaining.ammAfhoVault);
     const ammUsdc = token(remaining.ammUsdcVault);
@@ -491,7 +608,7 @@ function buildDashData(
 
 export function useDashData() {
     const { connection } = useConnection();
-    const { deployment, marketStatus, pool, ammState, offerList, refresh } = useChainData();
+    const { deployment, marketStatus, pool, ammState, offerList, livePrice, refresh } = useChainData();
 
     const programs = useMemo(() => {
         return {
@@ -523,11 +640,29 @@ export function useDashData() {
         retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
     });
 
+    // Floor-change history: tx-log scan (~30 RPC calls), so manual-refresh
+    // only — no interval, no window-focus refetch.
+    const ratchetQuery = useQuery({
+        queryKey: ['dashRatchet', deployment?.ammState ?? ''],
+        queryFn: async () => {
+            if (!deployment?.ammState) throw new Error('Deployment not loaded');
+            return fetchRatchetHistory(connection, new PublicKey(deployment.ammState));
+        },
+        enabled: !!deployment?.ammState,
+        staleTime: 60_000,
+        retry: (failureCount, error) => {
+            const msg = error instanceof Error ? error.message : String(error);
+            return /429|rate/i.test(msg) ? failureCount < 2 : failureCount < 1;
+        },
+        retryDelay: (attemptIndex) => Math.min(2000 * 2 ** attemptIndex, 30000),
+    });
+
     const doRefresh = useCallback(() => {
         void refresh('amm');
         void refresh('marketStatus');
         void refresh('pool');
-    }, [refresh]);
+        void ratchetQuery.refetch();
+    }, [refresh, ratchetQuery]);
 
     const data = useMemo(() => {
         if (!deployment || !remainingQuery.data) return null;
@@ -540,8 +675,10 @@ export function useDashData() {
             remainingQuery.data,
             ammProgram,
             crankProgram,
+            livePrice ?? null,
+            ratchetQuery.data ?? null,
         );
-    }, [deployment, marketStatus, pool, ammState, offerList, remainingQuery.data, ammProgram, crankProgram]);
+    }, [deployment, marketStatus, pool, ammState, offerList, remainingQuery.data, ammProgram, crankProgram, livePrice, ratchetQuery.data]);
 
     const error = remainingQuery.error instanceof Error ? remainingQuery.error.message : null;
 

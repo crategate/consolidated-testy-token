@@ -19,7 +19,7 @@ function Section({ section, hideAddresses }: { section: DashSection; hideAddress
                 {section.fields.map((f) => (
                     <div className="dash-row" key={f.label}>
                         <span className="dash-label">{f.label}</span>
-                        <span className="dash-value">{f.value}</span>
+                        <p className="dash-value">{f.value}</p>
                     </div>
                 ))}
                 {!hideAddresses &&

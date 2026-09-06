@@ -73,6 +73,13 @@ export interface OfferDeskData {
     tiers: OfferTierData[];
     livePrice: bigint | null;
     solPrice: bigint | null;
+    // Raw vault reserves of the pinned SOL/USDC pool — lets the UI mirror
+    // the exact offer_claim_sol charge solve instead of the spot ratio.
+    solPoolReserves: { wsolRaw: bigint; usdcRaw: bigint } | null;
+    // Address lookup table for v0 SOL claim transactions (nullable: the app
+    // falls back to the legacy transaction before scripts/create-claim-alt
+    // has run).
+    claimLookupTable: string | null;
     floorBasis: bigint;
     afhoDecimals: number;
     usdcDecimals: number;
@@ -343,6 +350,8 @@ export function useAmmData(): OfferDeskData {
         tiers: tiersDisplay,
         livePrice: livePrice.afhoUsdc,
         solPrice: livePrice.solUsdc,
+        solPoolReserves: livePrice.solPoolReserves,
+        claimLookupTable: deployment?.claimLookupTable ?? null,
         floorBasis: ammState ? big(field(ammState, 'highestBuybackBasis', 'highest_buyback_basis')) : 0n,
         afhoDecimals: decimals.afho,
         usdcDecimals: decimals.usdc,

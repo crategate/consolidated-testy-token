@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { formatSol, formatTokens, lamportsForCost, pricePerToken, quoteCostRaw, effectivePrice } from '../../hooks/amm/offerMath.ts';
+import { formatSol, formatTokens, lamportsForCost, lamportsForCostExact, pricePerToken, quoteCostRaw, effectivePrice } from '../../hooks/amm/offerMath.ts';
 import type { OfferTierData } from '../../hooks/amm/useAmmData.ts';
 
 interface SingleOfferProps {
@@ -9,6 +9,7 @@ interface SingleOfferProps {
     floorBasis: bigint;
     currency: 'usdc' | 'sol';
     solPrice: bigint | null;
+    solPoolReserves: { wsolRaw: bigint; usdcRaw: bigint } | null;
     afhoDecimals: number;
     disabled: boolean;
     onQtyChange: (qty: number) => void;
@@ -21,6 +22,7 @@ export default function SingleOffer({
     floorBasis,
     currency,
     solPrice,
+    solPoolReserves,
     afhoDecimals,
     disabled,
     onQtyChange,
@@ -42,18 +44,29 @@ export default function SingleOffer({
     };
 
     // Approximate per-lot price in the SELECTED payment currency — the final
-    // price is fixed on-chain at claim time from the same pool read this
-    // estimate uses. Sums the closed-session bonus so the estimate matches
-    // the on-chain quote. SOL mirrors the claim handler's own conversion
-    // (lamportsForCost: cost × 1.0025 headroom / SOL price).
+    // price is fixed on-chain at claim time. USDC pays the discounted spot
+    // directly; SOL mirrors the claim handler's own charge solve
+    // (cpmm_swap_input_for_out against the SOL/USDC pool's live reserves —
+    // spot + the trade's own price impact), falling back to the spot ratio
+    // while reserves load. If even one lot can't be served by the pool's
+    // USDC side, the claim would revert on-chain — say so instead of quoting
+    // a phantom number.
     let perLot: string | null = null;
     let perLotUnit = 'USDC';
+    let perLotNote: string | null = null;
     if (livePrice !== null && livePrice > 0n) {
         if (currency === 'sol' && solPrice !== null && solPrice > 0n) {
             const usdcRaw = quoteCostRaw(
                 livePrice, offer.discountBps + offer.bonusBps, floorBasis, offer.lotTier, 1, afhoDecimals,
             );
-            perLot = formatSol(lamportsForCost(usdcRaw, solPrice));
+            const exact = lamportsForCostExact(usdcRaw, solPoolReserves);
+            if (exact !== null) {
+                perLot = formatSol(exact);
+            } else if (solPoolReserves !== null) {
+                perLotNote = 'SOL pool too thin';
+            } else {
+                perLot = formatSol(lamportsForCost(usdcRaw, solPrice));
+            }
             perLotUnit = 'SOL';
         } else if (currency === 'usdc') {
             const eff = effectivePrice(livePrice, offer.discountBps + offer.bonusBps, floorBasis);
@@ -66,6 +79,27 @@ export default function SingleOffer({
 
     const excite = qty > 0 ? Math.min(1 + (qty - 1) * 0.35, 2.4) : 1;
 
+    // Real delivered discount vs live spot, shown on the price line: the
+    // header pill only promises "up to" — the buyback floor can hold the
+    // effective price above the discounted quote and shrink the actual %.
+    // Green when the tier delivers its full listed discount (matching the
+    // pill); blue↔green pulse when the late-nite bonus stacks on top;
+    // muted when the ratchet eats part of it.
+    const eff = livePrice !== null && livePrice > 0n
+        ? effectivePrice(livePrice, offer.discountBps + offer.bonusBps, floorBasis)
+        : null;
+    const realPct = eff !== null && livePrice !== null
+        ? Math.max(0, (1 - Number(eff) / Number(livePrice)) * 100)
+        : null;
+    const fullDiscount = eff !== null && livePrice !== null && eff < livePrice;
+    const priceTone = perLot === null || realPct === null
+        ? undefined
+        : fullDiscount
+            ? offer.bonusBps > 0
+                ? 'offer-price--full-bonus'
+                : 'offer-price--full'
+            : 'offer-price--reduced';
+
     return (
         <article
             className={`offer-card glass-pane ${selected ? 'selected' : ''} ${soldOut ? 'sold-out' : ''}`}
@@ -77,7 +111,7 @@ export default function SingleOffer({
         >
             <header className="offer-card-header">
                 <h3>{offer.label}</h3>
-                <span className="offer-discount">{offer.discountBps / 10}% off</span>
+                <span className="offer-discount">up to {offer.discountBps / 10}% off</span>
             </header>
             {offer.bonusBps > 0 && (
                 <div className="offer-bonus-row">
@@ -100,7 +134,10 @@ export default function SingleOffer({
                 </div>
                 <div>
                     <dt>≈ Price / lot</dt>
-                    <dd>{perLot !== null ? `${perLot} ${perLotUnit}` : '—'}</dd>
+                    <dd className={priceTone}>
+                        {perLot !== null ? `${perLot} ${perLotUnit}` : perLotNote ?? '—'}
+                        {realPct !== null && perLot !== null ? ` · ${realPct.toFixed(1)}% off` : ''}
+                    </dd>
                 </div>
             </dl>
 

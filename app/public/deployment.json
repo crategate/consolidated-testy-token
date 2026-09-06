@@ -10,7 +10,7 @@
   "penaltyVault": "F3vj7z6B7CnGATEn63XXGMdHiXyR6mK1F3mzwdqGXsQm",
   "posrVault": "B7sSgUt6cDExqy6m9gbTTJipVUgvFAYH9npYevDQeJvr",
   "marketStatus": "CUugGr25QqgZVLj5hV27WkmRRLE8v6MKrdPP39EscHAJ",
-  "updatedAt": "2026-09-05T16:08:05.390Z",
+  "updatedAt": "2026-09-05T21:32:43.115Z",
   "ammProgram": "AU19M8ELLh7h4GMpmj9ZKjF4NNXmYK6aiVoLs9yvnuRi",
   "ammState": "Eq8WoXXzqnuNV3gvaz6pKonMgWfSaNi2C6dWyhPUfD6K",
   "ammOfferList": "EjPiaLD9Fnz8DbNDjt1dp1ySwcFuKXaaxjkF2Uy2rnLe",
@@ -23,5 +23,6 @@
   "raydiumAmmConfig": "5MxLgy9oPdTC3YgkiePHqr3EoCRD9uLVYRQS2ANAs7wy",
   "raydiumProgram": "DRaycpLY18LhpbydsBWbVJtxpNv9oXPgjRSfpF2bWpYb",
   "raydiumSolUsdcPool": "F2em47m96kuHi4zh76aN5N1hpxGgsbiu6kcX2xqYpKVF",
-  "raydiumSolUsdcConfig": "5MxLgy9oPdTC3YgkiePHqr3EoCRD9uLVYRQS2ANAs7wy"
+  "raydiumSolUsdcConfig": "5MxLgy9oPdTC3YgkiePHqr3EoCRD9uLVYRQS2ANAs7wy",
+  "claimLookupTable": "H9NrUPKDdFRgSWxGZGoFV24TDFvkNqtki36y2ptu1dh8"
 }

@@ -8,6 +8,7 @@ interface SizedOffersProps {
     floorBasis: bigint;
     currency: 'usdc' | 'sol';
     solPrice: bigint | null;
+    solPoolReserves: { wsolRaw: bigint; usdcRaw: bigint } | null;
     afhoDecimals: number;
     disabled: boolean;
     onQtyChange: (tierKey: string, qty: number) => void;
@@ -20,6 +21,7 @@ export default function SizedOffers({
     floorBasis,
     currency,
     solPrice,
+    solPoolReserves,
     afhoDecimals,
     disabled,
     onQtyChange,
@@ -35,6 +37,7 @@ export default function SizedOffers({
                     floorBasis={floorBasis}
                     currency={currency}
                     solPrice={solPrice}
+                    solPoolReserves={solPoolReserves}
                     afhoDecimals={afhoDecimals}
                     disabled={disabled}
                     onQtyChange={(q) => onQtyChange(offer.key, q)}

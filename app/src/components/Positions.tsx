@@ -110,7 +110,7 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
             </div>
 
 
-            <div className="claims-header neon-glitch glass-pane">
+            <div className="claims-header glass-pane neon-glitch ">
                 <button
                     className="claim-collect"
                     onClick={handleClaimAll}
@@ -146,7 +146,7 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
                                 <span><strong>{(pos.amount / 1e9).toFixed(2)} </strong> AFHO</span>
                                 <div className="position-badges">
                                     {isBond && (
-                                        <span className="bond-badge" title="Purchased via night-desk bond offer">
+                                        <span className="bond-badge neon-glitch" title="Purchased via night-desk bond offer">
                                             Bond
                                         </span>
                                     )}

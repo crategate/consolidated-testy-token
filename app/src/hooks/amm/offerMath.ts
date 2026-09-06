@@ -85,11 +85,55 @@ export function lamportsForCost(costUsdcRaw: bigint, solPrice: bigint): bigint {
     return (costUsdcRaw * 1_000_000_000_000n * 10_025n) / solPrice / 10_000n;
 }
 
-// Lamports → human SOL, up to 4 decimal places (trailing zeros trimmed).
+// The pinned SOL/USDC amm_config's input-leg trade fee — mirror of
+// SOL_POOL_TRADE_FEE_BPS in programs/amm/src/instructions/offer_claim.rs.
+export const SOL_POOL_TRADE_FEE_BPS = 25;
+
+// Exact port of programs/amm raydium::cpmm_swap_input_for_out: the gross
+// swap_base_input input (including the pool's fee_bps input-leg fee) whose
+// constant-product output nets at least min_out against reserves
+// (r_in, r_out). Same ceil-the-net / floor-the-gross integer shape as the
+// on-chain u128 math, so with unchanged reserves the estimate IS the charge.
+// Returns null when the pool cannot serve min_out — the same condition that
+// reverts the claim on-chain (InsufficientPoolLiquidity, min_out ≥ r_out).
+export function cpmmInputForOut(
+    rIn: bigint,
+    rOut: bigint,
+    minOut: bigint,
+    feeBps: number,
+): bigint | null {
+    if (rIn <= 0n || rOut <= 0n || minOut <= 0n || minOut >= rOut || feeBps >= 10_000) {
+        return null;
+    }
+    const num = minOut * rIn;
+    const den = rOut - minOut; // > 0 by the guard above
+    const netReq = (num + den - 1n) / den; // ceil(num/den)
+    const gross = (netReq * 10_000n) / (10_000n - BigInt(feeBps)); // floor, like on-chain
+    return gross > 0n ? gross : null;
+}
+
+// lamportsForCost against the pool's LIVE vault balances instead of its
+// spot ratio: what offer_claim_sol will actually charge — the on-chain
+// solve reads the same raw vault amounts. (Raydium's own curve trades
+// against vault-minus-fee-ledger reserves, so the vault-based charge is
+// mildly conservative when fees have accrued; the buyer never underpays.)
+// Null/unknown reserves → null (caller falls back to the spot estimate); a
+// null result with known reserves means the pool can't serve the order.
+export function lamportsForCostExact(
+    costUsdcRaw: bigint,
+    reserves: { wsolRaw: bigint; usdcRaw: bigint } | null | undefined,
+): bigint | null {
+    if (!reserves || costUsdcRaw <= 0n) return null;
+    return cpmmInputForOut(reserves.wsolRaw, reserves.usdcRaw, costUsdcRaw, SOL_POOL_TRADE_FEE_BPS);
+}
+
+// Lamports → human SOL, up to 6 decimal places (trailing zeros trimmed).
+// Six digits matter on the desk: at devnet prices a lot can cost well under
+// 0.001 SOL, and the old 4dp truncation read 0.00037 as "0.0003".
 export function formatSol(lamports: bigint): string {
     const unit = 1_000_000_000n;
     const whole = lamports / unit;
-    const frac4 = (lamports % unit) / 100_000n;
-    const frac = frac4.toString().padStart(4, '0').replace(/0+$/, '');
+    const frac6 = (lamports % unit) / 1_000n;
+    const frac = frac6.toString().padStart(6, '0').replace(/0+$/, '');
     return frac ? `${whole.toLocaleString('en-US')}.${frac}` : whole.toLocaleString('en-US');
 }

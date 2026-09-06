@@ -196,7 +196,7 @@ export function ChainDataProvider({ children }: { children: ReactNode }) {
             // batched call on the first tick, never again.
             let livePrice: LivePriceData = previousAmmState
                 ? computeLivePrice(priceInfos)
-                : { afhoUsdc: null, solUsdc: null };
+                : { afhoUsdc: null, solUsdc: null, solPoolReserves: null };
             if (!previousAmmState && ammState) {
                 const coldStartInfos = await connection.getMultipleAccountsInfo(
                     derivePriceAccounts(ammState, mint),
@@ -255,7 +255,7 @@ export function ChainDataProvider({ children }: { children: ReactNode }) {
         ammStateLoading: snapshotQuery.isLoading,
         offerList: snapshot?.offerList ?? null,
         offerListLoading: snapshotQuery.isLoading,
-        livePrice: snapshot?.livePrice ?? { afhoUsdc: null, solUsdc: null },
+        livePrice: snapshot?.livePrice ?? { afhoUsdc: null, solUsdc: null, solPoolReserves: null },
         livePriceLoading: snapshotQuery.isLoading,
         livePriceUpdatedAt: snapshotQuery.dataUpdatedAt || null,
         refresh,

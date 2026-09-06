@@ -28,6 +28,7 @@ type DeploymentState = {
     raydiumProgram?: string;
     raydiumSolUsdcPool?: string;
     raydiumSolUsdcConfig?: string;
+    claimLookupTable?: string;
 };
 
 const deploymentPath = path.join(process.cwd(), "app", "public", "deployment.json");

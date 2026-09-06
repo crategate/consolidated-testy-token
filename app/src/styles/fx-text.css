@@ -1286,3 +1286,18 @@
 .app-shell[data-active='true'] .hero-brand .tagline {
     animation-duration: calc(var(--fx-text-cycle) * 0.8);
 }
+
+/* Late-nite bond pricing: full discount + bonus stack — the price/lot
+   tides between the % off pill's green and the bonus pill's blue. Slow and
+   even (no strobe); reduced-motion setups keep the static green. */
+@keyframes priceDiscountTide {
+
+    0%,
+    100% {
+        color: var(--neon-green);
+    }
+
+    50% {
+        color: var(--neon-blue);
+    }
+}

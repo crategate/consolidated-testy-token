@@ -143,7 +143,7 @@
 /* ═══ Reduced motion — every effect stripped, content intact ═══ */
 @media (prefers-reduced-motion: reduce) {
 
-    /* border glitch */
+    /* border glitch 
     .neon-glitch::before,
     .neon-border::before,
     .connect-prompt .glitch-border,
@@ -151,7 +151,6 @@
     .order-bar::before,
     .desk-banner::before,
     .wallet-adapter-modal-container::before,
-    /* colored back-shadows */
     .neon-shadow::after,
     .connect-prompt::before,
     .stake-form.rainbow-glow::before,
@@ -165,7 +164,6 @@
     .amm-controls .wallet-button-wrapper::before,
     .wallet-adapter-modal-container::after,
     .desk-banner::after,
-    /* text shadows */
     .text-glitch,
     .text-glitch-rgb,
     .text-glitch-light,
@@ -201,9 +199,11 @@
     .offer-soldout,
     .market-badge.open,
     .desk-banner.open,
-    /* backdrop drift + ambient washes */
+    /* backdrop drift + ambient washes 
     .fx-blob,
     .amm-page-shell::before {
         animation: none !important;
     }
+
+    */
 }

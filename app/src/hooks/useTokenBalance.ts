@@ -7,9 +7,11 @@ import {
 } from '@solana/spl-token';
 
 // SPL / Token-2022 token account `amount` is a u64 LE at offset 64.
-function amountFromAccountInfo(info: { data: Uint8Array }): number {
+// Returned as raw base units (bigint) so fill math never loses precision —
+// the human float is derived, never the other way around.
+function amountFromAccountInfo(info: { data: Uint8Array }): bigint {
     const view = new DataView(info.data.buffer, info.data.byteOffset, info.data.byteLength);
-    return Number(view.getBigUint64(64, true));
+    return view.getBigUint64(64, true);
 }
 
 /**
@@ -21,27 +23,41 @@ export function useTokenBalance(
     mint: PublicKey | null,
     owner: PublicKey | null,
     decimals = 9,
-): { balance: number | null; refresh: () => Promise<void> } {
+): { balance: number | null; rawBalance: bigint | null; refresh: () => Promise<void> } {
     const { connection } = useConnection();
     const [balance, setBalance] = useState<number | null>(null);
+    const [rawBalance, setRawBalance] = useState<bigint | null>(null);
+
+    const applyAmount = useCallback(
+        (info: { data: Uint8Array } | null) => {
+            const raw = info ? amountFromAccountInfo(info) : 0n;
+            setRawBalance(raw);
+            setBalance(Number(raw) / 10 ** decimals);
+        },
+        [decimals],
+    );
 
     const refresh = useCallback(async () => {
         if (!connection || !mint || !owner) {
             setBalance(null);
+            setRawBalance(null);
             return;
         }
         try {
             const ata = getAssociatedTokenAddressSync(mint, owner, false, TOKEN_2022_PROGRAM_ID);
             const info = await connection.getAccountInfo(ata, 'confirmed');
-            setBalance(info ? amountFromAccountInfo(info) / 10 ** decimals : 0);
+            applyAmount(info);
         } catch {
-            setBalance(0);
+            applyAmount(null);
         }
-    }, [connection, mint, owner, decimals]);
+    }, [connection, mint, owner, applyAmount]);
 
     useEffect(() => {
         if (!connection || !mint || !owner) {
-            void Promise.resolve().then(() => setBalance(null));
+            void Promise.resolve().then(() => {
+                setBalance(null);
+                setRawBalance(null);
+            });
             return;
         }
 
@@ -51,11 +67,9 @@ export function useTokenBalance(
         void Promise.resolve().then(async () => {
             try {
                 const info = await connection.getAccountInfo(ata, 'confirmed');
-                if (!cancelled) {
-                    setBalance(info ? amountFromAccountInfo(info) / 10 ** decimals : 0);
-                }
+                if (!cancelled) applyAmount(info);
             } catch {
-                if (!cancelled) setBalance(0);
+                if (!cancelled) applyAmount(null);
             }
         });
 
@@ -63,7 +77,7 @@ export function useTokenBalance(
             ata,
             (info) => {
                 if (!cancelled && !document.hidden) {
-                    setBalance(amountFromAccountInfo(info) / 10 ** decimals);
+                    applyAmount(info);
                 }
             },
             'confirmed',
@@ -73,7 +87,7 @@ export function useTokenBalance(
             cancelled = true;
             void connection.removeAccountChangeListener(subscriptionId);
         };
-    }, [connection, mint, owner, decimals]);
+    }, [connection, mint, owner, applyAmount]);
 
-    return { balance, refresh };
+    return { balance, rawBalance, refresh };
 }

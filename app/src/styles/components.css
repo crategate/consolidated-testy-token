@@ -176,6 +176,57 @@
     color: var(--text-muted);
 }
 
+/* Quick-fill percent buttons (25 / 50 / 75 / MAX) under the amount input.
+   Scoped overrides of the full-width .stake-form button styling above —
+   mirrors the offer desk's .pct-btn look. */
+.stake-form .pct-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: -0.5rem 0 1rem;
+}
+
+.stake-form .pct-btn {
+    width: auto;
+    padding: 5px 11px;
+    border-radius: 6px;
+    border: 1px solid var(--border-subtle);
+    background: none;
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 400;
+    line-height: 1;
+    text-transform: none;
+    letter-spacing: normal;
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s, color 0.2s;
+}
+
+.stake-form .pct-btn:hover:not(:disabled) {
+    background: transparent;
+    color: var(--neon-cyan);
+    border-color: rgba(0, 240, 255, 0.6);
+    box-shadow: 0 0 10px rgba(0, 240, 255, 0.2);
+}
+
+.stake-form .pct-btn:active:not(:disabled) {
+    background: transparent;
+    box-shadow: 0 0 10px rgba(0, 240, 255, 0.2);
+}
+
+.stake-form .pct-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+    border-color: var(--border-subtle);
+    color: var(--text-secondary);
+}
+
+/* The ready-state submit glow must not reach the quick-fill buttons. */
+.stake-form[data-step='ready'] .pct-btn:not(:disabled) {
+    animation: none;
+    border-color: var(--border-subtle);
+}
+
 .stake-form button {
     width: 100%;
     padding: 0.875rem;

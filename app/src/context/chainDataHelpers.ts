@@ -264,6 +264,13 @@ function tokenAmount(data: Uint8Array | null): bigint | null {
 export interface LivePriceData {
     afhoUsdc: bigint | null;
     solUsdc: bigint | null;
+    /**
+     * Raw vault reserves of the pinned SOL/USDC pool — the exact numbers the
+     * on-chain offer_claim_sol charge solve reads at claim time. Null when
+     * the pool isn't pinned or a vault wasn't readable; 0 means the vault
+     * exists but is empty (the UI can distinguish both from unknown).
+     */
+    solPoolReserves: { wsolRaw: bigint; usdcRaw: bigint } | null;
 }
 
 /**
@@ -341,6 +348,11 @@ export function computeLivePrice(infos: Array<{ data: Uint8Array } | null>): Liv
     if (solBase !== null && solQuote !== null && solBase > 0n) {
         solUsdc = (solQuote * 1_000_000_000_000n) / solBase;
     }
+    // Raw reserves for the exact claim-charge mirror (lamportsForCostExact):
+    // reported whenever both vaults were readable, even if a side is 0, so
+    // the UI can tell "unknown" (null) from "empty" (0) pool states.
+    const solPoolReserves =
+        solBase !== null && solQuote !== null ? { wsolRaw: solBase, usdcRaw: solQuote } : null;
     // NO mock fallback for the SOL leg: the desk price must come from the
     // pinned Raydium SOL/USDC pool vault ratio or not at all. A stale raw-u64
     // stub (b"mock_price" + wSOL) once priced SOL 1000× off here; until
@@ -348,7 +360,7 @@ export function computeLivePrice(infos: Array<{ data: Uint8Array } | null>): Liv
     // set-sol-usdc-pool`), solUsdc stays null — the UI shows "—" and keeps
     // the SOL currency option disabled (fail closed).
 
-    return { afhoUsdc, solUsdc };
+    return { afhoUsdc, solUsdc, solPoolReserves };
 }
 
 /* ── wSOL ATA helper for SOL claim path ── */

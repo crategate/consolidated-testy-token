@@ -11,9 +11,9 @@ const STATE_LABELS: Record<number, string> = {
 };
 
 const STATE_SUBTITLES: Record<number, string> = {
-    0: 'NYSE is open. Staking multipliers active. No penalties.',
-    1: 'After-hours session. Light penalties apply to claims & unstakes.',
-    2: 'Markets are closed. Medium penalties for early exits.',
+    0: 'NYSE is open. Reward Claim available. No penalties to exit positions.',
+    1: 'After-hours session. No reward claim available, small penalty to exit positions',
+    2: 'Markets are closed. Medium penalties to principle for exiting positions.',
     3: 'Trading halted due to volatility. Severe penalties active.',
 };
 

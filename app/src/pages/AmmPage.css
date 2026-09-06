@@ -279,6 +279,18 @@
     border-color: #2f5d43;
 }
 
+/* Success banner rides at the top of the viewport while the buyer scrolls
+   the desk — solid backdrop so content slides under it legibly. */
+.desk-banner--sticky {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    background: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+}
+
 .desk-banner a {
     color: #8ab4ff;
 }
@@ -597,6 +609,26 @@
     color: var(--neon-blue);
     background: #101c26;
     border-color: #2f5470;
+}
+
+/* Price/lot discount confirmation: the header pill promises "up to X% off"
+   — the price line reports what the tier actually delivers. Green = full
+   listed discount (same green as the pill); blue↔green pulse = full
+   discount + late-nite bonus stacked; muted = the buyback floor ate part
+   of the discount (ratchet active). */
+.offer-price--full {
+    color: var(--neon-green);
+    text-shadow: 0 0 10px rgba(60, 200, 120, 0.25);
+}
+
+.offer-price--full-bonus {
+    color: var(--neon-green);
+    text-shadow: 0 0 10px currentColor;
+    animation: priceDiscountTide 4.8s ease-in-out infinite;
+}
+
+.offer-price--reduced {
+    color: var(--text-muted);
 }
 
 .offer-bonus-row {
