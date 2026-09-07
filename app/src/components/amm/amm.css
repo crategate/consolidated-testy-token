@@ -1,5 +1,5 @@
-/* Fixed top-of-page "offers available now" banner. Full-width, short,
-   dark tinted amber glass — obvious, but not a solid yellow shout. */
+/* Fixed top-of-page banner explaining the AMM desk state. Full-width, short,
+   dark translucent orange — obvious, but not a solid shout. */
 .home-offer-indicator {
     position: fixed;
     top: 0;
@@ -12,24 +12,36 @@
     gap: 10px;
     height: 40px;
     padding: 0 16px;
-    background: rgba(255, 214, 10, 0.13);
+    background: rgba(255, 140, 20, 0.13);
     backdrop-filter: blur(12px) saturate(140%);
     -webkit-backdrop-filter: blur(12px) saturate(140%);
-    color: #ffd60a;
+    color: #ffb066;
     text-decoration: none;
-    border-bottom: 1px solid rgba(255, 214, 10, 0.35);
+    border-bottom: 1px solid rgba(255, 140, 20, 0.35);
     box-shadow: 0 2px 14px rgba(0, 0, 0, 0.35);
     white-space: nowrap;
     overflow: hidden;
 }
 
 .home-offer-indicator:hover {
-    background: rgba(255, 214, 10, 0.19);
-    border-bottom-color: rgba(255, 214, 10, 0.55);
+    background: rgba(255, 140, 20, 0.19);
+    border-bottom-color: rgba(255, 140, 20, 0.55);
+}
+
+/* Desk paused by the buyback floor: same orange family, red-shifted — the
+   banner stops advertising a sale and explains the pause instead. */
+.home-offer-indicator.paused {
+    background: rgba(255, 96, 24, 0.11);
+    border-bottom-color: rgba(255, 96, 24, 0.38);
+}
+
+.home-offer-indicator.paused:hover {
+    background: rgba(255, 96, 24, 0.17);
+    border-bottom-color: rgba(255, 96, 24, 0.55);
 }
 
 /* CLOSED-session bonus pill inside the banner — blue, same rounded-pill
-   shape as the desk's .offer-discount. Blue-tints the banner so the extra
+   shape as the desk's .offer-discount. Blue-tints the pill so the extra
    discount reads at a glance from any page. */
 .indicator-bonus-pill {
     font-size: 13px;
@@ -40,16 +52,6 @@
     border-radius: 999px;
     padding: 2px 10px;
     flex-shrink: 0;
-}
-
-.home-offer-indicator.closed-bonus {
-    background: rgba(0, 240, 255, 0.09);
-    border-bottom-color: rgba(0, 240, 255, 0.35);
-}
-
-.home-offer-indicator.closed-bonus:hover {
-    background: rgba(0, 240, 255, 0.15);
-    border-bottom-color: rgba(0, 240, 255, 0.55);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -72,6 +74,11 @@
     flex-shrink: 0;
 }
 
+.home-offer-indicator.paused .indicator-pulse {
+    background: #c04a2f;
+    box-shadow: 0 0 8px rgba(192, 74, 47, 0.8);
+}
+
 .indicator-text {
     display: flex;
     align-items: baseline;
@@ -86,14 +93,18 @@
 .indicator-text strong {
     font-size: 14px;
     font-weight: 800;
-    color: #ffd60a;
+    color: #ffb066;
     letter-spacing: -0.01em;
+}
+
+.home-offer-indicator.paused .indicator-text strong {
+    color: #ff9d7a;
 }
 
 .indicator-text span {
     font-size: 13px;
     font-weight: 500;
-    color: rgba(255, 214, 10, 0.72);
+    color: rgba(255, 176, 102, 0.72);
     overflow: hidden;
     text-overflow: ellipsis;
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { formatSol, formatTokens, lamportsForCost, lamportsForCostExact, pricePerToken, quoteCostRaw, effectivePrice } from '../../hooks/amm/offerMath.ts';
+import { formatSol, formatTokens, lamportsForCost, lamportsForCostExact, pricePerToken, quoteCostRaw, quoteEffectivePrice } from '../../hooks/amm/offerMath.ts';
 import type { OfferTierData } from '../../hooks/amm/useAmmData.ts';
 
 interface SingleOfferProps {
@@ -7,6 +7,7 @@ interface SingleOfferProps {
     qty: number;
     livePrice: bigint | null;
     floorBasis: bigint;
+    marketState: number | null;
     currency: 'usdc' | 'sol';
     solPrice: bigint | null;
     solPoolReserves: { wsolRaw: bigint; usdcRaw: bigint } | null;
@@ -20,6 +21,7 @@ export default function SingleOffer({
     qty,
     livePrice,
     floorBasis,
+    marketState,
     currency,
     solPrice,
     solPoolReserves,
@@ -57,7 +59,7 @@ export default function SingleOffer({
     if (livePrice !== null && livePrice > 0n) {
         if (currency === 'sol' && solPrice !== null && solPrice > 0n) {
             const usdcRaw = quoteCostRaw(
-                livePrice, offer.discountBps, offer.bonusBps, floorBasis, offer.lotTier, 1, afhoDecimals,
+                livePrice, offer.discountBps, offer.bonusBps, floorBasis, offer.lotTier, 1, afhoDecimals, marketState,
             );
             const exact = lamportsForCostExact(usdcRaw, solPoolReserves);
             if (exact !== null) {
@@ -69,7 +71,7 @@ export default function SingleOffer({
             }
             perLotUnit = 'SOL';
         } else if (currency === 'usdc') {
-            const eff = effectivePrice(livePrice, offer.discountBps, offer.bonusBps, floorBasis);
+            const eff = quoteEffectivePrice(livePrice, offer.discountBps, offer.bonusBps, floorBasis, marketState);
             const usd = pricePerToken(eff) * offer.lotTokens;
             perLot = usd >= 1
                 ? usd.toLocaleString('en-US', { maximumFractionDigits: 2 })
@@ -87,23 +89,31 @@ export default function SingleOffer({
     //   bonus only (floor would bind) → blue   (bonus is the live discount)
     //   ratchet holds, no bonus       → muted  (partial discount)
     const eff = livePrice !== null && livePrice > 0n
-        ? effectivePrice(livePrice, offer.discountBps, offer.bonusBps, floorBasis)
+        ? quoteEffectivePrice(livePrice, offer.discountBps, offer.bonusBps, floorBasis, marketState)
         : null;
     const realPct = eff !== null && livePrice !== null
         ? Math.max(0, (1 - Number(eff) / Number(livePrice)) * 100)
         : null;
     // "Maximum discount applied": the effective price carries the tier's
     // full listed discount — i.e. it equals the discounted quote itself,
-    // with no floor uplift. (With the bonus override this is always true at
-    // night; in state 1 it is false whenever the ratchet binds.)
+    // with no floor uplift. The bonus only deepens that quote in state 2
+    // (closed session); in the state-1 rescue it relaxes the floor alone.
     const fullDiscount = eff !== null && livePrice !== null && livePrice > 0n && eff < livePrice
-        ? eff <= livePrice - (livePrice * BigInt(Math.min(255, offer.discountBps + offer.bonusBps)) * 10n) / 10_000n
+        ? eff <= livePrice - (livePrice * BigInt(Math.min(255, offer.discountBps + (marketState === 2 ? offer.bonusBps : 0))) * 10n) / 10_000n
         : false;
     const bonusApplied = offer.bonusBps > 0;
+    // Floor-held tier: the effective price sits at/above live spot — this
+    // tier is not buyable (on-chain quote_claim would revert
+    // FloorHeldAtSpot). Surface it on the tile BEFORE the buyer adds it to
+    // the cart.
+    const floorHeld = eff !== null && livePrice !== null && livePrice > 0n && eff >= livePrice && !soldOut;
     const priceTone = perLot === null || realPct === null
         ? undefined
         : fullDiscount
-            ? bonusApplied
+            // In state 2 the bonus genuinely deepens the discount → pulse.
+            // In the state-1 rescue the bonus only unblocks the floor, so a
+            // fully-applied base discount reads as plain green.
+            ? bonusApplied && marketState === 2
                 ? 'offer-price--full-bonus'
                 : 'offer-price--full'
             : bonusApplied
@@ -112,7 +122,7 @@ export default function SingleOffer({
 
     return (
         <article
-            className={`offer-card glass-pane ${selected ? 'selected' : ''} ${soldOut ? 'sold-out' : ''}`}
+            className={`offer-card glass-pane ${selected ? 'selected' : ''} ${soldOut ? 'sold-out' : ''} ${floorHeld ? 'floor-held' : ''}`}
             data-tier={offer.tier}
             style={{
                 '--tier-excite': String(excite),
@@ -155,7 +165,7 @@ export default function SingleOffer({
                 <button
                     type="button"
                     onClick={() => onQtyChange(qty - 1)}
-                    disabled={disabled || qty === 0}
+                    disabled={disabled || floorHeld || qty === 0}
                     aria-label="decrease"
                 >
                     −
@@ -171,19 +181,24 @@ export default function SingleOffer({
                     onKeyDown={(e) => {
                         if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
                     }}
-                    disabled={disabled || soldOut}
+                    disabled={disabled || floorHeld || soldOut}
                     aria-label={`${offer.label} quantity input`}
                 />
                 <button
                     type="button"
                     onClick={() => onQtyChange(qty + 1)}
-                    disabled={disabled || soldOut || qty >= offer.remaining}
+                    disabled={disabled || floorHeld || soldOut || qty >= offer.remaining}
                     aria-label="increase"
                 >
                     +
                 </button>
             </div>
             {soldOut && <p className="offer-soldout">Sold out for today</p>}
+            {floorHeld && (
+                <p className="offer-floor-held" role="status">
+                    Floor held — not below spot{bonusApplied ? ' (late-nite bonus applied)' : ''}
+                </p>
+            )}
         </article>
     );
 }

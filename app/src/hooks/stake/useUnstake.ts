@@ -3,16 +3,26 @@ import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';
 import { useStakingProgram, STAKING_PROGRAM_ID, CRANK_PROGRAM_ID, AMM_PROGRAM_ID } from '../../anchor/setup';
+import type { StakePoolData } from './usePool';
 import type { Position } from './usePositions';
 
-function principalPenaltyBpsForState(state?: number) {
-    if (state === 1) return 300; // after-hours exit: 3%
-    if (state === 2) return 600; // closed exit: 6%
-    if (state === 3) return 1800; // halted exit: 18%
+// Principal-penalty estimate for the debug log: the pool's CONFIGURED bps
+// (the on-chain unstake reads these) with the devnet init defaults as a
+// fallback only until the pool account loads — never let the log drift
+// from the real penalty the exit button quotes.
+function principalPenaltyBpsForState(state: number | undefined, pool: StakePoolData | null | undefined) {
+    if (state === 1) return pool?.afterHoursPenaltyBps ?? 300; // after-hours exit
+    if (state === 2) return pool?.closedPenaltyBps ?? 600; // closed exit
+    if (state === 3) return pool?.haltedPenaltyBps ?? 1800; // halted exit
     return 0;
 }
 
-export function useUnstake(mint: PublicKey | null, marketStatusPda?: PublicKey, marketState?: number) {
+export function useUnstake(
+    mint: PublicKey | null,
+    marketStatusPda?: PublicKey,
+    marketState?: number,
+    pool?: StakePoolData | null,
+) {
     const { publicKey } = useWallet();
     const { connection } = useConnection();
     const program = useStakingProgram();
@@ -53,7 +63,7 @@ export function useUnstake(mint: PublicKey | null, marketStatusPda?: PublicKey, 
                 CRANK_PROGRAM_ID
             )[0];
             const ownerToken = getAssociatedTokenAddressSync(mint, publicKey, false, TOKEN_2022_PROGRAM_ID);
-            const penaltyBps = principalPenaltyBpsForState(marketState);
+            const penaltyBps = principalPenaltyBpsForState(marketState, pool);
             const principalPenaltyRaw = Math.floor(position.amount * penaltyBps / 10000);
 
             console.log('Exit stake transaction', {
@@ -96,7 +106,7 @@ export function useUnstake(mint: PublicKey | null, marketStatusPda?: PublicKey, 
         } finally {
             setLoadingIndex(null);
         }
-    }, [publicKey, program, mint, connection, marketStatusPda, marketState]);
+    }, [publicKey, program, mint, connection, marketStatusPda, marketState, pool]);
 
     return { unstake, loadingIndex };
 }

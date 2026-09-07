@@ -328,7 +328,7 @@ pub struct BountyConfig {
     pub authority: Pubkey,
     /// Fallback lamport payout used when the SOL/USDC pool isn't configured.
     pub bounty_amount: u64,
-    /// USD-denominated payout in USDC raw units (6 dp). $0.50 = 500_000.
+    /// USD-denominated payout in USDC raw units (6 dp). $0.75 = 750_000.
     pub bounty_usd_raw: u64,
     /// Calendar year the USD bounty is denominated in (inflation baseline).
     pub base_year: u16,

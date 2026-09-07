@@ -6,6 +6,7 @@ interface SizedOffersProps {
     quantities: Record<string, number>;
     livePrice: bigint | null;
     floorBasis: bigint;
+    marketState: number | null;
     currency: 'usdc' | 'sol';
     solPrice: bigint | null;
     solPoolReserves: { wsolRaw: bigint; usdcRaw: bigint } | null;
@@ -19,6 +20,7 @@ export default function SizedOffers({
     quantities,
     livePrice,
     floorBasis,
+    marketState,
     currency,
     solPrice,
     solPoolReserves,
@@ -35,6 +37,7 @@ export default function SizedOffers({
                     qty={quantities[offer.key] ?? 0}
                     livePrice={livePrice}
                     floorBasis={floorBasis}
+                    marketState={marketState}
                     currency={currency}
                     solPrice={solPrice}
                     solPoolReserves={solPoolReserves}

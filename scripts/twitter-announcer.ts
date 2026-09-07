@@ -275,9 +275,9 @@ export function closedSaleMessage(tiers: {
         )}% {discount|off} · ${t.vestingDays}d {vest|vesting}`;
     const lines: string[] = [
         pick([
-            `Market CLOSED — {bonus discount|night owl special}: every {bond|offer} drops another {0.5%|half percent}`,
-            `Market {now CLOSED|just closed} — the {closed-session|late-night} discount just kicked in: −0.5% more on every bond left`,
-            `CLOSED-session prices are live — all remaining bonds drop an extra 0.5%`,
+            `Market CLOSED — {bonus discount|night owl special}: every {bond|offer} drops another {0.5%|50 pts|50bps|half percent}`,
+            `{extended hours|after hours} {finished|ended|done}. Market {now CLOSED|just closed} — the {closed-session|50pts|late-night} discount just kicked in: −0.5% more on every bond left`,
+            `CLOSED-session prices are live — {all|any|the} remaining bonds {drop|discount|move down|priced better by} {an extra|another|an additional|a bonus} {0.5%|50 points|50bps|half percent}.`,
         ]),
     ];
     if (tiers.big.left > 0) lines.push(line("Big", tiers.big));
@@ -583,17 +583,9 @@ function programFor(
     const idl = loadIdl(name);
     // Pin the program id from deployment.json — deployed programs can be
     // rotated to new ids without an IDL regen. anchor 0.31 reads `idl.address`
-    // in the constructor and exposes programId as a getter, so the id must be
-    // set here rather than assigned after construction.
     (idl as any).address = programId.toBase58();
     return new anchor.Program(idl, provider);
 }
-
-// BN/u64-safe number coercion. Several u64 state fields use u64::MAX as
-// their "uninitialized day" sentinel (bb_day_index, etc.), which BN.toNumber()
-// rejects outright (it throws above 2^53). Converting via toString keeps big
-// values at double precision and the sentinel still compares unequal to any
-// real trading day.
 function num(x: any): number {
     return anchor.BN.isBN(x) ? Number(x.toString()) : Number(x);
 }

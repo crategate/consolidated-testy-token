@@ -30,7 +30,7 @@ permissionless keeper reading a Switchboard On-Demand feed:
 | HALTED | NYSE trading halt | Everything pauses. Largest unstake fee. |
 
 Anyone can crank the state machine, but the keeper that flips the state earns
-a small bounty (~$0.50, +5%/yr), funded automatically from the treasury.
+a small bounty (~$0.75, +5%/yr), funded automatically from the treasury.
 
 ## A day in the life
 
@@ -111,7 +111,7 @@ stakers. Rewards are split by **weight**, and weight grows with commitment:
   - AFTER-HOURS: 3%
   - CLOSED: 6%
   - HALTED: 18%
-- **Keeper bounty**: ~$0.50 per real state flip, +5%/yr, auto-funded by the
+- **Keeper bounty**: ~$0.75 per real state flip, +5%/yr, auto-funded by the
   treasury.
 - All bps parameters are fixed at pool initialization and capped at 100%.
 

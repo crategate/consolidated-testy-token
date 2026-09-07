@@ -13,6 +13,7 @@ import {
     TOKEN_2022_PROGRAM_ID,
 } from "@solana/spl-token";
 import type { CrankOracle } from "../../target/types/crank_oracle";
+import { ANSI, ev, evc, skip, dim } from "./keeper-log";
 
 dotenv.config();
 
@@ -204,11 +205,11 @@ async function main() {
         return new DataView(a.data.buffer, a.data.byteOffset, a.data.byteLength).getBigUint64(64, true);
     }
 
-    console.log(" Keeper started");
-    console.log("Program ID:", programId.toBase58());
-    console.log("Market Status:", marketStatusPda.toBase58());
-    console.log("Bounty Config:", bountyConfigPda.toBase58());
-    console.log("Bounty Vault:", bountyVaultPda.toBase58());
+    console.log(` ${ev(ANSI.cyan, "Keeper started")}`);
+    console.log(`${evc(ANSI.cyan, "Program ID")}${programId.toBase58()}`);
+    console.log(`${evc(ANSI.cyan, "Market Status")}${marketStatusPda.toBase58()}`);
+    console.log(`${evc(ANSI.cyan, "Bounty Config")}${bountyConfigPda.toBase58()}`);
+    console.log(`${evc(ANSI.cyan, "Bounty Vault")}${bountyVaultPda.toBase58()}`);
 
     // ── TEST-STATE MODE (devnet/localnet only) ─────────────────────────────
     // `--test-state` drives the market-status PDA through a scripted state
@@ -274,10 +275,10 @@ async function main() {
         }
         console.log(
             TEST_STATE_MODE === "watch"
-                ? ` TEST WATCH MODE: idle + react to external state changes, polling every ${TEST_INTERVAL_MS}ms. ` +
+                ? `${evc(ANSI.brightYellow, "TEST WATCH MODE")}idle + react to external state changes, polling every ${TEST_INTERVAL_MS}ms. ` +
                       `Drive transitions with \`anchor run set-oracle -- <state> [day]\` ` +
                       `(0=open 1=after-hours 2=closed 3=halted). Pause = don't change the state.`
-                : ` TEST-STATE MODE: cycle ${TEST_SEQUENCE.join(" → ")} every ${TEST_INTERVAL_MS}ms`
+                : `${evc(ANSI.brightYellow, "TEST-STATE MODE")}cycle ${TEST_SEQUENCE.join(" → ")} every ${TEST_INTERVAL_MS}ms`
         );
     }
 
@@ -311,7 +312,7 @@ async function main() {
                 quoteAccountInfo = await connection.getAccountInfo(quoteAccount);
 
                 if (!quoteAccountInfo) {
-                    console.log("Quote account not found, sleeping...");
+                    console.log(dim("Quote account not found, sleeping..."));
                     await sleep(sleepMs);
                     continue;
                 }
@@ -344,12 +345,12 @@ async function main() {
                         newStatus = marketStatus;
                         dayRolled = dayChanged;
                         console.log(
-                            ` watch: ${lastSeenState} -> ${marketStatus.currentState} (day ${marketStatus.tradingDayIndex})` +
+                            `${evc(ANSI.brightYellow, "watch")}${lastSeenState} -> ${marketStatus.currentState} (day ${marketStatus.tradingDayIndex})` +
                                 (dayRolled ? " [day rolled]" : "")
                         );
                     } else if (lastSeenState === null) {
                         console.log(
-                            ` watch: first observation (state ${marketStatus.currentState}, day ${marketStatus.tradingDayIndex}) — transition handlers fire from the next state change`
+                            `${evc(ANSI.brightYellow, "watch")}first observation (state ${marketStatus.currentState}, day ${marketStatus.tradingDayIndex}) — transition handlers fire from the next state change`
                         );
                     }
                     lastSeenState = marketStatus.currentState as number;
@@ -382,14 +383,14 @@ async function main() {
                     });
                     const setSim = await connection.simulateTransaction(setTx);
                     if (setSim.value.err) {
-                        console.error("test_set_state simulation failed:", setSim.value.err);
+                        console.error(`${evc(ANSI.red, "test_set_state simulation failed")}${setSim.value.err}`);
                         await sleep(sleepMs);
                         continue;
                     }
                     const setSig = await connection.sendTransaction(setTx);
                     await connection.confirmTransaction(setSig, "confirmed");
                     console.log(
-                        ` TEST crank ${marketStatus.currentState} -> ${state} (day ${testDay}) [${setSig}]`
+                        `${ev(ANSI.brightYellow, "TEST crank")} ${marketStatus.currentState} -> ${state} (day ${testDay}) [${setSig}]`
                     );
                     newStatus = await program.account.marketStatus.fetch(marketStatusPda);
                 } else {
@@ -429,7 +430,7 @@ async function main() {
 
                 const sim = await connection.simulateTransaction(tx);
                 if (sim.value.err) {
-                    console.error("Simulation failed:", sim.value.err);
+                    console.error(`${evc(ANSI.red, "Simulation failed")}${sim.value.err}`);
                     console.error(sim.value.logs?.join("\n") || "NO LOGS :(")
                     await sleep(sleepMs);
                     continue;
@@ -438,7 +439,7 @@ async function main() {
                 const bountyBalBefore = await connection.getBalance(bountyVaultPda);
                 const sig = await connection.sendTransaction(tx);
                 await connection.confirmTransaction(sig, "confirmed");
-                console.log(` Cranked! ${sig}`);
+                console.log(`${ev(ANSI.green, "Cranked!")} ${sig}`);
                 if (recycleBounty) {
                     // Vault delta = the bounty that just paid out (only the
                     // crank instruction moves the bounty vault). Recycle it.
@@ -459,10 +460,10 @@ async function main() {
                             });
                             const recycleSig = await connection.sendTransaction(recycleTx);
                             await connection.confirmTransaction(recycleSig, "confirmed");
-                            console.log(` bounty recycled: ${fmtSolL(paid)} straight back into the bounty vault — ${recycleSig}`);
+                            console.log(`${evc(ANSI.brightGreen, "bounty recycled")}${fmtSolL(paid)} straight back into the bounty vault — ${recycleSig}`);
                         }
                     } catch (e) {
-                        console.error("!! bounty recycle failed:", (e as Error).message);
+                        console.error(`${evc(ANSI.red, "!! bounty recycle failed")}${(e as Error).message}`);
                     }
                 }
                 newStatus = await program.account.marketStatus.fetch(marketStatusPda);
@@ -505,15 +506,15 @@ async function main() {
                         });
                         const feeSim = await connection.simulateTransaction(feeTx);
                         if (feeSim.value.err) {
-                            console.log(" test_collect_bounty skipped:", JSON.stringify(feeSim.value.err));
-                            console.log("  last logs:", feeSim.value.logs?.slice(-4) ?? []);
+                            console.log(`${skip("test_collect_bounty skipped")}${JSON.stringify(feeSim.value.err)}`);
+                            console.log(`  ${ANSI.dim}${ANSI.gray}last logs:${ANSI.reset}`, feeSim.value.logs?.slice(-4) ?? []);
                         } else {
                             const feeBalBefore = BigInt(await connection.getBalance(bountyVaultPda));
                             const feeSig = await connection.sendTransaction(feeTx);
                             await connection.confirmTransaction(feeSig, "confirmed");
                             const feeBalAfter = BigInt(await connection.getBalance(bountyVaultPda));
                             console.log(
-                                ` test crank fee collected: bounty vault ${fmtSolL(feeBalBefore)} → ${fmtSolL(feeBalAfter)} — ${feeSig}`
+                                `${ev(ANSI.brightYellow, "test crank fee collected")} bounty vault ${fmtSolL(feeBalBefore)} → ${fmtSolL(feeBalAfter)} — ${feeSig}`
                             );
                             if (recycleBounty) {
                                 const paid = feeBalAfter - feeBalBefore;
@@ -532,19 +533,19 @@ async function main() {
                                     });
                                     const recycleSig = await connection.sendTransaction(recycleTx);
                                     await connection.confirmTransaction(recycleSig, "confirmed");
-                                    console.log(` bounty recycled: ${fmtSolL(paid)} back into the bounty vault — ${recycleSig}`);
+                                    console.log(`${evc(ANSI.brightGreen, "bounty recycled")}${fmtSolL(paid)} back into the bounty vault — ${recycleSig}`);
                                 }
                             }
                         }
                     } catch (e) {
-                        console.error("!! test_collect_bounty failed:", (e as Error).message);
+                        console.error(`${evc(ANSI.red, "!! test_collect_bounty failed")}${(e as Error).message}`);
                     }
                 }
                 const dayEnded =
                     (prevState === 0 && (newStatus.currentState === 1 || newStatus.currentState === 2)) ||
                     (prevState === 3 && newStatus.currentState === 2);
                 if (dayEnded) {
-                    console.log(` Day ended (${prevState} → ${newStatus.currentState}). Firing update_tradeday_stats + make_offers...`);
+                    console.log(`${ev(ANSI.magenta, "Day ended")} (${prevState} → ${newStatus.currentState}). Firing update_tradeday_stats + make_offers...`);
                     try {
                         const ammStateForStats = await (ammProgram.account as any).ammState.fetch(ammStatePda);
                         const statsUsdcMint = new PublicKey(ammStateForStats.usdcMint);
@@ -572,11 +573,11 @@ async function main() {
                         });
                         const statsSim = await connection.simulateTransaction(statsTx);
                         if (statsSim.value.err) {
-                            console.error("update_tradeday_stats simulation failed (already updated today?):", statsSim.value.err);
+                            console.error(`${evc(ANSI.red, "update_tradeday_stats simulation failed (already updated today?)")}${statsSim.value.err}`);
                         } else {
                             const statsSig = await connection.sendTransaction(statsTx);
                             await connection.confirmTransaction(statsSig, "confirmed");
-                            console.log(` update_tradeday_stats fired! ${statsSig}`);
+                            console.log(`${ev(ANSI.cyan, "update_tradeday_stats fired!")} ${statsSig}`);
                         }
 
                         const makeOffersIx = await ammProgram.methods
@@ -602,15 +603,15 @@ async function main() {
                         });
                         const offersSim = await connection.simulateTransaction(offersTx);
                         if (offersSim.value.err) {
-                            console.error("make_offers simulation failed (already built today?):", offersSim.value.err);
+                            console.error(`${evc(ANSI.red, "make_offers simulation failed (already built today?)")}${offersSim.value.err}`);
                         } else {
                             const offersSig = await connection.sendTransaction(offersTx);
                             await connection.confirmTransaction(offersSig, "confirmed");
-                            console.log(` make_offers fired! ${offersSig}`);
+                            console.log(`${ev(ANSI.cyan, "make_offers fired!")} ${offersSig}`);
                         }
                     } catch (e) {
                         // Never let an offer-sheet failure kill the crank loop
-                        console.error("!! end-of-day AMM sequence failed:", e);
+                        console.error(`${evc(ANSI.red, "!! end-of-day AMM sequence failed")}${e}`);
                     }
                 }
 
@@ -626,7 +627,7 @@ async function main() {
                     newStatus.currentState === 0 &&
                     ((prevState === 1 || prevState === 2) || dayRolled);
                 if (dayStarted) {
-                    console.log(` Day started (${prevState} → 0${dayRolled ? ", day rolled" : ""}). Firing calc_completed_offers...`);
+                    console.log(`${ev(ANSI.brightMagenta, "Day started")} (${prevState} → 0${dayRolled ? ", day rolled" : ""}). Firing calc_completed_offers...`);
                     try {
                         // Live price for ratchet decay: the pinned CPMM pool
                         // (TWAP / vault-ratio) — the only price source.
@@ -655,14 +656,14 @@ async function main() {
                         });
                         const calcSim = await connection.simulateTransaction(calcTx);
                         if (calcSim.value.err) {
-                            console.error("calc_completed_offers simulation failed (already recorded today?):", calcSim.value.err);
+                            console.error(`${evc(ANSI.red, "calc_completed_offers simulation failed (already recorded today?)")}${calcSim.value.err}`);
                         } else {
                             const calcSig = await connection.sendTransaction(calcTx);
                             await connection.confirmTransaction(calcSig, "confirmed");
-                            console.log(` calc_completed_offers fired! ${calcSig}`);
+                            console.log(`${ev(ANSI.cyan, "calc_completed_offers fired!")} ${calcSig}`);
                         }
                     } catch (e) {
-                        console.error("!! calc_completed_offers failed:", e);
+                        console.error(`${evc(ANSI.red, "!! calc_completed_offers failed")}${e}`);
                     }
 
                     // Staker distribution: swap yesterday's 10% USDC share to
@@ -706,15 +707,15 @@ async function main() {
                         });
                         const distSim = await connection.simulateTransaction(distTx);
                         if (distSim.value.err) {
-                            console.log("distribute_staker_rewards skipped (already done / nothing to distribute / no stakers):", JSON.stringify(distSim.value.err));
-                            console.log("  last logs:", distSim.value.logs?.slice(-4) ?? []);
+                            console.log(`${skip("distribute_staker_rewards skipped (already done / nothing to distribute / no stakers)")}${JSON.stringify(distSim.value.err)}`);
+                            console.log(`  ${ANSI.dim}${ANSI.gray}last logs:${ANSI.reset}`, distSim.value.logs?.slice(-4) ?? []);
                         } else {
                             const distSig = await connection.sendTransaction(distTx);
                             await connection.confirmTransaction(distSig, "confirmed");
-                            console.log(` distribute_staker_rewards fired! ${distSig}`);
+                            console.log(`${ev(ANSI.cyan, "distribute_staker_rewards fired!")} ${distSig}`);
                         }
                     } catch (e) {
-                        console.error("!! distribute_staker_rewards failed:", (e as Error).message);
+                        console.error(`${evc(ANSI.red, "!! distribute_staker_rewards failed")}${(e as Error).message}`);
                     }
 
                     // Records ledger: snapshot the day-start state for the
@@ -728,16 +729,16 @@ async function main() {
                         const { recordDay } = await import("../record-day");
                         const { row, inserted } = await recordDay(connection);
                         console.log(
-                            ` records ledger: ${inserted ? "NEW trading day" : "updated existing day"} ` +
+                            `${ev(ANSI.cyan, "records ledger")} ${inserted ? "NEW trading day" : "updated existing day"} ` +
                                 `#${row.dayIndex} (${row.date}, state ${row.marketState}) -> app/public/records.json`,
                         );
                     } catch (e) {
-                        console.error("!! records snapshot failed:", (e as Error).message);
+                        console.error(`${evc(ANSI.red, "!! records snapshot failed")}${(e as Error).message}`);
                     }
                 }
                 }
             } else {
-                console.log("No fresh quote, nothing to do.");
+                console.log(dim("No fresh quote, nothing to do."));
             }
 
             // dex_buyback slices: attempt every loop while the market is open.
@@ -771,7 +772,7 @@ async function main() {
                             ? Number(BigInt(PACE_SLOTS) - (slotNow - bn(ammState.bbLastSlot)))
                             : 0;
                     console.log(
-                        ` dex_buyback: budget=${fmtUsdc(bbBudget)} spent=${fmtUsdc(bbSpent)} ` +
+                        `${evc(ANSI.blue, "dex_buyback")}budget=${fmtUsdc(bbBudget)} spent=${fmtUsdc(bbSpent)} ` +
                         `(${pctOf(bbSpent, bbBudget)} of budget) vault=${fmtUsdc(bbVault)} ` +
                         `est slice=${fmtUsdc(estSliceCapped)} (${pctOf(estSliceCapped, bbVault)} of vault)` +
                         `${pacingLeft ? `, pacing ${pacingLeft} slots` : ""}`
@@ -812,10 +813,10 @@ async function main() {
                             6007: "CPMM pool not pinned",
                         };
                         console.log(
-                            ` dex_buyback skipped (${reason(bbSim.value.err, bbReasons)}): ` +
+                            `${skip(`dex_buyback skipped (${reason(bbSim.value.err, bbReasons)})`)}` +
                             `spendable=${fmtUsdc(bbSpendable)} (${pctOf(bbSpendable, bbVault)} of vault)`
                         );
-                        console.log("  last logs:", bbSim.value.logs?.slice(-4) ?? []);
+                        console.log(`  ${ANSI.dim}${ANSI.gray}last logs:${ANSI.reset}`, bbSim.value.logs?.slice(-4) ?? []);
                     } else {
                         const bbSig = await connection.sendTransaction(bbTx);
                         await connection.confirmTransaction(bbSig, "confirmed");
@@ -824,7 +825,7 @@ async function main() {
                         const bbVaultAfter = (await tokenAmount(ammState.usdcVault)) ?? 0n;
                         const bbAfhoAfter = (await tokenAmount(ammState.afhoVault)) ?? 0n;
                         console.log(
-                            ` dex_buyback slice fired: +${fmtUsdc(spentDelta)} ` +
+                            `${ev(ANSI.blue, "dex_buyback slice fired")} +${fmtUsdc(spentDelta)} ` +
                             `(${pctOf(spentDelta, bbVault)} of vault, ${pctOf(bn(after.bbSpentUsdc), bn(after.bbBudgetUsdc))} of budget) ` +
                             `+${fmtAfho(bbAfhoAfter - bbAfhoBefore)} → vault now=${fmtUsdc(bbVaultAfter)} — ${bbSig}`
                         );
@@ -832,7 +833,7 @@ async function main() {
                 }
             } catch (e) {
                 // Never let a buyback attempt kill the crank loop
-                console.error("!! dex_buyback attempt failed:", (e as Error).message);
+                console.error(`${evc(ANSI.red, "!! dex_buyback attempt failed")}${(e as Error).message}`);
             }
 
             // buy_the_dip: attempt EVERY loop, any market state — the dip
@@ -908,7 +909,7 @@ async function main() {
                         ? Number(BigInt(PACE_SLOTS) - (dipSlot - bn(ammState.dipLastSlot)))
                         : 0;
                 console.log(
-                    ` buy_the_dip: reserve=${fmtUsdc(dipReserve)} dayBudget=${fmtUsdc(bn(ammState.dipDayUsdc))} ` +
+                    `${evc(ANSI.yellow, "buy_the_dip")}reserve=${fmtUsdc(dipReserve)} dayBudget=${fmtUsdc(bn(ammState.dipDayUsdc))} ` +
                     `spent=${fmtUsdc(bn(ammState.dipSpentUsdc))} (${pctOf(bn(ammState.dipSpentUsdc), dipDayCap)} of 40% day cap) ` +
                     `spot≈${dipSpot !== null ? fmtPrice(dipSpot) : "—"} ref=${dipRef > 0n ? fmtPrice(dipRef) : "—"} ` +
                     `depth=${(Number(dipDepthBps) / 100).toFixed(2)}% (trigger 3%) samples=${dipSamples} slope=${Math.trunc(dipSlope)}cp ` +
@@ -952,10 +953,10 @@ async function main() {
                         6008: "Raydium InvalidVault propagated (see last logs)",
                     };
                     console.log(
-                        ` buy_the_dip skipped (${reason(dipSim.value.err, dipReasons)}): ` +
+                        `${skip(`buy_the_dip skipped (${reason(dipSim.value.err, dipReasons)})`)}` +
                         `reserve=${fmtUsdc(dipReserve)} est slice=${fmtUsdc(dipEstSlice)}`
                     );
-                    console.log("  last logs:", dipSim.value.logs?.slice(-4) ?? []);
+                    console.log(`  ${ANSI.dim}${ANSI.gray}last logs:${ANSI.reset}`, dipSim.value.logs?.slice(-4) ?? []);
                 } else {
                     const dipSig = await connection.sendTransaction(dipTx);
                     await connection.confirmTransaction(dipSig, "confirmed");
@@ -967,7 +968,7 @@ async function main() {
                     const dipAfhoAfter = (await tokenAmount(ammState.afhoVault)) ?? 0n;
                     if (spentDelta > 0n) {
                         console.log(
-                            ` buy_the_dip slice FIRED: +${fmtUsdc(spentDelta)} ` +
+                            `${ev(ANSI.yellow, "buy_the_dip slice FIRED")} +${fmtUsdc(spentDelta)} ` +
                             `(${pctOf(spentDelta, dipReserve)} of reserve, ${pctOf(bn(after.dipSpentUsdc), dipDayCap)} of day cap) ` +
                             `+${fmtAfho(dipAfhoAfter - dipAfhoBefore)} → reserve now=${fmtUsdc(dipReserveAfter)} — ${dipSig}`
                         );
@@ -980,12 +981,12 @@ async function main() {
                                     : dipPacingLeft
                                         ? `pacing (${dipPacingLeft} slots left)`
                                         : "day cap reached / reserve empty";
-                        console.log(` buy_the_dip no-op (${noopWhy}) — ${dipSig}`);
+                        console.log(`${skip(`buy_the_dip no-op (${noopWhy})`)} — ${dipSig}`);
                     }
                 }
             } catch (e) {
                 // Never let a dip attempt kill the crank loop
-                console.error("!! buy_the_dip attempt failed:", (e as Error).message);
+                console.error(`${evc(ANSI.red, "!! buy_the_dip attempt failed")}${(e as Error).message}`);
             }
 
             // bounty_top_up: attempt every loop — permissionless, and the
@@ -1015,7 +1016,7 @@ async function main() {
                     const usdcNeeded = solPrice > 0n ? (TOPUP_SOL * solPrice * 10_025n) / 1_000_000_000_000n / 10_000n : 0n;
                     const afhoIn = afhoPrice > 0n ? (usdcNeeded * 1_000_000_000_000n * 10_025n) / afhoPrice / 10_000n : 0n;
                     console.log(
-                        ` bounty_top_up: bounty=${fmtSolL(bountyBal)} (tops up +0.4 SOL when < 0.2) ` +
+                        `${evc(ANSI.brightBlue, "bounty_top_up")}bounty=${fmtSolL(bountyBal)} (tops up +0.4 SOL when < 0.2) ` +
                         `afho_price=${afhoPrice > 0n ? fmtPrice(afhoPrice) : "—"} sol_price=${solPrice > 0n ? fmtPrice(solPrice) : "—"} ` +
                         `→ est AFHO sold=${fmtAfho(afhoIn)} (${pctOf(afhoIn, afhoVaultBal)} of afho_vault) ` +
                         `est USDC hop=${fmtUsdc(usdcNeeded)}`
@@ -1064,29 +1065,29 @@ async function main() {
                             6006: "math overflow",
                         };
                         console.log(
-                            ` bounty_top_up skipped (${reason(topupSim.value.err, topupReasons)}): ` +
+                            `${skip(`bounty_top_up skipped (${reason(topupSim.value.err, topupReasons)})`)}` +
                             `bounty=${fmtSolL(bountyBal)} est AFHO=${fmtAfho(afhoIn)} (${pctOf(afhoIn, afhoVaultBal)} of afho_vault)`
                         );
-                        console.log("  last logs:", topupSim.value.logs?.slice(-4) ?? []);
+                        console.log(`  ${ANSI.dim}${ANSI.gray}last logs:${ANSI.reset}`, topupSim.value.logs?.slice(-4) ?? []);
                     } else if (bountyBal >= 200_000_000n) {
                         // Simulation passed because the on-chain low-water check
                         // no-ops — don't spend a tx on a healthy vault.
-                        console.log(` bounty_top_up no-op (vault healthy: ${fmtSolL(bountyBal)} ≥ 0.2 SOL)`);
+                        console.log(`${skip(`bounty_top_up no-op (vault healthy: ${fmtSolL(bountyBal)} ≥ 0.2 SOL)`)}`);
                     } else {
                         const topupSig = await connection.sendTransaction(topupTx);
                         await connection.confirmTransaction(topupSig, "confirmed");
                         const bountyAfter = BigInt(await connection.getBalance(bountyVaultPda));
                         console.log(
-                            ` bounty_top_up fired: bounty ${fmtSolL(bountyBal)} → ${fmtSolL(bountyAfter)} ` +
+                            `${ev(ANSI.brightBlue, "bounty_top_up fired")} bounty ${fmtSolL(bountyBal)} → ${fmtSolL(bountyAfter)} ` +
                             `(+${fmtSolL(bountyAfter - bountyBal)} SOL, sold ≈${fmtAfho(afhoIn)} AFHO = ${pctOf(afhoIn, afhoVaultBal)} of afho_vault) — ${topupSig}`
                         );
                     }
                 }
             } catch (e) {
-                console.error("!! bounty_top_up attempt failed:", (e as Error).message);
+                console.error(`${evc(ANSI.red, "!! bounty_top_up attempt failed")}${(e as Error).message}`);
             }
         } catch (e) {
-            console.error("!! Crank attempt failed:", e);
+            console.error(`${evc(ANSI.red, "!! Crank attempt failed")}${e}`);
         }
 
         await sleep(sleepMs);
@@ -1122,7 +1123,7 @@ async function logSlotTimeOnce(connection: anchor.web3.Connection) {
         if (span > 0) {
             const msPerSlot = (secs * 1000) / span;
             console.log(
-                ` slot time: ~${msPerSlot.toFixed(0)}ms/slot measured vs ${NOMINAL_SLOT_MS}ms ` +
+                `${skip("slot time")}~${msPerSlot.toFixed(0)}ms/slot measured vs ${NOMINAL_SLOT_MS}ms ` +
                     `assumed for pacing constants (MIN_SLICE = ${PACE_SLOTS} slots ≈ 60s)`
             );
         }

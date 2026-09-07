@@ -279,6 +279,20 @@
     border-color: #2f5d43;
 }
 
+/* Desk dark by the buyback floor: the night window is open and the sheet
+   is live, but every tier prices at/above spot — the red state replaces the
+   green "Desk open" banner. */
+.desk-banner.floor-held {
+    color: #ffb3b3;
+    border-color: #7a3030;
+    background: rgba(122, 40, 40, 0.12);
+}
+
+.desk-banner.floor-held::after {
+    opacity: 0.6;
+    animation-duration: calc(var(--fx-desk-shadow-cycle) * 1.8);
+}
+
 /* Success banner rides at the top of the viewport while the buyer scrolls
    the desk — solid backdrop so content slides under it legibly. */
 .desk-banner--sticky {
@@ -757,6 +771,53 @@
     font-size: 12px;
     color: var(--text-muted);
     animation: soldoutFlicker 10s infinite;
+}
+
+/* Tier tile where the buyback floor holds the price at/above live spot —
+   the claim would revert FloorHeldAtSpot, so the tile says so up front. */
+.offer-card.floor-held {
+    opacity: 0.78;
+    border-style: dashed;
+    border-color: rgba(255, 107, 107, 0.55);
+    filter: saturate(0.7);
+}
+
+.offer-card.floor-held::after {
+    content: none;
+}
+
+.offer-floor-held {
+    margin: 8px 0 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: #ff8a8a;
+    animation: soldoutFlicker 10s infinite;
+}
+
+/* Desk-closed indicator inside the Total Order Size tile — visible BEFORE
+   the buyer tries to add an offer to the cart. */
+.order-desk-closed {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #ff8a8a;
+    padding: 6px 10px;
+    margin-bottom: 10px;
+    border: 1px solid rgba(255, 107, 107, 0.45);
+    border-radius: 8px;
+    background: rgba(255, 60, 60, 0.08);
+}
+
+.order-desk-closed::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #ff4d4d;
+    box-shadow: 0 0 8px rgba(255, 77, 77, 0.8);
+    flex-shrink: 0;
 }
 
 /* ── order bar: sticky at the bottom on mobile. Border glitch scales

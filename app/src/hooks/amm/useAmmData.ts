@@ -14,7 +14,7 @@ import {
     pub,
     type AmmStateData,
 } from '../../context/chainDataHelpers';
-import { lotTokens } from './offerMath.ts';
+import { effectivePrice, lotTokens } from './offerMath.ts';
 
 /* ── types ── */
 
@@ -27,10 +27,13 @@ export interface OfferTierData {
     vestingDays: number;
     /** Sheet (base) discount, stored tenths of a percent (115 = 11.5%). */
     discountBps: number;
-    /** CLOSED-session boost in the same units (5 = +0.5%) while market state
-     *  is 2; 0 otherwise. Mirrors offer_claim::quote_claim — the on-chain
-     *  claim price uses discountBps + bonusBps. Kept SEPARATE from the base
-     *  so the UI can show the base pill plus a distinct bonus pill. */
+    /** Bonus depth in the same units (5 = +0.5%) while the market is
+     *  CLOSED (state 2), or while the extended-hours RESCUE (state 1)
+     *  applies — the base (floor-bound) price sits at/above spot and the
+     *  bonus relaxes the floor just enough to open the sale. 0 otherwise.
+     *  Mirrors offer_claim::quote_claim — the on-chain claim price uses
+     *  discountBps + bonusBps. Kept SEPARATE from the base so the UI can
+     *  show the base pill plus a distinct bonus pill. */
     bonusBps: number;
     remaining: number;
     totalOffered: number;
@@ -112,7 +115,7 @@ function parseTier(key: 'sml' | 'med' | 'big', tier: number, label: string, raw:
         lotTokens: lotTokens(lotTier),
         vestingDays: Number(field(o, 'vestingDays', 'vesting_days') ?? 0),
         discountBps: Number(field(o, 'discountBps', 'discount_bps') ?? 0),
-        bonusBps: 0, // set per-tick below while the market is CLOSED
+        bonusBps: 0, // set per-tick below (state 2 boost / state-1 rescue)
         remaining: Number(field(o, 'remaining') ?? 0),
         totalOffered: Number(field(o, 'totalOffered', 'total_offered') ?? 0),
     };
@@ -338,13 +341,31 @@ export function useAmmData(): OfferDeskData {
     // a SEPARATE bonusBps field — the UI shows the base discount pill plus a
     // distinct blue bonus pill, while the cost math sums both to stay exact
     // with the on-chain quote.
-    const tiersDisplay = useMemo(
-        () =>
-            marketState === 2
-                ? tiers.map((t) => ({ ...t, bonusBps: Math.min(t.discountBps + 5, 255) - t.discountBps }))
-                : tiers,
-        [tiers, marketState],
-    );
+    //
+    // EXTENDED-HOURS RESCUE (state 1): when a tier's base (floor-bound)
+    // price sits at or above spot — the exact case the buy button blocks —
+    // the nite bonus becomes the final amount allowed to knock it into
+    // availability: bonusBps = 5 while the rescue opens the tier. The base
+    // discount stays ratchet-restricted; the bonus relaxes only the floor
+    // (offerMath.quoteEffectivePrice mirrors the on-chain branch).
+    const floorBasis = ammState ? big(field(ammState, 'highestBuybackBasis', 'highest_buyback_basis')) : 0n;
+    const tiersDisplay = useMemo(() => {
+        if (marketState === 2) {
+            return tiers.map((t) => ({ ...t, bonusBps: Math.min(t.discountBps + 5, 255) - t.discountBps }));
+        }
+        const live = livePrice.afhoUsdc;
+        if (marketState === 1 && live !== null && live > 0n && floorBasis > 0n) {
+            return tiers.map((t) => {
+                const base = effectivePrice(live, t.discountBps, 0, floorBasis);
+                if (base >= live) {
+                    const rescue = effectivePrice(live, t.discountBps, 5, floorBasis);
+                    if (rescue < live) return { ...t, bonusBps: 5 };
+                }
+                return t;
+            });
+        }
+        return tiers;
+    }, [tiers, marketState, livePrice.afhoUsdc, floorBasis]);
 
     return {
         tiers: tiersDisplay,
@@ -352,7 +373,7 @@ export function useAmmData(): OfferDeskData {
         solPrice: livePrice.solUsdc,
         solPoolReserves: livePrice.solPoolReserves,
         claimLookupTable: deployment?.claimLookupTable ?? null,
-        floorBasis: ammState ? big(field(ammState, 'highestBuybackBasis', 'highest_buyback_basis')) : 0n,
+        floorBasis,
         afhoDecimals: decimals.afho,
         usdcDecimals: decimals.usdc,
         marketState,

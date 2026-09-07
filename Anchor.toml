@@ -41,7 +41,11 @@ pool-status = "npx ts-node ./scripts/raydium-pool-status.ts"
 set-cpmm-pool = "npx ts-node ./scripts/set-cpmm-pool.ts"
 set-sol-usdc-pool = "npx ts-node ./scripts/set-sol-usdc-pool.ts"
 set-pools = "npx ts-node ./scripts/setup-pools.ts" # one-shot: pin AFHO/USDC + SOL/USDC pools, then create/extend the claim lookup table
+
+set-bounty-usd = "npx ts-node ./scripts/set-bounty-usd.ts" # authority-gated live bounty update (USDC raw, 6 dp): set-bounty-usd -- 750000 = $0.75
+
 rebalance-sol-pool = "npx ts-node ./scripts/rebalance-sol-pool.ts" # devnet: dry-run by default, EXECUTE=1 to send (re-anchor the SOL/USDC pool's drifted price)
+
 create-claim-alt = "npx ts-node ./scripts/create-claim-alt.ts" # one-time: create/extend the claim lookup table (v0 SOL claim txs); re-run after set-cpmm-pool / set-sol-usdc-pool
 
 set-oracle = "npx ts-node ./scripts/oracle/set-oracle-state.ts"

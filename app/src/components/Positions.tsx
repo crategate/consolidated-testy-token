@@ -18,7 +18,7 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
     const { pool } = usePool(mint);
     const { enriched, claimableTotal, vestingTotal, vestingCount } = usePositionRewards(mint, positions, marketStatusPda);
     const { claimAll, loading: claimLoading } = useClaimAll(mint, positions, marketStatusPda);
-    const { unstake, loadingIndex: unstakeLoadingIndex } = useUnstake(mint, marketStatusPda, marketData?.state);
+    const { unstake, loadingIndex: unstakeLoadingIndex } = useUnstake(mint, marketStatusPda, marketData?.state, pool);
     const claimsOpen = marketData?.state === 0;
 
     // Exit penalties apply to principal and are tiered by market state

@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { BN } from '@coral-xyz/anchor';
-import { ComputeBudgetProgram, PublicKey, SendTransactionError, SystemProgram, Transaction, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
+import { ComputeBudgetProgram, PublicKey, SendTransactionError, SystemProgram, Transaction, TransactionMessage, VersionedTransaction, AddressLookupTableAccount } from '@solana/web3.js';
 import {
     ASSOCIATED_TOKEN_PROGRAM_ID,
     getAccount,
@@ -154,9 +154,9 @@ export function useOfferClaim(
                         'after-hours (1) and closed (2) sessions only. Try again once the state cycles back.'
                 );
             }
-            const freshSheet = (await program.account.offerList.fetch(
-                accounts.offerList
-            )) as unknown as Record<string, unknown>;
+            const freshSheet = (await (program.account as unknown as {
+                offerList: { fetch: (key: PublicKey) => Promise<unknown> };
+            }).offerList.fetch(accounts.offerList)) as unknown as Record<string, unknown>;
             const tierNames = ['sml', 'med', 'big'] as const;
             for (const s of active) {
                 const name = tierNames[s.tier];
@@ -182,9 +182,18 @@ export function useOfferClaim(
             }
 
             const tx = new Transaction();
+            // Bake a FINALIZED blockhash + fee payer here rather than letting
+            // the wallet fill them: wallets preflight against their OWN RPC
+            // node, and a blockhash fetched at `confirmed` can be a slot or
+            // two ahead of that node — the wallet's simulation then dies
+            // with a raw BlockhashNotFound (bright red in Backpack) even
+            // though the transaction is perfect. A finalized blockhash is
+            // known to every node in the cluster. Fees bill consumed CU, not
+            // the limit — the ceiling is free.
+            tx.feePayer = buyer;
+            tx.recentBlockhash = (await connection.getLatestBlockhash('finalized')).blockhash;
             // Raise the CU ceiling: a transaction with no compute-budget
-            // instruction defaults to 200k CU per instruction. The limit is
-            // free — fees bill CONSUMED CU, not the limit.
+            // instruction defaults to 200k CU per instruction.
             tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 1_000_000 }));
             // Chunking: the USDC instruction is ~950 bytes, so all tiers fit in
             // one transaction. A single SOL instruction is ~1180 bytes (+33 for
@@ -304,45 +313,113 @@ export function useOfferClaim(
                     // The legacy SOL claim tx is ~1213 bytes — 19 under the
                     // packet limit — so it cannot carry a compute-budget
                     // instruction and runs on the 200k CU default while
-                    // consuming 141-166k; wallet sims sit right at that edge
-                    // (failed simulation, then a manual retry lands). With
-                    // the claim ALT (scripts/create-claim-alt.ts) the same
-                    // instruction rides a v0 message at ~⅓ the size, freeing
-                    // room for setComputeUnitLimit(400k) — 2.4× observed
-                    // consumption, so the sim and the send agree.
+                    // consuming ~150-165k (measured on devnet: 153-163k).
+                    // With the claim ALT (scripts/create-claim-alt.ts) the
+                    // same instruction rides a v0 message at ~484 bytes,
+                    // freeing room for setComputeUnitLimit(400_000) —
+                    // ~2.4× observed consumption, so the sim and the send
+                    // agree. The blockhash is taken at `finalized` (see the
+                    // USDC branch above): wallets preflight against their
+                    // own RPC, and a too-fresh blockhash fails that sim
+                    // with BlockhashNotFound before the buyer can even
+                    // decide.
                     const solTx = new Transaction();
                     solTx.add(solIx);
+                    solTx.feePayer = buyer;
+                    solTx.recentBlockhash = tx.recentBlockhash;
                     let pushed = false;
                     if (opts.claimLookupTable) {
-                        try {
-                            const lookup = (await connection.getAddressLookupTable(
-                                new PublicKey(opts.claimLookupTable), { commitment: 'confirmed' }
-                            )).value;
-                            if (lookup) {
-                                const { blockhash } = await connection.getLatestBlockhash('confirmed');
-                                const msg = new TransactionMessage({
-                                    payerKey: buyer,
-                                    recentBlockhash: blockhash,
-                                    instructions: [
-                                        ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
-                                        solIx,
-                                    ],
-                                }).compileToV0Message([lookup]);
-                                txs.push(new VersionedTransaction(msg));
-                                pushed = true;
+                        let lookup: AddressLookupTableAccount | null = null;
+                        // One retry on a transient RPC error before falling
+                        // back: the legacy tx cannot carry a CU instruction,
+                        // so the fallback is a strictly worse simulation
+                        // profile, not a stylistic choice.
+                        for (let attempt = 0; attempt < 2 && !lookup; attempt++) {
+                            try {
+                                lookup = (await connection.getAddressLookupTable(
+                                    new PublicKey(opts.claimLookupTable), { commitment: 'confirmed' }
+                                )).value ?? null;
+                            } catch {
+                                // Transient — retry, else legacy fallback.
                             }
-                        } catch {
-                            // Missing table or a key absent from it — fall
-                            // through to the legacy transaction.
+                        }
+                        if (lookup) {
+                            // Per-tx fresh finalized blockhash: three popups
+                            // means the last tx is approved tens of seconds
+                            // after the first was compiled, and a blockhash
+                            // is only valid ~150 slots. Fall back to the
+                            // earlier fetch if this one fails.
+                            let blockhash = tx.recentBlockhash;
+                            try {
+                                blockhash = (await connection.getLatestBlockhash('finalized')).blockhash;
+                            } catch {
+                                // keep the earlier finalized hash
+                            }
+                            const msg = new TransactionMessage({
+                                payerKey: buyer,
+                                recentBlockhash: blockhash,
+                                instructions: [
+                                    ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
+                                    solIx,
+                                ],
+                            }).compileToV0Message([lookup]);
+                            txs.push(new VersionedTransaction(msg));
+                            pushed = true;
                         }
                     }
                     if (!pushed) txs.push(solTx);
                 }
             }
 
-            // One wallet prompt per transaction.
+            // One wallet prompt per transaction — each dry-run FIRST. The
+            // wallet (Backpack, Phantom) preflights the SAME transaction
+            // against its own RPC and paints a bright red simulation-failed
+            // box when that fails, with no explanation in the popup. Running
+            // the simulation here, against this cluster, catches every real
+            // failure (desk closed, sheet stale, floor held, lots taken, CU
+            // budget) with an actionable message BEFORE the wallet opens, and
+            // guarantees the wallet only ever sees transactions that already
+            // pass. The loop is sequential (sendAndConfirm awaits each tx),
+            // so the later SOL txs' preflights run after the earlier
+            // positions landed — their indices exist by then.
+            const preflight = async (t: Transaction | VersionedTransaction): Promise<void> => {
+                // web3.js takes a SimulateTransactionConfig only on the
+                // versioned overload, so legacy transactions ride a synthetic
+                // v0 message for the dry run — identical instructions and
+                // accounts, no ALTs.
+                let vt: VersionedTransaction;
+                if (t instanceof VersionedTransaction) {
+                    vt = t;
+                } else {
+                    if (!t.feePayer || !t.recentBlockhash) return; // cannot compile — the wallet still preflights on submit
+                    vt = new VersionedTransaction(new TransactionMessage({
+                        payerKey: t.feePayer,
+                        recentBlockhash: t.recentBlockhash,
+                        instructions: t.instructions,
+                    }).compileToV0Message([]));
+                }
+                let sim;
+                try {
+                    sim = await connection.simulateTransaction(vt, { sigVerify: false, replaceRecentBlockhash: true });
+                } catch {
+                    // Our RPC refused the dry run (rate limit / outage) — do
+                    // not block the claim on our own infrastructure; the
+                    // wallet still preflights on submit.
+                    return;
+                }
+                if (sim.value.err) {
+                    const logs = sim.value.logs ?? [];
+                    const headline = logs.find((l) => l.includes('Error Code') || l.includes('Error Message') || l.includes('failed'))
+                        ?? `Simulation failed: ${JSON.stringify(sim.value.err)}`;
+                    throw new Error(
+                        `Dry run failed — nothing was signed or spent. ${headline}` +
+                        (logs.length ? `\n\nLogs:\n${logs.join('\n')}` : '')
+                    );
+                }
+            };
             let lastSig: string | null = null;
             for (const t of txs) {
+                await preflight(t);
                 lastSig = await sendAndConfirm(t);
             }
             if (!lastSig) throw new Error('Claim produced no transactions');
