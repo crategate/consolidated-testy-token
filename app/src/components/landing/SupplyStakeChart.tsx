@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import { usePoolStats } from '../../hooks/usePoolStats';
@@ -16,17 +16,19 @@ import './SupplyChart.css';
  *     so releases flow in here too) and falls when people unstake.
  *
  * Both series are real on-chain quantities — nothing modeled. There is no
- * on-chain time series, so one sample per calendar day (ET, the protocol's
- * day boundary) is recorded to localStorage; the series is anchored at the
+ * on-chain time series, so points are recorded to localStorage (capped at
+ * MAX_POINTS): one per trading day — keyed by the on-chain trading_day_index
+ * exactly like the records ledger, with same-date points both kept — and the
  * launch point (250M available / 0 locked). Keep GENESIS_AVAILABLE in sync
  * with AFHO_TO_LP in scripts/mint-launch.ts. */
 
-const STORAGE_KEY = 'afho-supply-history-v2';
-const MAX_DAYS = 120;
+const STORAGE_KEY = 'afho-supply-history-v3';
+const MAX_POINTS = 400;
 const GENESIS_AVAILABLE = 250_000_000;
 
 type Sample = {
-    day: string; // YYYY-MM-DD (ET) — one sample per day, latest wins
+    day: string; // YYYY-MM-DD (ET) — the calendar date the sample was taken
+    tday: number | null; // on-chain trading_day_index (null = unknown)
     t: number; // ms epoch of the sample
     available: number; // total supply − bond-desk inventory
     locked: number; // staked AFHO
@@ -77,7 +79,7 @@ function loadSamples(): Sample[] {
 
 function persist(samples: Sample[]) {
     try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(samples.slice(-MAX_DAYS)));
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(samples.slice(-MAX_POINTS)));
     } catch {
         /* private mode / quota — the chart just won't keep history */
     }
@@ -100,6 +102,20 @@ const fmtTokens = (n: number) =>
         ? `${(n / 1e6).toLocaleString('en-US', { maximumFractionDigits: 0 })}M`
         : n.toLocaleString('en-US', { maximumFractionDigits: 0 });
 
+const fmtExact = (n: number) => Math.round(n).toLocaleString('en-US');
+
+const fmtDelta = (d: number) => `${d >= 0 ? '+' : '−'}${fmtTokens(Math.abs(d))}`;
+
+function fmtDayLabel(day: string): string {
+    const [y, m, d] = day.split('-').map(Number);
+    return new Intl.DateTimeFormat('en-US', {
+        timeZone: 'UTC',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+    }).format(new Date(Date.UTC(y, m - 1, d)));
+}
+
 const W = 560; // viewBox units
 const H = 220;
 const PAD_L = 52;
@@ -109,10 +125,12 @@ const PAD_B = 26;
 
 export function SupplyStakeChart() {
     const { stats, loading } = usePoolStats();
-    const { ammState } = useChainData();
+    const { ammState, marketStatus } = useChainData();
     const { connection } = useConnection();
     const [history, setHistory] = useState<Sample[]>([]);
     const [deskVault, setDeskVault] = useState<number | null>(null);
+    const svgRef = useRef<SVGSVGElement | null>(null);
+    const [hover, setHover] = useState<{ i: number; yv: number } | null>(null);
 
     useEffect(() => {
         const samples = loadSamples();
@@ -143,46 +161,72 @@ export function SupplyStakeChart() {
     const available = stats && deskVault !== null ? Math.max(0, stats.totalSupply - deskVault) : null;
     const locked = stats?.totalStaked ?? null;
 
-    // Record today's sample (latest write wins per ET day) once both series
-    // values are known; re-record only on a material move.
+    // Record one point per TRADING DAY, keyed by the on-chain day index the
+    // same way the records ledger is. A point is appended when the trading
+    // day rolls OR values move materially — so two points can share a
+    // calendar date (both plotted) and the stairstep stays visible.
+    const tday = marketStatus?.tradingDay ?? null;
     useEffect(() => {
         if (available === null || locked === null || !stats || stats.totalSupply <= 0) return;
         setHistory((prev) => {
-            const day = etDayString();
-            const next: Sample = { day, t: Date.now(), available, locked };
             const last = prev[prev.length - 1];
-            if (last && last.day === day) {
-                const moved =
-                    Math.abs(last.available - available) > Math.max(1, last.available * 0.005) ||
-                    Math.abs(last.locked - locked) > Math.max(1, last.locked * 0.005);
-                if (!moved) return prev;
-                return [...prev.slice(0, -1), next];
-            }
-            return [...prev, next].slice(-MAX_DAYS);
+            const next: Sample = { day: etDayString(), tday, t: Date.now(), available, locked };
+            if (!last) return [next];
+            const dayRolled = tday !== null && last.tday !== null && tday !== last.tday;
+            const moved =
+                Math.abs(last.available - available) > Math.max(1, last.available * 0.005) ||
+                Math.abs(last.locked - locked) > Math.max(1, last.locked * 0.005);
+            if (dayRolled || moved) return [...prev, next].slice(-MAX_POINTS);
+            return prev;
         });
-    }, [stats, available, locked]);
+    }, [stats, available, locked, tday]);
 
     useEffect(() => {
         if (history.length) persist(history);
     }, [history]);
 
-    const { pathAvailable, pathLocked, areaAvailable, areaLocked, yTicks, xLabels, pctLabel, live } = useMemo(() => {
+    const {
+        pathAvailable,
+        pathLocked,
+        areaAvailable,
+        areaLocked,
+        yTicks,
+        xLabels,
+        pctLabel,
+        series,
+        xs,
+        ysAvail,
+        ysLocked,
+    } = useMemo(() => {
         if (available === null || locked === null) {
-            return { pathAvailable: '', pathLocked: '', areaAvailable: '', areaLocked: '', yTicks: [], xLabels: [], pctLabel: null, live: null };
+            return {
+                pathAvailable: '',
+                pathLocked: '',
+                areaAvailable: '',
+                areaLocked: '',
+                yTicks: [],
+                xLabels: [],
+                pctLabel: null,
+                series: [] as Sample[],
+                xs: [] as number[],
+                ysAvail: [] as number[],
+                ysLocked: [] as number[],
+            };
         }
-        const live: Sample = { day: etDayString(), t: Date.now(), available, locked };
+        const live: Sample = { day: etDayString(), tday, t: Date.now(), available, locked };
         const recorded = [...history];
         // Anchor the series at the launch release: 250M available, nothing
         // staked, dated one day before the oldest recorded sample.
         const oldest = recorded[0];
         const genesis: Sample = {
             day: dayBefore(oldest ? oldest.day : live.day),
+            tday: null,
             t: oldest ? oldest.t - 86_400_000 : live.t - 86_400_000,
             available: GENESIS_AVAILABLE,
             locked: 0,
         };
         const pts: Sample[] = [genesis, ...recorded];
-        if (pts.length === 1 || pts[pts.length - 1].day !== live.day) pts.push(live);
+        if (pts.length === 1 || pts[pts.length - 1].tday !== live.tday) pts.push(live);
         else pts[pts.length - 1] = live;
 
         // Simple shared axis: 0 at the baseline (so the locked line starts
@@ -192,8 +236,22 @@ export function SupplyStakeChart() {
             PAD_L + (pts.length <= 1 ? 0 : (i / (pts.length - 1)) * (W - PAD_L - PAD_R));
         const y = (v: number) => PAD_T + (1 - v / yMax) * (H - PAD_T - PAD_B);
 
-        const pathAvailable = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(p.available).toFixed(1)}`).join(' ');
-        const pathLocked = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(p.locked).toFixed(1)}`).join(' ');
+        const xs = pts.map((_, i) => x(i));
+        const ysAvail = pts.map((p) => y(p.available));
+        const ysLocked = pts.map((p) => y(p.locked));
+
+        // Step-after rendering: each value HOLDS until the next recorded
+        // point, so day-boundary releases and stake changes read as stairsteps.
+        const stepPath = (ys: number[]) => {
+            if (ys.length === 0) return '';
+            let d = `M${xs[0].toFixed(1)},${ys[0].toFixed(1)}`;
+            for (let i = 1; i < ys.length; i++) {
+                d += ` H${xs[i].toFixed(1)} V${ys[i].toFixed(1)}`;
+            }
+            return d;
+        };
+        const pathAvailable = stepPath(ysAvail);
+        const pathLocked = stepPath(ysLocked);
 
         // One shaded region under each line, both filling to the baseline.
         const base = y(0).toFixed(1);
@@ -223,27 +281,85 @@ export function SupplyStakeChart() {
                 ? `${((locked / stats.totalSupply) * 100).toFixed(1)}% of supply staked`
                 : null;
 
-        return { pathAvailable, pathLocked, areaAvailable, areaLocked, yTicks: ticks, xLabels: labels, pctLabel: pct, live };
+        return { pathAvailable, pathLocked, areaAvailable, areaLocked, yTicks: ticks, xLabels: labels, pctLabel: pct, series: pts, xs, ysAvail, ysLocked };
     }, [history, stats, available, locked]);
 
-    if (loading || available === null || locked === null || !live) {
+    /* ── hover: snap to the nearest recorded day ── */
+    const snapToNearest = (clientX: number, clientY: number) => {
+        const svg = svgRef.current;
+        if (!svg || xs.length === 0) return;
+        const rect = svg.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) return;
+        const xv = ((clientX - rect.left) / rect.width) * W;
+        const yv = ((clientY - rect.top) / rect.height) * H;
+        let best = 0;
+        let bestD = Infinity;
+        for (let i = 0; i < xs.length; i++) {
+            const d = Math.abs(xs[i] - xv);
+            if (d < bestD) {
+                bestD = d;
+                best = i;
+            }
+        }
+        setHover((prev) => (prev && prev.i === best ? { i: best, yv } : { i: best, yv }));
+    };
+
+    const onKeyDown = (e: React.KeyboardEvent<SVGSVGElement>) => {
+        if (xs.length === 0) return;
+        if (e.key === 'Escape') {
+            setHover(null);
+            return;
+        }
+        let next: number | null = null;
+        if (e.key === 'ArrowLeft') next = hover ? Math.max(0, hover.i - 1) : xs.length - 1;
+        else if (e.key === 'ArrowRight') next = hover ? Math.min(xs.length - 1, hover.i + 1) : xs.length - 1;
+        else if (e.key === 'Home') next = 0;
+        else if (e.key === 'End') next = xs.length - 1;
+        if (next !== null) {
+            e.preventDefault();
+            setHover({ i: next, yv: ysAvail[next] ?? 0 });
+        }
+    };
+
+    if (loading || available === null || locked === null || series.length === 0) {
         return <div className="supply-chart loading">Loading supply chart…</div>;
     }
+
+    const h = hover && hover.i < xs.length ? hover : null;
+    const hovered = h ? series[h.i] : null;
+    const prevHovered = h && h.i > 0 ? series[h.i - 1] : null;
+    const dAvail = hovered && prevHovered ? hovered.available - prevHovered.available : null;
+    const dLocked = hovered && prevHovered ? hovered.locked - prevHovered.locked : null;
+    const hoverPct =
+        hovered && stats && stats.totalSupply > 0
+            ? `${((hovered.locked / stats.totalSupply) * 100).toFixed(1)}%`
+            : null;
+    // Popover anchor: clamp inside the plot on both axes so it never overflows.
+    const tipLeft = h ? Math.min(84, Math.max(16, (xs[h.i] / W) * 100)) : 50;
+    const tipTop = h ? Math.min(72, Math.max(14, (h.yv / H) * 100)) : 40;
 
     return (
         <div className="supply-chart glass-pane neon-shadow shadow-wander-a">
             <header className="supply-chart-head">
                 <h3 className="supply-chart-title">Released supply &amp; staked supply</h3>
                 <p className="supply-chart-sub">
-                    available = total supply − bond-desk inventory · locked = staked · one point per trading day (ET)
+                    available = total supply − bond-desk inventory · locked = staked · one point per trading day (same-date points both plot)
                 </p>
             </header>
-            <svg
-                className="supply-chart-svg"
-                viewBox={`0 0 ${W} ${H}`}
-                role="img"
-                aria-label={`Released supply over time: ${fmtTokens(live.available)} AFHO available (launch release ${fmtTokens(GENESIS_AVAILABLE)}), ${fmtTokens(locked)} locked in staking${pctLabel ? ` — ${pctLabel}` : ''}.`}
-            >
+            <div className="supply-chart-plot">
+                <svg
+                    ref={svgRef}
+                    className="supply-chart-svg"
+                    viewBox={`0 0 ${W} ${H}`}
+                    role="img"
+                    tabIndex={0}
+                    aria-label={`Released supply and staked supply over time. Use left and right arrow keys to inspect each day. Latest: ${fmtTokens(available)} available, ${fmtTokens(locked)} locked${pctLabel ? ` — ${pctLabel}` : ''}.`}
+                    onPointerMove={(e) => snapToNearest(e.clientX, e.clientY)}
+                    onPointerDown={(e) => snapToNearest(e.clientX, e.clientY)}
+                    onPointerLeave={() => setHover(null)}
+                    onKeyDown={onKeyDown}
+                    onBlur={() => setHover(null)}
+                >
                 {yTicks.map((t, i) => (
                     <g key={i}>
                         <line className="supply-chart-gridline" x1={PAD_L} x2={W - PAD_R} y1={t.y} y2={t.y} />
@@ -262,15 +378,63 @@ export function SupplyStakeChart() {
                 <path className="supply-chart-line" d={pathAvailable} />
                 <path className="supply-chart-line-locked" d={pathLocked} />
 
+                {/* hover crosshair + highlight dots */}
+                {h && (
+                    <g aria-hidden="true">
+                        <line
+                            className="supply-chart-crosshair"
+                            x1={xs[h.i]}
+                            x2={xs[h.i]}
+                            y1={PAD_T}
+                            y2={H - PAD_B}
+                        />
+                        <circle className="supply-chart-dot" cx={xs[h.i]} cy={ysAvail[h.i]} r={3.2} />
+                        <circle className="supply-chart-dot-locked" cx={xs[h.i]} cy={ysLocked[h.i]} r={3.2} />
+                    </g>
+                )}
+
                 {xLabels.map((l, i) => (
                     <text key={i} className="supply-chart-xtick" x={l.x} y={H - 8} textAnchor={i === 0 ? 'start' : 'end'}>
                         {l.label}
                     </text>
                 ))}
-            </svg>
+                </svg>
+
+                {/* day popover — anchored at the crosshair, clamped inside the plot */}
+                {h && hovered && (
+                    <div className="supply-chart-tooltip" role="status" style={{ left: `${tipLeft}%`, top: `${tipTop}%` }}>
+                        <div className="supply-chart-tooltip-date">
+                            {h.i === 0
+                                ? 'Launch'
+                                : `${hovered.tday !== null ? `Day #${hovered.tday} · ` : ''}${fmtDayLabel(hovered.day)}`}
+                        </div>
+                        <div className="supply-chart-tooltip-row">
+                            <span className="tt-label">
+                                <i className="supply-chart-swatch swatch-available" /> Available
+                            </span>
+                            <span className="tt-value">
+                                {fmtExact(hovered.available)}
+                                {dAvail !== null && <em className={dAvail >= 0 ? 'tt-up' : 'tt-down'}> {fmtDelta(dAvail)}</em>}
+                            </span>
+                        </div>
+                        <div className="supply-chart-tooltip-row">
+                            <span className="tt-label">
+                                <i className="supply-chart-swatch swatch-staked" /> Locked
+                            </span>
+                            <span className="tt-value">
+                                {fmtExact(hovered.locked)}
+                                {hoverPct && <em className="tt-pct"> · {hoverPct}</em>}
+                                {dLocked !== null && (
+                                    <em className={dLocked >= 0 ? 'tt-up' : 'tt-down'}> {fmtDelta(dLocked)}</em>
+                                )}
+                            </span>
+                        </div>
+                    </div>
+                )}
+            </div>
             <div className="supply-chart-legend">
                 <span className="supply-chart-key">
-                    <i className="supply-chart-swatch swatch-available" /> Available {fmtTokens(live.available)}
+                    <i className="supply-chart-swatch swatch-available" /> Available {fmtTokens(available)}
                 </span>
                 <span className="supply-chart-key">
                     <i className="supply-chart-swatch swatch-staked" /> Locked — staked {fmtTokens(locked)}

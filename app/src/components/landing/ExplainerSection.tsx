@@ -23,7 +23,7 @@ const EXPLAINERS = [
             </svg>
         ),
         title: 'Stake & Multiply',
-        body: 'Lock AFHO to earn your cut of 10% from bond sales, and impatient weekend panickers. Exit after hours and penalties apply.',
+        body: 'Lock AFHO for a cut of bond sales, and fees from impatient exits. Unlock after hours and penalties apply.',
     },
     {
         // Downtrend — buy the dip
@@ -49,7 +49,7 @@ const EXPLAINERS = [
             </svg>
         ),
         title: 'Bond Offer Desk',
-        body: 'After closing bell, the offer desk sells vested AFHO bonds. This bond vault starts as 75% of total minted tokens.',
+        body: "After hours, the offer desk sells vested AFHO bonds. The bonds' metrics depend on the token's own performance.",
     },
 ];
 

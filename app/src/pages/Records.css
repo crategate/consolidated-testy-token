@@ -7,7 +7,7 @@
     background: #0b0e14;
     color: #d7dde8;
     font-family: 'Segoe UI', system-ui, sans-serif;
-    padding: 0 24px 40px;
+    padding: 0 2px 40px;
     box-sizing: border-box;
     max-width: 1240px;
     margin: 0 auto;
@@ -20,7 +20,8 @@
     left: 0;
     right: 0;
     z-index: 6;
-    display: none; /* shown only below typical mobile-landscape width */
+    display: none;
+    /* shown only below typical mobile-landscape width */
     align-items: center;
     justify-content: center;
     gap: 12px;
@@ -35,6 +36,7 @@
     .records-rotate-banner {
         display: flex;
     }
+
     .records-shell.with-banner {
         padding-top: 58px;
     }
@@ -131,7 +133,8 @@
 
 .records-table thead th {
     position: sticky;
-    top: 0; /* floating column header */
+    top: 0;
+    /* floating column header */
     z-index: 3;
     background: #e7dfcc;
     color: #23201a;

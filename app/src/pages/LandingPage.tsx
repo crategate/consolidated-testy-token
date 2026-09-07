@@ -23,10 +23,10 @@ export default function LandingPage({ deployment }: LandingPageProps) {
                 <div className="fx-blob fx-blob--4" />
             </div>
             <HeroSection deployment={deployment} />
-            <StatsSection mint={deployment.mintKey} />
             {connected && (
                 <StakingSection mint={deployment.mintKey} marketStatusPda={deployment.marketStatusKey} />
             )}
+            <StatsSection mint={deployment.mintKey} />
             <ExplainerSection />
             <BuiltWithSection />
             <SiteFooter />

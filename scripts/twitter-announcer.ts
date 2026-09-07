@@ -118,12 +118,9 @@ export function unstakeFeeLabel(pool: any, state: number): string {
 }
 
 // ── text spinning ────────────────────────────────────────────────────────────
-// SEO-style "spinning": every `{a|b|c}` group picks one option at random
+// every `{a|b|c}` group picks one option at random
 // (nesting works), and each event also has several full-template variants,
-// so repeated announcements read differently. Builders return the template
-// with spin groups INTACT — announce() spins once per event, so X and
-// Telegram always carry the same wording.
-
+// so repeated announcements read differently. 
 export function spin(template: string): string {
     const out: string[] = [];
     let i = 0;
@@ -209,8 +206,8 @@ export function bondsMessage(sheet: {
 }): string {
     const lines: string[] = [
         pick([
-            "AFHO bonds are up for sale",
-            "The night desk just {posted|dropped} {today's|the daily} bond sheet",
+            "discounted bonds are now available",
+            "The {OTC|after hours desk} {just|has| } {posted|dropped|published} {tonights's|the daily} {bond|offer} {sheet|deals}",
             "{Fresh|New} AFHO bonds just {hit the desk|went on sale}",
             "Bond desk {is open|opened} — AFHO bonds {now available|on sale now}",
         ]),
@@ -278,7 +275,7 @@ export function closedSaleMessage(tiers: {
         )}% {discount|off} · ${t.vestingDays}d {vest|vesting}`;
     const lines: string[] = [
         pick([
-            `Market CLOSED — {flash sale|night owl special}: every bond left drops another 0.5%`,
+            `Market CLOSED — {bonus discount|night owl special}: every {bond|offer} drops another {0.5%|half percent}`,
             `Market {now CLOSED|just closed} — the {closed-session|late-night} discount just kicked in: −0.5% more on every bond left`,
             `CLOSED-session prices are live — all remaining bonds drop an extra 0.5%`,
         ]),
@@ -538,8 +535,8 @@ async function initTelegram(): Promise<void> {
     if (TELEGRAM_BOT_TOKEN === "" || TELEGRAM_CHANNEL_ID === "") {
         throw new Error(
             "TG_ENABLED=true but TELEGRAM_BOT_TOKEN / TELEGRAM_CHANNEL_ID " +
-                "are missing. Create a bot with @BotFather and add it as an " +
-                "admin of your channel, then set both in .env."
+            "are missing. Create a bot with @BotFather and add it as an " +
+            "admin of your channel, then set both in .env."
         );
     }
     try {
