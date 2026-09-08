@@ -679,7 +679,7 @@
     padding: 2rem;
     background: var(--bg-elevated);
     border-radius: var(--radius-md);
-    border: 1px dashed var(--border-subtle);
+    border: 1px var(--border-subtle);
     position: relative;
 }
 

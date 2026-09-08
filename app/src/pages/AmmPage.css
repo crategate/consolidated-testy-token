@@ -567,7 +567,6 @@
 .offer-card.sold-out {
     opacity: 0.55;
     filter: saturate(0.3);
-    border-style: dashed;
 }
 
 .offer-card.sold-out::before {
@@ -776,8 +775,7 @@
 /* Tier tile where the buyback floor holds the price at/above live spot —
    the claim would revert FloorHeldAtSpot, so the tile says so up front. */
 .offer-card.floor-held {
-    opacity: 0.78;
-    border-style: dashed;
+    opacity: 0.48;
     border-color: rgba(255, 107, 107, 0.55);
     filter: saturate(0.7);
 }

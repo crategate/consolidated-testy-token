@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useChainData } from '../context/useChainData';
 import { formatHeaderTickerPrice } from '../hooks/amm/offerMath';
+import FlashNumber from './FlashNumber.tsx';
 import './SiteNav.css';
 
 /* Site nav — sits over the hero (and every page that includes it).
@@ -62,7 +63,7 @@ function HeaderTicker() {
         <span className="site-nav-ticker" title="AFHO live price (pinned pool spot)">
             <span className="site-nav-ticker-symbol">AFHO</span>
             <span className="site-nav-ticker-price">
-                {price !== null ? formatHeaderTickerPrice(price) : '—'}
+                <FlashNumber value={price !== null ? formatHeaderTickerPrice(price) : '—'} />
             </span>
         </span>
     );

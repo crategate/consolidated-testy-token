@@ -1301,3 +1301,67 @@
         color: var(--neon-blue);
     }
 }
+
+/* ═══ Number-update flash (FlashNumber.tsx) ═══
+   One-shot glitch whenever a number's value changes — price ticks, lot
+   counts, order totals, timestamps. Each instance staggers itself to a
+   fresh random moment inside its window (--fx-flash-delay, set inline by
+   <FlashNumber/>), so a batch of simultaneous updates pops individually
+   or in random groups instead of one synchronized block. Text-shadow RGB
+   split + blur + a brief color tint, then it settles — never a constant
+   blink. Reduced motion strips the animation; the value still updates. */
+@keyframes fxNumFlash {
+    0% {
+        text-shadow: none;
+        filter: blur(0);
+        color: inherit;
+    }
+
+    12% {
+        text-shadow:
+            2px 0 0 var(--fx-flash-a),
+            -2px 0 0 var(--fx-flash-b);
+        filter: blur(1.6px);
+    }
+
+    24% {
+        color: var(--fx-flash-b);
+        text-shadow:
+            -1.5px 1px 1px var(--fx-flash-b),
+            1.5px -1px 1px var(--fx-flash-a);
+        filter: blur(0.4px);
+    }
+
+    38% {
+        color: var(--fx-flash-a);
+        text-shadow:
+            1px 0 0 var(--fx-flash-c),
+            -1px 0 2px var(--fx-flash-a),
+            0 0 6px var(--fx-flash-b);
+        filter: blur(1.2px);
+    }
+
+    55% {
+        color: inherit;
+        text-shadow:
+            -2px 0 1px var(--fx-flash-a),
+            2px 0 1px var(--fx-flash-b);
+        filter: blur(0.3px);
+    }
+
+    100% {
+        text-shadow: none;
+        filter: blur(0);
+        color: inherit;
+    }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+
+    /* backwards fill holds the 0% (plain) state through --fx-flash-delay,
+       so a number sits untouched until its own moment arrives. */
+    .fx-flash--go {
+        animation: fxNumFlash 450ms ease-in-out backwards;
+        animation-delay: var(--fx-flash-delay, 0ms);
+    }
+}

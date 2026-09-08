@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { formatSol, formatTokens, lamportsForCost, lamportsForCostExact, pricePerToken, quoteCostRaw, quoteEffectivePrice } from '../../hooks/amm/offerMath.ts';
 import type { OfferTierData } from '../../hooks/amm/useAmmData.ts';
+import FlashNumber from '../FlashNumber.tsx';
 
 interface SingleOfferProps {
     offer: OfferTierData;
@@ -101,7 +102,12 @@ export default function SingleOffer({
     const fullDiscount = eff !== null && livePrice !== null && livePrice > 0n && eff < livePrice
         ? eff <= livePrice - (livePrice * BigInt(Math.min(255, offer.discountBps + (marketState === 2 ? offer.bonusBps : 0))) * 10n) / 10_000n
         : false;
-    const bonusApplied = offer.bonusBps > 0;
+    // The late-nite bonus is a CLOSED-session (state 2) feature only.
+    // Enforce that invariant at the render boundary too: even if a stray
+    // non-zero bonusBps ever arrived in any other state, it could never
+    // paint the bonus pill, tones, or the floor-held note. (Belt-and-
+    // braces on top of useAmmData's state-2 gating.)
+    const bonusApplied = offer.bonusBps > 0 && marketState === 2;
     // Floor-held tier: the effective price sits at/above live spot — this
     // tier is not buyable (on-chain quote_claim would revert
     // FloorHeldAtSpot). Surface it on the tile BEFORE the buyer adds it to
@@ -111,8 +117,9 @@ export default function SingleOffer({
         ? undefined
         : fullDiscount
             // In state 2 the bonus genuinely deepens the discount → pulse.
-            // bonusApplied is only ever set there — never in state 1.
-            ? bonusApplied && marketState === 2
+            // bonusApplied already embeds the state-2 gate, so it is only
+            // ever true in the closed session — never in state 1.
+            ? bonusApplied
                 ? 'offer-price--full-bonus'
                 : 'offer-price--full'
             : bonusApplied
@@ -130,9 +137,9 @@ export default function SingleOffer({
         >
             <header className="offer-card-header">
                 <h3>{offer.label}</h3>
-                <span className="offer-discount">up to {offer.discountBps / 10}% off</span>
+                <span className="offer-discount">up to <FlashNumber value={offer.discountBps / 10} />% off</span>
             </header>
-            {offer.bonusBps > 0 && (
+            {bonusApplied && (
                 <div className="offer-bonus-row">
                     <span className="offer-discount offer-discount--bonus">+0.5% late nite bonus</span>
                 </div>
@@ -145,17 +152,17 @@ export default function SingleOffer({
             <dl className="offer-facts">
                 <div>
                     <dt>Vesting</dt>
-                    <dd>{offer.vestingDays} trading days</dd>
+                    <dd><FlashNumber value={offer.vestingDays} /> trading days</dd>
                 </div>
                 <div>
                     <dt>Remaining</dt>
-                    <dd>{offer.remaining} / {offer.totalOffered} lots</dd>
+                    <dd><FlashNumber value={offer.remaining} /> / {offer.totalOffered} lots</dd>
                 </div>
                 <div>
                     <dt>≈ Price / lot</dt>
                     <dd className={priceTone}>
-                        {perLot !== null ? `${perLot} ${perLotUnit}` : perLotNote ?? '—'}
-                        {realPct !== null && perLot !== null ? ` · ${realPct.toFixed(1)}% off` : ''}
+                        {perLot !== null ? (<><FlashNumber value={perLot} /> {perLotUnit}</>) : perLotNote ?? '—'}
+                        {realPct !== null && perLot !== null ? <> · <FlashNumber value={realPct.toFixed(1)} />% off</> : ''}
                     </dd>
                 </div>
             </dl>

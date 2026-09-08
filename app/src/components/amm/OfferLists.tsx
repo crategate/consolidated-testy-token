@@ -17,6 +17,7 @@ import {
 } from '../../hooks/amm/offerMath.ts';
 import SizedOffers from './SizedOffers.tsx';
 import { GlitchText } from '../GlitchText.tsx';
+import FlashNumber from '../FlashNumber.tsx';
 
 const PERCENT_STEPS = [25, 50, 75, 100] as const;
 
@@ -310,9 +311,16 @@ export default function OfferLists() {
                     : 'SOL pool too thin'
         : '—';
 
-    const balanceLabel = currency === 'usdc'
-        ? balances.usdc !== null ? `Balance: ${formatUsdc(balances.usdc, data.usdcDecimals)} USDC` : ''
-        : balances.sol !== null ? `Balance: ${formatSol(balances.sol)} SOL` : '';
+    const balanceAmount = currency === 'usdc'
+        ? balances.usdc !== null ? formatUsdc(balances.usdc, data.usdcDecimals) : null
+        : balances.sol !== null ? formatSol(balances.sol) : null;
+
+    const livePxStr = data.livePrice !== null && data.livePrice > 0n
+        ? (() => {
+            const px = pricePerToken(data.livePrice);
+            return px >= 1 ? px.toLocaleString('en-US', { maximumFractionDigits: 4 }) : px.toPrecision(4);
+        })()
+        : null;
 
     return (
         <section className="offer-desk">
@@ -375,7 +383,7 @@ export default function OfferLists() {
                     )}
                     <span className="order-total-label"><GlitchText text="Total order size (approx.)" variant="light" split="letter" step={0.3} /></span>
                     <div className="order-total-line">
-                        <strong>{displayCost}</strong>
+                        <strong><FlashNumber value={displayCost} /></strong>
                         <div className="currency-picker" ref={pickerRef}>
                             <button
                                 type="button"
@@ -429,11 +437,15 @@ export default function OfferLists() {
                                 {pct === 100 ? 'MAX' : `${pct}%`}
                             </button>
                         ))}
-                        {balanceLabel && <span className="order-balance">{balanceLabel}</span>}
+                        {balanceAmount !== null && (
+                            <span className="order-balance">
+                                Balance: <FlashNumber value={balanceAmount} /> {currency === 'usdc' ? 'USDC' : 'SOL'}
+                            </span>
+                        )}
                     </div>
                     {totalLots > 0 && (
                         <span className="order-total-sub">
-                            {formatTokens(totalTokens)} AFHO · {totalLots} lot{totalLots !== 1 ? 's' : ''}
+                            <FlashNumber value={formatTokens(totalTokens)} /> AFHO · <FlashNumber value={totalLots} /> lot{totalLots !== 1 ? 's' : ''}
                             {atOrAboveSpot
                                 ? ' · buyback floor ≥ spot — sales paused until it decays below spot'
                                 : ratchet
@@ -443,12 +455,14 @@ export default function OfferLists() {
                     )}
                     {priceKnown && (
                         <span className="order-live-price">
-                            Live AFHO ≈ ${(() => {
-                                const px = pricePerToken(data.livePrice as bigint);
-                                return px >= 1 ? px.toLocaleString('en-US', { maximumFractionDigits: 4 }) : px.toPrecision(4);
-                            })()}{' '}
+                            Live AFHO ≈ ${livePxStr !== null ? <FlashNumber value={livePxStr} /> : '—'}{' '}
                             · source: {data.accounts ? 'pool (spot)' : 'oracle'}
-                            {data.updatedAt && ` · updated ${Math.max(0, Math.round((Date.now() - new Date(data.updatedAt).getTime()) / 1000))}s ago`}
+                            {data.updatedAt && (
+                                <> · updated <FlashNumber
+                                    value={data.updatedAt}
+                                    render={(v) => Math.max(0, Math.round((Date.now() - new Date(v as string).getTime()) / 1000))}
+                                />s ago</>
+                            )}
                         </span>
                     )}
                 </div>

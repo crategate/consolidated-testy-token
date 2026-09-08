@@ -124,8 +124,9 @@ export function StakeForm({ mint, marketStatusPda, onStakeSuccess }: StakeFormPr
                 placeholder="Amount to stake"
                 disabled={loading}
                 max={balance || undefined}
+                className="neon-glitch"
             />
-            <div className="pct-row" role="group" aria-label="Quick fill from balance">
+            < div className="pct-row" role="group" >
                 {PERCENT_STEPS.map((pct) => (
                     <button
                         key={pct}
@@ -146,23 +147,26 @@ export function StakeForm({ mint, marketStatusPda, onStakeSuccess }: StakeFormPr
                     MAX
                 </button>
             </div>
-            {Number(amount) >= 9006000 && (
-                <p className='stake-penalty-note' role="alert">
-                    <span>Max position size 9,006,000</span></p>
-            )}
-            {amount !== '' && Number(amount) > 0 && (
-                <p className="stake-penalty-note" role="alert">
-                    <span>
-                        Penalty: unlocking your position outside NYSE trading hours
-                        (after-hours, closed, or halted) penalizes your principal.
-                        Exit while the market is open to avoid it.
-                    </span>
+            {
+                Number(amount) >= 9006000 && (
+                    <p className='stake-penalty-note' role="alert">
+                        <span>Max position size 9,006,000</span></p>
+                )
+            }
+            {
+                amount !== '' && Number(amount) > 0 && (
+                    <p className="stake-penalty-note" role="alert">
+                        <span>
+                            Penalty: unlocking your position outside NYSE trading hours
+                            (after-hours, closed, or halted) penalizes your principal.
+                            Exit while the market is open to avoid it.
+                        </span>
 
-                    <span>
-                        Reward multipliers grow every trade day, reaching a 3X max
-                    </span>
-                </p >
-            )
+                        <span>
+                            Reward multipliers grow every trade day, reaching a 3X max
+                        </span>
+                    </p >
+                )
             }
             <button onClick={handleStake} disabled={loading || !amount || amountExceedsBalance}>
                 {loading ? 'Staking…' : 'Stake'}

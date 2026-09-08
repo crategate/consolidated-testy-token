@@ -5,6 +5,7 @@ import OfferLists from '../components/amm/OfferLists.tsx';
 import { useAmmData } from '../hooks/amm/useAmmData.ts';
 import { useGlitchBurst } from '../hooks/useGlitchBurst.ts';
 import { GlitchText } from '../components/GlitchText.tsx';
+import FlashNumber from '../components/FlashNumber.tsx';
 import './AmmPage.css';
 
 const MARKET_LABELS = ['Market open', 'After-hours', 'Market closed', 'Market halted'];
@@ -45,7 +46,7 @@ export default function AmmPage() {
                 </div>
                 <div className="amm-controls">
                     {updatedAt && (
-                        <span className="amm-updated">updated {new Date(updatedAt).toLocaleTimeString()}</span>
+                        <span className="amm-updated">updated <FlashNumber value={new Date(updatedAt).toLocaleTimeString()} /></span>
                     )}
                     <div className="wallet-button-wrapper">
                         <WalletMultiButton />
