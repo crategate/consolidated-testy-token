@@ -147,7 +147,7 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
                 <span className="grand-total">
                     Total available: <strong>{grandTotalDisplay} AFHO</strong>
                 </span>
-                {vestingCount > 0 && (
+                {vestingCount > 0 && vestingTotal > 0 && (
                     <span className="vesting-note">
                         +{vestingTotal.toFixed(4)} AFHO locked in vesting bond positions — becomes claimable at end of vesting
                     </span>

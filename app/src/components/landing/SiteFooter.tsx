@@ -45,8 +45,10 @@ export function SiteFooter() {
                     </a>
                 ))}
             </div>
+            <img className="logo" src="/Logo/color-on-trans-logo.png" />
+
             <p className="site-footer-note">
-                AFHO is experimental software — not investment advice.
+                AFHO is experimental token protocol. Nothing here is financial advice.
             </p>
         </footer>
     );

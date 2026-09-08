@@ -14,7 +14,7 @@ import {
     pub,
     type AmmStateData,
 } from '../../context/chainDataHelpers';
-import { effectivePrice, lotTokens } from './offerMath.ts';
+import { lotTokens } from './offerMath.ts';
 
 /* ── types ── */
 
@@ -28,12 +28,11 @@ export interface OfferTierData {
     /** Sheet (base) discount, stored tenths of a percent (115 = 11.5%). */
     discountBps: number;
     /** Bonus depth in the same units (5 = +0.5%) while the market is
-     *  CLOSED (state 2), or while the extended-hours RESCUE (state 1)
-     *  applies — the base (floor-bound) price sits at/above spot and the
-     *  bonus relaxes the floor just enough to open the sale. 0 otherwise.
-     *  Mirrors offer_claim::quote_claim — the on-chain claim price uses
-     *  discountBps + bonusBps. Kept SEPARATE from the base so the UI can
-     *  show the base pill plus a distinct bonus pill. */
+     *  CLOSED (state 2) — the late-nite bonus. 0 in every other state:
+     *  the bonus never shows, prices, or applies in extended hours
+     *  (state 1). Mirrors offer_claim::quote_claim — the on-chain claim
+     *  price uses discountBps + bonusBps. Kept SEPARATE from the base so
+     *  the UI can show the base pill plus a distinct bonus pill. */
     bonusBps: number;
     remaining: number;
     totalOffered: number;
@@ -115,7 +114,7 @@ function parseTier(key: 'sml' | 'med' | 'big', tier: number, label: string, raw:
         lotTokens: lotTokens(lotTier),
         vestingDays: Number(field(o, 'vestingDays', 'vesting_days') ?? 0),
         discountBps: Number(field(o, 'discountBps', 'discount_bps') ?? 0),
-        bonusBps: 0, // set per-tick below (state 2 boost / state-1 rescue)
+        bonusBps: 0, // set per-tick below (state 2 closed-session boost)
         remaining: Number(field(o, 'remaining') ?? 0),
         totalOffered: Number(field(o, 'totalOffered', 'total_offered') ?? 0),
     };
@@ -337,35 +336,21 @@ export function useAmmData(): OfferDeskData {
     // CLOSED-SESSION BOOST mirror (programs/amm offer_claim::quote_claim):
     // while the market is CLOSED (state 2) every remaining tier prices 0.5%
     // deeper (5 tenths, saturating at the u8 cap); back in extended hours
-    // (state 1 = pre-trade) it reverts to the sheet's base discount. Kept as
-    // a SEPARATE bonusBps field — the UI shows the base discount pill plus a
-    // distinct blue bonus pill, while the cost math sums both to stay exact
-    // with the on-chain quote.
-    //
-    // EXTENDED-HOURS RESCUE (state 1): when a tier's base (floor-bound)
-    // price sits at or above spot — the exact case the buy button blocks —
-    // the nite bonus becomes the final amount allowed to knock it into
-    // availability: bonusBps = 5 while the rescue opens the tier. The base
-    // discount stays ratchet-restricted; the bonus relaxes only the floor
-    // (offerMath.quoteEffectivePrice mirrors the on-chain branch).
+    // (state 1 = pre-trade) it reverts to the sheet's base discount — and
+    // the bonus itself is GONE. The late-nite bonus NEVER shows, prices, or
+    // applies outside state 2: a floor at/above spot keeps the tier refused
+    // with FloorHeldAtSpot on-chain, and the UI mirrors that refusal
+    // instead of inventing a bonus the claim would reject. Kept as a
+    // SEPARATE bonusBps field — the UI shows the base discount pill plus a
+    // distinct blue bonus pill in state 2, while the cost math sums both
+    // to stay exact with the on-chain quote.
     const floorBasis = ammState ? big(field(ammState, 'highestBuybackBasis', 'highest_buyback_basis')) : 0n;
     const tiersDisplay = useMemo(() => {
         if (marketState === 2) {
             return tiers.map((t) => ({ ...t, bonusBps: Math.min(t.discountBps + 5, 255) - t.discountBps }));
         }
-        const live = livePrice.afhoUsdc;
-        if (marketState === 1 && live !== null && live > 0n && floorBasis > 0n) {
-            return tiers.map((t) => {
-                const base = effectivePrice(live, t.discountBps, 0, floorBasis);
-                if (base >= live) {
-                    const rescue = effectivePrice(live, t.discountBps, 5, floorBasis);
-                    if (rescue < live) return { ...t, bonusBps: 5 };
-                }
-                return t;
-            });
-        }
         return tiers;
-    }, [tiers, marketState, livePrice.afhoUsdc, floorBasis]);
+    }, [tiers, marketState]);
 
     return {
         tiers: tiersDisplay,

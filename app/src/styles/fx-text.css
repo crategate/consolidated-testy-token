@@ -1091,19 +1091,19 @@
 }
 
 .hero-brand h1 span:nth-child(1) {
-    animation-delay: 0.4s;
-}
-
-.hero-brand h1 span:nth-child(2) {
     animation-delay: 1.4s;
 }
 
+.hero-brand h1 span:nth-child(2) {
+    animation-delay: 3.4s;
+}
+
 .hero-brand h1 span:nth-child(3) {
-    animation-delay: 0.7s;
+    animation-delay: 5.7s;
 }
 
 .hero-brand h1 span:nth-child(2) {
-    animation: cursorBlink 3.4s infinite;
+    animation: cursorBlink 8.4s infinite alternate;
     color: var(--neon-cyan);
     text-shadow: 0 0 12px rgba(0, 240, 255, 0.8);
 }

@@ -81,8 +81,8 @@ async function main() {
     // 4. Token Metadata Configuration
     const metadata: TokenMetadata = {
         mint: mint.publicKey,
-        name: 'AfterHours',
-        symbol: 'AFHO9-5',
+        name: 'After Hours',
+        symbol: 'AFHO9-8',
         uri: 'https://copper-quick-koi-488.mypinata.cloud/ipfs/bafkreibzpsjq7c2hqogq2ukdz4wbadv75v5rdy2xgzgo56iie6agef5xhe',
         additionalMetadata: [['description', 'a token bound by the hours of Wall Street']],
     };

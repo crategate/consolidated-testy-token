@@ -747,33 +747,20 @@ fn quote_claim(
     // sale floor relaxes from `floor` to `floor − live × bonus_bps / 10000`,
     // so only the bonus's 0.5% can price under the basis — the green % off
     // amount is still ratchet-restricted. In extended hours (state 1) the
-    // bonus is normally dormant, EXCEPT as a rescue: when the base price
-    // (green discount, floor-bound) sits at or above spot — the exact case
-    // that would revert with FloorHeldAtSpot — the bonus is the final amount
-    // allowed to knock the price into availability. The base discount stays
-    // ratchet-restricted either way; the rescue relaxes only the floor.
+    // floor is the hard bound with NO allowance: the late-nite bonus is a
+    // closed-session (state 2) feature only, so a floor at/above spot keeps
+    // the tier refused until the decay (or price recovery) restores a real
+    // discount.
     let floor = amm_state.highest_buyback_basis;
     let bonus_stored = boosted_stored.saturating_sub(discount_stored);
     let bonus_bps = bonus_stored as u64 * 10;
     let allowance = live_price.saturating_mul(bonus_bps) / 10_000;
     let night_floor = floor.saturating_sub(allowance);
 
-    let base_effective = discounted.max(floor);
     let effective_price = if current_state == 2 {
         discounted.max(night_floor)
-    } else if base_effective >= live_price {
-        // State-1 rescue: the base-discounted price is at/above spot (floor
-        // holding). Only apply the bonus when it is enough to take the price
-        // below spot — otherwise the sale stays refused.
-        let rescue = discounted.max(night_floor);
-        if rescue < live_price {
-            msg!("extended-hours rescue: +0.5% floor allowance (state 1)");
-            rescue
-        } else {
-            base_effective
-        }
     } else {
-        base_effective
+        discounted.max(floor)
     };
     if effective_price > discounted {
         msg!(
@@ -789,10 +776,11 @@ fn quote_claim(
     // market, and fills only slow the floor's decay (demand keep in
     // calc_completed_offers). With the floor binding this is exactly the
     // "floor ≥ spot" state; the desk stays dark until the decay (or price
-    // recovery) restores a real discount. In state 2 the bonus override
-    // guarantees discounted < live, so the night desk always trades; in
-    // state 1 the rescue allowance only opens sales when the floor sits
-    // within the bonus's 0.5% depth of spot.
+    // recovery) restores a real discount. In state 2 the boost keeps the
+    // discounted quote below spot and the bonus's own allowance can clear a
+    // floor sitting within 0.5% of spot; a floor further above spot still
+    // refuses the tier. In state 1 the floor is the hard bound — a floor
+    // at/above spot always refuses.
     require!(
         effective_price < live_price,
         ErrorCode::FloorHeldAtSpot

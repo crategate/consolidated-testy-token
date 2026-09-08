@@ -224,9 +224,14 @@ export async function recordDaySnapshot(connection: Connection): Promise<RecordR
         optionalKey(deployment.posrVault),
     ].filter((k): k is PublicKey => k !== null);
     const infos = await connection.getMultipleAccountsInfo(keys);
-    const byKey = new Map<PublicKey, (typeof infos)[number]>();
-    infos.forEach((info, i) => byKey.set(keys[i], info));
-    const acc = (k: PublicKey | null) => (k ? (byKey.get(k) ?? null) : null);
+    // Key by base58 STRING, not the PublicKey instance: JavaScript Maps hash
+    // objects by identity, and PublicKey does not override Map hashing —
+    // lookups with freshly-built PublicKey instances (every deployment-
+    // derived account below) silently missed, nulling afhoVault/usdcVault/
+    // the whole staking block in every records row since the ledger existed.
+    const byKey = new Map<string, (typeof infos)[number]>();
+    infos.forEach((info, i) => byKey.set(keys[i].toBase58(), info));
+    const acc = (k: PublicKey | null) => (k ? (byKey.get(k.toBase58()) ?? null) : null);
 
     const decodeAmm = <T,>(name: string, k: PublicKey | null): T | null => {
         const info = acc(k);

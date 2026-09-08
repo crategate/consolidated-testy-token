@@ -42,12 +42,11 @@ export function effectivePrice(
 // Full on-chain mirror of quote_claim's pricing across market states:
 //   state 2 (closed):  boosted discount (disc + bonus) + the floor allowance
 //                      always apply — the night desk's flash-sale price.
-//   state 1 (extended): base discount only. EXCEPT the rescue: when the base
-//                      (floor-bound) price sits at/above spot — the case the
-//                      above-spot gate would refuse — the bonus relaxes the
-//                      floor as the final amount that can knock the price
-//                      into availability. If even that isn't enough, the
-//                      tier stays refused (FloorHeldAtSpot).
+//   state 1 (extended): base discount only. The ratchet floor stays the hard
+//                      bound with NO bonus allowance — the late-nite bonus
+//                      is a closed-session (state 2) feature only, so a
+//                      floor-held tier prices at/above spot and is refused
+//                      on-chain (FloorHeldAtSpot).
 //   any other state:   desk closed; the base math still computes for display.
 export function quoteEffectivePrice(
     livePrice: bigint,
@@ -59,12 +58,7 @@ export function quoteEffectivePrice(
     if (marketState === 2) {
         return effectivePrice(livePrice, discountTenths, bonusTenths, floor, true);
     }
-    const base = effectivePrice(livePrice, discountTenths, 0, floor);
-    if (marketState === 1 && base >= livePrice) {
-        const rescue = effectivePrice(livePrice, discountTenths, bonusTenths, floor, false);
-        return rescue < livePrice ? rescue : base;
-    }
-    return base;
+    return effectivePrice(livePrice, discountTenths, 0, floor);
 }
 
 // "Ratchet active" = the (bonus-relaxed) floor still holds the price above
@@ -120,6 +114,28 @@ export function formatUsdc(raw: bigint, usdcDecimals = 6): string {
 export function pricePerToken(floorUnits: bigint): number {
     if (floorUnits <= 0n) return 0;
     return Number(floorUnits) / 1e9;
+}
+
+// Header ticker formatting for the token's own price:
+//   · ≥ $1        → 2 decimal places (standard rounding): 1.32
+//   · < $1        → first 3 non-leading-zero digits, TRUNCATED:
+//                  0.0000005336302002 → 0.000000533
+// Floor units are integer nano-dollars (≥ 1n → price ≥ 1e-9), so a 20-dp
+// fixed snapshot always holds at least the 3 significant digits we keep.
+export function formatHeaderTickerPrice(floorUnits: bigint): string {
+    if (floorUnits <= 0n) return '—';
+    const px = pricePerToken(floorUnits);
+    if (px >= 1) {
+        return `$${px.toLocaleString('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        })}`;
+    }
+    const fixed = px.toFixed(20);
+    const [whole, frac] = fixed.split('.');
+    const leadZeros = frac.length - frac.replace(/^0+/, '').length;
+    const sig = frac.slice(leadZeros, leadZeros + 3);
+    return `$${whole}.${'0'.repeat(leadZeros)}${sig}`;
 }
 
 export function formatTokens(n: number): string {

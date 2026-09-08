@@ -16,15 +16,19 @@ import './SupplyChart.css';
  *     so releases flow in here too) and falls when people unstake.
  *
  * Both series are real on-chain quantities — nothing modeled. There is no
- * on-chain time series, so points are recorded to localStorage (capped at
- * MAX_POINTS): one per trading day — keyed by the on-chain trading_day_index
- * exactly like the records ledger, with same-date points both kept — and the
- * launch point (250M available / 0 locked). Keep GENESIS_AVAILABLE in sync
- * with AFHO_TO_LP in scripts/mint-launch.ts. */
+ * on-chain time series, so history is seeded from the shared records ledger
+ * (app/public/records.json — one row per trading day, written by the keeper
+ * via scripts/record-day.ts on every →0 transition, the same source the
+ * /records page renders). Browser localStorage can NOT be the source: every
+ * visitor would start with an empty (or worse, divergent) history. The live
+ * right edge is appended in memory from the current poll; points are keyed
+ * by the on-chain trading_day_index exactly like the ledger. Keep
+ * GENESIS_AVAILABLE in sync with AFHO_TO_LP in scripts/mint-launch.ts. */
 
-const STORAGE_KEY = 'afho-supply-history-v3';
+const RECORDS_URL = 'records.json';
 const MAX_POINTS = 400;
 const GENESIS_AVAILABLE = 250_000_000;
+const AFHO_DECIMALS = 1e9; // raw → whole tokens (9 dp mint)
 
 type Sample = {
     day: string; // YYYY-MM-DD (ET) — the calendar date the sample was taken
@@ -51,37 +55,47 @@ function dayBefore(day: string): string {
     return dt.toISOString().slice(0, 10);
 }
 
-function loadSamples(): Sample[] {
+/* Ledger row shape (app/public/records.json — scripts/record-day.ts). */
+type RecordRow = {
+    dayIndex: number;
+    recordedAt: number; // unix seconds
+    date: string; // YYYY-MM-DD
+    marketState: number;
+    market: { afhoVault: string | null };
+    staking: { totalStaked: string | null; totalSupply: string | null };
+};
+
+/* Seed history from the shared records ledger. Rows missing either the
+   desk-inventory or staking read (older rows recorded before the ledger
+   captured them) are skipped — a gap in the chart beats an invented flat
+   line. Rows are ordered by trading day; the state-99 sentinel is excluded
+   by the writer, but filter defensively anyway. */
+async function fetchLedgerSamples(): Promise<Sample[]> {
     try {
-        const raw = window.localStorage.getItem(STORAGE_KEY);
-        if (!raw) return [];
-        const parsed: unknown = JSON.parse(raw);
-        if (!Array.isArray(parsed)) return [];
-        const cleaned: Sample[] = [];
-        for (const s of parsed as unknown[]) {
-            const v = s as Sample;
-            if (
-                typeof v?.day === 'string' &&
-                typeof v?.t === 'number' &&
-                Number.isFinite(v?.available) &&
-                Number.isFinite(v?.locked) &&
-                v.available >= 0 &&
-                v.locked >= 0
-            ) {
-                cleaned.push(v);
-            }
+        const res = await fetch(`${import.meta.env.BASE_URL}${RECORDS_URL}`, { cache: 'no-store' });
+        if (!res.ok) return [];
+        const ledger = (await res.json()) as { rows?: RecordRow[] };
+        const rows = [...(ledger.rows ?? [])]
+            .filter((r) => r.marketState !== 99)
+            .sort((a, b) => a.dayIndex - b.dayIndex);
+        const samples: Sample[] = [];
+        for (const r of rows) {
+            if (r.market.afhoVault === null || r.staking.totalStaked === null) continue;
+            const supply = r.staking.totalSupply !== null ? Number(r.staking.totalSupply) : null;
+            const available = Math.max(0, (supply ?? 0) - Number(r.market.afhoVault)) / AFHO_DECIMALS;
+            const locked = Number(r.staking.totalStaked) / AFHO_DECIMALS;
+            if (supply === null) continue;
+            samples.push({
+                day: r.date,
+                tday: r.dayIndex,
+                t: r.recordedAt * 1000,
+                available,
+                locked,
+            });
         }
-        return cleaned;
+        return samples.slice(-MAX_POINTS);
     } catch {
         return [];
-    }
-}
-
-function persist(samples: Sample[]) {
-    try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(samples.slice(-MAX_POINTS)));
-    } catch {
-        /* private mode / quota — the chart just won't keep history */
     }
 }
 
@@ -133,8 +147,13 @@ export function SupplyStakeChart() {
     const [hover, setHover] = useState<{ i: number; yv: number } | null>(null);
 
     useEffect(() => {
-        const samples = loadSamples();
-        if (samples.length) setHistory(samples);
+        let cancelled = false;
+        void fetchLedgerSamples().then((samples) => {
+            if (!cancelled && samples.length) setHistory(samples);
+        });
+        return () => {
+            cancelled = true;
+        };
     }, []);
 
     // Bond-desk inventory (amm afho_vault) — the protocol lock. A light poll
@@ -176,14 +195,17 @@ export function SupplyStakeChart() {
             const moved =
                 Math.abs(last.available - available) > Math.max(1, last.available * 0.005) ||
                 Math.abs(last.locked - locked) > Math.max(1, last.locked * 0.005);
-            if (dayRolled || moved) return [...prev, next].slice(-MAX_POINTS);
+            // Never regress: a ledger-seeded point for the CURRENT day is
+            // replaced in place; anything older is kept.
+            if (dayRolled || moved) {
+                if (last.tday !== null && tday !== null && tday === last.tday) {
+                    return [...prev.slice(0, -1), next].slice(-MAX_POINTS);
+                }
+                return [...prev, next].slice(-MAX_POINTS);
+            }
             return prev;
         });
     }, [stats, available, locked, tday]);
-
-    useEffect(() => {
-        if (history.length) persist(history);
-    }, [history]);
 
     const {
         pathAvailable,
@@ -271,9 +293,9 @@ export function SupplyStakeChart() {
         const labels =
             pts.length > 1
                 ? [
-                      { x: x(0), label: pts[0].day.slice(5) },
-                      { x: x(pts.length - 1), label: pts[pts.length - 1].day.slice(5) },
-                  ]
+                    { x: x(0), label: pts[0].day.slice(5) },
+                    { x: x(pts.length - 1), label: pts[pts.length - 1].day.slice(5) },
+                ]
                 : [];
 
         const pct =
@@ -339,7 +361,7 @@ export function SupplyStakeChart() {
     const tipTop = h ? Math.min(72, Math.max(14, (h.yv / H) * 100)) : 40;
 
     return (
-        <div className="supply-chart glass-pane neon-shadow shadow-wander-a">
+        <div className="supply-chart glass-pane neon-shadow shadow-wander-a neon-glitch">
             <header className="supply-chart-head">
                 <h3 className="supply-chart-title">Released supply &amp; staked supply</h3>
                 <p className="supply-chart-sub">
@@ -360,44 +382,44 @@ export function SupplyStakeChart() {
                     onKeyDown={onKeyDown}
                     onBlur={() => setHover(null)}
                 >
-                {yTicks.map((t, i) => (
-                    <g key={i}>
-                        <line className="supply-chart-gridline" x1={PAD_L} x2={W - PAD_R} y1={t.y} y2={t.y} />
-                        <text className="supply-chart-ytick" x={PAD_L - 6} y={t.y + 3} textAnchor="end">
-                            {t.label}
+                    {yTicks.map((t, i) => (
+                        <g key={i}>
+                            <line className="supply-chart-gridline" x1={PAD_L} x2={W - PAD_R} y1={t.y} y2={t.y} />
+                            <text className="supply-chart-ytick" x={PAD_L - 6} y={t.y + 3} textAnchor="end">
+                                {t.label}
+                            </text>
+                        </g>
+                    ))}
+
+                    {/* shaded region under the available line (bottom layer) */}
+                    {areaAvailable && <path className="supply-chart-area-available" d={areaAvailable} />}
+                    {/* shaded region under the locked line (drawn over it) */}
+                    {areaLocked && <path className="supply-chart-area-locked" d={areaLocked} />}
+
+                    {/* the two lines */}
+                    <path className="supply-chart-line" d={pathAvailable} />
+                    <path className="supply-chart-line-locked" d={pathLocked} />
+
+                    {/* hover crosshair + highlight dots */}
+                    {h && (
+                        <g aria-hidden="true">
+                            <line
+                                className="supply-chart-crosshair"
+                                x1={xs[h.i]}
+                                x2={xs[h.i]}
+                                y1={PAD_T}
+                                y2={H - PAD_B}
+                            />
+                            <circle className="supply-chart-dot" cx={xs[h.i]} cy={ysAvail[h.i]} r={3.2} />
+                            <circle className="supply-chart-dot-locked" cx={xs[h.i]} cy={ysLocked[h.i]} r={3.2} />
+                        </g>
+                    )}
+
+                    {xLabels.map((l, i) => (
+                        <text key={i} className="supply-chart-xtick" x={l.x} y={H - 8} textAnchor={i === 0 ? 'start' : 'end'}>
+                            {l.label}
                         </text>
-                    </g>
-                ))}
-
-                {/* shaded region under the available line (bottom layer) */}
-                {areaAvailable && <path className="supply-chart-area-available" d={areaAvailable} />}
-                {/* shaded region under the locked line (drawn over it) */}
-                {areaLocked && <path className="supply-chart-area-locked" d={areaLocked} />}
-
-                {/* the two lines */}
-                <path className="supply-chart-line" d={pathAvailable} />
-                <path className="supply-chart-line-locked" d={pathLocked} />
-
-                {/* hover crosshair + highlight dots */}
-                {h && (
-                    <g aria-hidden="true">
-                        <line
-                            className="supply-chart-crosshair"
-                            x1={xs[h.i]}
-                            x2={xs[h.i]}
-                            y1={PAD_T}
-                            y2={H - PAD_B}
-                        />
-                        <circle className="supply-chart-dot" cx={xs[h.i]} cy={ysAvail[h.i]} r={3.2} />
-                        <circle className="supply-chart-dot-locked" cx={xs[h.i]} cy={ysLocked[h.i]} r={3.2} />
-                    </g>
-                )}
-
-                {xLabels.map((l, i) => (
-                    <text key={i} className="supply-chart-xtick" x={l.x} y={H - 8} textAnchor={i === 0 ? 'start' : 'end'}>
-                        {l.label}
-                    </text>
-                ))}
+                    ))}
                 </svg>
 
                 {/* day popover — anchored at the crosshair, clamped inside the plot */}

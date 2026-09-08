@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { useChainData } from '../context/useChainData';
+import { formatHeaderTickerPrice } from '../hooks/amm/offerMath';
 import './SiteNav.css';
 
 /* Site nav — sits over the hero (and every page that includes it).
@@ -50,7 +52,23 @@ interface SiteNavProps {
     brand?: ReactNode;
 }
 
-export function SiteNav({ brand }: SiteNavProps) {
+/* Live AFHO price from the pinned CPMM pool (floor units → USD), floating
+ * left just to the right of the logo. Reads the shared chain-data snapshot,
+ * so it refreshes with the same cadence as the rest of the app. */
+function HeaderTicker() {
+    const { livePrice } = useChainData();
+    const price = livePrice.afhoUsdc;
+    return (
+        <span className="site-nav-ticker" title="AFHO live price (pinned pool spot)">
+            <span className="site-nav-ticker-symbol">AFHO</span>
+            <span className="site-nav-ticker-price">
+                {price !== null ? formatHeaderTickerPrice(price) : '—'}
+            </span>
+        </span>
+    );
+}
+
+export function SiteNav(_: SiteNavProps) {
     const [open, setOpen] = useState(false);
     const { pathname } = useLocation();
 
@@ -67,9 +85,12 @@ export function SiteNav({ brand }: SiteNavProps) {
     return (
         <nav className={`site-nav${open ? ' open' : ''}`} aria-label="Site">
             <div className="site-nav-bar">
-                <Link to="/" className="site-nav-brand neon-glitch" style={{ '--glitch-delay': '1.1s' } as React.CSSProperties}>
-                    <img className="logo" src="../../public/Logo/color-on-trans-logo.png" />
-                </Link>
+                <div className="site-nav-brand-group">
+                    <Link to="/" className="site-nav-brand neon-glitch" style={{ '--glitch-delay': '1.6s' } as React.CSSProperties}>
+                        <img className="logo" src="/Logo/color-on-trans-logo.png" />
+                    </Link>
+                    <HeaderTicker />
+                </div>
 
                 <div className="site-nav-links" id="site-nav-links">
                     {NAV_ITEMS.map((item) => (
@@ -83,9 +104,9 @@ export function SiteNav({ brand }: SiteNavProps) {
                         </Link>
                     ))}
                     <a
-                        className="site-nav-icon"
+                        className="site-nav-icon neon-glitch"
                         href={SOCIAL_LINKS.twitter}
-                        target="_blank"
+                        target="_blank" style={{ '--glitch-delay': '1.9s' } as React.CSSProperties}
                         rel="noopener noreferrer"
                         aria-label="AFHO on X (Twitter)"
                     >
@@ -117,6 +138,6 @@ export function SiteNav({ brand }: SiteNavProps) {
                     <span className="site-nav-toggle-label">Menu</span>
                 </button>
             </div>
-        </nav>
+        </nav >
     );
 }

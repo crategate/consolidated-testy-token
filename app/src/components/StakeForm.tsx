@@ -157,11 +157,16 @@ export function StakeForm({ mint, marketStatusPda, onStakeSuccess }: StakeFormPr
                         (after-hours, closed, or halted) penalizes your principal.
                         Exit while the market is open to avoid it.
                     </span>
-                </p>
-            )}
+
+                    <span>
+                        Reward multipliers grow every trade day, reaching a 3X max
+                    </span>
+                </p >
+            )
+            }
             <button onClick={handleStake} disabled={loading || !amount || amountExceedsBalance}>
                 {loading ? 'Staking…' : 'Stake'}
             </button>
-        </div>
+        </div >
     );
 };

@@ -105,7 +105,7 @@ export function formatPrice(p: number): string {
 // Unstake fee label for a market state. Open = no fee; otherwise the staking
 // pool's penalty tier (bps) for that state, shown as a whole/tenth percent.
 export function unstakeFeeLabel(pool: any, state: number): string {
-    if (state === 0) return "no unstake fee";
+    if (state === 0) return "no unlock fees";
     const bpsByState: Record<number, number> = {
         1: pool.afterHoursPenaltyBps as number,
         2: pool.closedPenaltyBps as number,
@@ -114,7 +114,7 @@ export function unstakeFeeLabel(pool: any, state: number): string {
     const bps = bpsByState[state] ?? 0;
     const pct = bps / 100;
     const label = Number.isInteger(pct) ? String(pct) : pct.toFixed(1);
-    return `${label}% unstake fee`;
+    return `${label}% penalty to principle for unlock`;
 }
 
 // ── text spinning ────────────────────────────────────────────────────────────
@@ -439,6 +439,9 @@ function postTweet(text: string): Promise<void> {
 async function announce(text: string): Promise<void> {
     const body = spin(DEVNET_MODE ? DEVNET_PREFIX + text : text);
 
+    // Channels are independent: a failure on one (rate limit, revoked
+    // token, API outage) logs and moves on — it must never block the
+    // others, and never marks the whole poll as failed.
     if (X_ENABLED) {
         if (body.length > 280) {
             console.warn(`!! tweet exceeds 280 chars (${body.length}):\n${body}`);
@@ -446,8 +449,12 @@ async function announce(text: string): Promise<void> {
         if (DRY_RUN) {
             console.log(`[dry-run][x] would tweet:\n${body}\n`);
         } else {
-            await postTweet(body);
-            console.log(`[x] ${body.replace(/\n/g, " ")}`);
+            try {
+                await postTweet(body);
+                console.log(`[x] ${body.replace(/\n/g, " ")}`);
+            } catch (e) {
+                console.error(`!! [x] post failed: ${(e as Error).message}`);
+            }
         }
     }
 
@@ -455,8 +462,12 @@ async function announce(text: string): Promise<void> {
         if (DRY_RUN) {
             console.log(`[dry-run][tg] would post:\n${body}\n`);
         } else {
-            await sendTelegram(body);
-            console.log(`[tg] ${body.replace(/\n/g, " ")}`);
+            try {
+                await sendTelegram(body);
+                console.log(`[tg] ${body.replace(/\n/g, " ")}`);
+            } catch (e) {
+                console.error(`!! [tg] post failed: ${(e as Error).message}`);
+            }
         }
     }
 }

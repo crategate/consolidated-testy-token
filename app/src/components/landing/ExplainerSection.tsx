@@ -57,7 +57,7 @@ export function ExplainerSection() {
     return (
         <section className="landing-section alt">
             <div className="landing-section-inner">
-                <img src="../../../public/Logo/light-on-transparent-logo.png" className='logo' />
+                <img src="/Logo/light-on-transparent-logo.png" className='logo' />
                 <h2 className="section-title"><GlitchText text="Reward Mechanics" /></h2>
                 <p className="section-subtitle">
                     <GlitchText text="AFHO ties token incentives to the tradFi market rhythm." variant="light" split="word" step={0.35} />

@@ -40,7 +40,7 @@ export function HomePageIndicator() {
                     <strong>{floorPaused ? 'Offer desk paused' : 'Offer desk open'}</strong>
                     <span>
                         {floorPaused
-                            ? '· buyback floor at/above spot — sales resume when it decays below the live price'
+                            ? '· discounted price above spot — sales resume when it dips below live pool price'
                             : `· after-hours AFHO bonds at up to ${maxDiscount.toFixed(1)}% off · ${totalLots} lot${totalLots !== 1 ? 's' : ''} remaining · view offers →`}
                     </span>
                 </span>

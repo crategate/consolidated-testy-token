@@ -81,15 +81,24 @@ export default function OfferLists() {
 
     // Buyer's spendable balances for the % quick-fill buttons. Own 15s cadence
     // (not tied to the 30s price poll) to spare the rate-limited devnet RPC.
+    // `accounts` is read through a ref and the interval is keyed by a stable
+    // string: the accounts memo is rebuilt whenever any snapshot field changes
+    // identity (every 30s poll), and an effect keyed on the object itself
+    // would tear down + recreate the interval and fire an immediate fetch on
+    // EVERY poll — an idle page doubling its own RPC cadence.
+    const accountsRef = useRef(data.accounts);
+    accountsRef.current = data.accounts;
+    const accountsKey = data.accounts ? 'ready' : 'none';
     useEffect(() => {
         let cancelled = false;
         const fetchBalances = async () => {
-            if (!publicKey || !data.accounts) {
+            const accounts = accountsRef.current;
+            if (!publicKey || !accounts) {
                 setBalances({ usdc: null, sol: null });
                 return;
             }
             try {
-                const buyerUsdc = getAssociatedTokenAddressSync(data.accounts.usdcMint, publicKey, false, TOKEN_PROGRAM_ID);
+                const buyerUsdc = getAssociatedTokenAddressSync(accounts.usdcMint, publicKey, false, TOKEN_PROGRAM_ID);
                 const [lamports, usdc] = await Promise.all([
                     connection.getBalance(publicKey),
                     getAccount(connection, buyerUsdc, 'confirmed', TOKEN_PROGRAM_ID).catch(() => null),
@@ -106,7 +115,7 @@ export default function OfferLists() {
             if (!document.hidden) void fetchBalances();
         }, 15000);
         return () => { cancelled = true; window.clearInterval(interval); };
-    }, [connection, publicKey, data.accounts]);
+    }, [connection, publicKey, accountsKey]);
 
     // Close the currency menu on any outside click.
     useEffect(() => {
@@ -156,8 +165,8 @@ export default function OfferLists() {
         (t) => (quantities[t.key] ?? 0) > 0 && ratchetActive(data.livePrice as bigint, t.discountBps, t.bonusBps, data.floorBasis, data.marketState)
     );
     // At-or-above spot: the effective price (floor-held, with only the
-    // bonus's own depth allowed below the floor at night — or the
-    // extended-hours rescue allowance in state 1) loses its entire discount
+    // bonus's own depth allowed below the floor at night — state 2 only)
+    // loses its entire discount
     // — mirrored 1:1 with quote_claim's FloorHeldAtSpot revert, which
     // enforces this on-chain. A spot-priced, vesting-locked bond is
     // strictly dominated by buying on the pool, and fills slow the floor's
@@ -323,9 +332,9 @@ export default function OfferLists() {
             )}
             {!data.loading && data.deskOpen && floorBlocksAll && (
                 <div className="desk-banner floor-held glass-pane" role="alert">
-                    Desk closed by the buyback floor — every tier is priced at or above the live pool
-                    price, so there is no discounted bond to buy. Sales resume when the floor decays
-                    below spot (or the late-nite bonus opens a tier).
+                    Desk closed, price too high to offer bonds.
+                    Every tier currently priced at or above the live DEX
+                    price. Sales resume when the market AFHO price lowers.
                 </div>
             )}
             {data.deskOpen && !floorBlocksAll && (

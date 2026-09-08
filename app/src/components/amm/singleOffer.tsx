@@ -96,8 +96,8 @@ export default function SingleOffer({
         : null;
     // "Maximum discount applied": the effective price carries the tier's
     // full listed discount — i.e. it equals the discounted quote itself,
-    // with no floor uplift. The bonus only deepens that quote in state 2
-    // (closed session); in the state-1 rescue it relaxes the floor alone.
+    // with no floor uplift. The bonus only exists in state 2 (closed
+    // session), where it also deepens the quote.
     const fullDiscount = eff !== null && livePrice !== null && livePrice > 0n && eff < livePrice
         ? eff <= livePrice - (livePrice * BigInt(Math.min(255, offer.discountBps + (marketState === 2 ? offer.bonusBps : 0))) * 10n) / 10_000n
         : false;
@@ -111,8 +111,7 @@ export default function SingleOffer({
         ? undefined
         : fullDiscount
             // In state 2 the bonus genuinely deepens the discount → pulse.
-            // In the state-1 rescue the bonus only unblocks the floor, so a
-            // fully-applied base discount reads as plain green.
+            // bonusApplied is only ever set there — never in state 1.
             ? bonusApplied && marketState === 2
                 ? 'offer-price--full-bonus'
                 : 'offer-price--full'
