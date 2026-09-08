@@ -86,8 +86,8 @@ export async function setSolUsdcPool(): Promise<void> {
             if (await connection.getAccountInfo(keys.lpMint)) {
                 throw new Error(
                     `SOL/USDC LP mint ${keys.lpMint.toBase58()} exists but pool state ` +
-                        `${keys.poolId.toBase58()} does not — a previous createPool died mid-flight. ` +
-                        `Set DEVNET_SOL_USDC_POOL to an existing pool or clean up the half-created accounts.`
+                    `${keys.poolId.toBase58()} does not — a previous createPool died mid-flight. ` +
+                    `Set DEVNET_SOL_USDC_POOL to an existing pool or clean up the half-created accounts.`
                 );
             }
         }
@@ -192,8 +192,8 @@ const USDC_MINT = new PublicKey("USDCoctVLVnvTXBEuP9s8hntucdJokbo17RwHuNXemT"); 
 // used instead).
 const SEED_RATE_USDC_PER_SOL = 200;
 
-const seedSol = parseFloat(process.env.SOL_USDC_SEED_SOL || "0.3");
-const seedUsdc = parseFloat(process.env.SOL_USDC_SEED_USDC || "60");
+const seedSol = parseFloat(process.env.SOL_USDC_SEED_SOL || "03");
+const seedUsdc = parseFloat(process.env.SOL_USDC_SEED_USDC || "600");
 
 async function main() {
     await setSolUsdcPool();

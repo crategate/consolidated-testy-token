@@ -39,8 +39,9 @@ use super::dex_buyback::{
 };
 
 // Spot ring: ~30s between samples (derived from dex_buyback::NOMINAL_SLOT_MS —
-// 75 slots @ 400ms, 150 @ 200ms), 32 slots of history, 5 samples before the
-// trigger arms (cold start = no dip buys).
+// 75 slots @ 400ms devnet/current, 85 @ 350ms / 100 @ 300ms / 150 @ 200ms
+// mainnet options), 32 slots of history, 5 samples before the trigger arms
+// (cold start = no dip buys).
 const SPOT_SAMPLE_INTERVAL_MS: u64 = 30_000;
 const SPOT_SAMPLE_SLOTS: u64 = SPOT_SAMPLE_INTERVAL_MS / NOMINAL_SLOT_MS;
 const SPOT_MIN_SAMPLES: usize = 5;

@@ -57,9 +57,10 @@ export function ExplainerSection() {
     return (
         <section className="landing-section alt">
             <div className="landing-section-inner">
-                <h2 className="section-title"><GlitchText text="Features & Mechanics" /></h2>
+                <img src="../../../public/Logo/light-on-transparent-logo.png" className='logo' />
+                <h2 className="section-title"><GlitchText text="Reward Mechanics" /></h2>
                 <p className="section-subtitle">
-                    <GlitchText text="AFHO ties token incentives to the tradFi market pulse." variant="light" split="word" step={0.35} />
+                    <GlitchText text="AFHO ties token incentives to the tradFi market rhythm." variant="light" split="word" step={0.35} />
                 </p>
                 <p className="section-subtitle" style={{} as React.CSSProperties}>
                     <GlitchText text="staking, buybacks, and bond sales change with Wall St's market status" variant="light" split="word" step={0.4} />

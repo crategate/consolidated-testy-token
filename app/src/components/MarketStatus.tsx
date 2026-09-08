@@ -49,7 +49,6 @@ export function MarketStatus({ marketStatusPda, variant = 'full' }: MarketStatus
                 ) : (
                     <>
                         <div className={`status-pill ${stale ? 'stale' : ''}`}>
-                            <span className="status-dot" aria-hidden="true" />
                             {label}
                             {stale && <span className="stale-badge">Stale</span>}
                         </div>

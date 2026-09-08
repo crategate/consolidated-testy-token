@@ -68,7 +68,7 @@ export function SiteNav({ brand }: SiteNavProps) {
         <nav className={`site-nav${open ? ' open' : ''}`} aria-label="Site">
             <div className="site-nav-bar">
                 <Link to="/" className="site-nav-brand neon-glitch" style={{ '--glitch-delay': '1.1s' } as React.CSSProperties}>
-                    {brand ?? 'AFHO'}
+                    <img className="logo" src="../../public/Logo/color-on-trans-logo.png" />
                 </Link>
 
                 <div className="site-nav-links" id="site-nav-links">

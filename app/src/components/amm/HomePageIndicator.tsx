@@ -36,7 +36,6 @@ export function HomePageIndicator() {
                         : `Offer desk open — ${totalLots} lots remaining${closedBonus ? ' — +0.5% late nite bonus' : ''}`
                 }
             >
-                <span className="indicator-pulse" aria-hidden="true" />
                 <span className="indicator-text">
                     <strong>{floorPaused ? 'Offer desk paused' : 'Offer desk open'}</strong>
                     <span>

@@ -7,7 +7,8 @@
 .site-nav {
     --nav-break: 720px;
     position: relative;
-    z-index: 20; /* above the hero grid + drifting blobs */
+    z-index: 20;
+    /* above the hero grid + drifting blobs */
     padding: 0.75rem 1rem 0;
     width: 100%;
     box-sizing: border-box;
@@ -20,6 +21,11 @@
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
+}
+
+.logo {
+    max-width: 20vw;
+    max-height: 200px;
 }
 
 .site-nav-brand {
@@ -115,9 +121,11 @@
 .site-nav.open .site-nav-toggle-line:nth-child(1) {
     transform: translateY(5px) rotate(45deg);
 }
+
 .site-nav.open .site-nav-toggle-line:nth-child(2) {
     opacity: 0;
 }
+
 .site-nav.open .site-nav-toggle-line:nth-child(3) {
     transform: translateY(-5px) rotate(-45deg);
 }
@@ -172,6 +180,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+
     .site-nav-link,
     .site-nav-icon,
     .site-nav-toggle-line,

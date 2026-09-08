@@ -810,15 +810,7 @@
     background: rgba(255, 60, 60, 0.08);
 }
 
-.order-desk-closed::before {
-    content: '';
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #ff4d4d;
-    box-shadow: 0 0 8px rgba(255, 77, 77, 0.8);
-    flex-shrink: 0;
-}
+
 
 /* ── order bar: sticky at the bottom on mobile. Border glitch scales
       with --order-excite (more lots → more excited). ── */

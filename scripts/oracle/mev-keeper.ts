@@ -282,9 +282,19 @@ async function main() {
         );
     }
 
+    // ET wall-clock hour, host-timezone-independent: Intl resolves
+    // America/New_York with correct EDT/EST DST handling. (The old
+    // `getTimezoneOffset() === 240 ? -4 : -5` inference read the HOST's
+    // offset — on a UTC host it subtracted 5 all year, so the cadence was
+    // an hour off during EDT.)
     function getSleepDuration(): number {
-        const now = new Date();
-        const etHour = now.getUTCHours() - (now.getTimezoneOffset() === 240 ? 4 : 5);
+        const etHour = Number(
+            new Intl.DateTimeFormat("en-US", {
+                timeZone: "America/New_York",
+                hour: "numeric",
+                hourCycle: "h23",
+            }).format(new Date())
+        );
 
         if ((etHour >= 9 && etHour < 10) || (etHour >= 15 && etHour < 16)) {
             return 60_000;
@@ -1100,15 +1110,21 @@ function sleep(ms: number) {
 
 // ── Slot-time assumption watch ─────────────────────────────────────────────
 // All on-chain pacing (MIN_SLICE_SLOTS / DIP_MIN_SLICE_SLOTS / SPOT_SAMPLE_SLOTS)
-// is slot-denominated and derives from NOMINAL_SLOT_MS in dex_buyback.rs at
-// compile time. Solana's nominal slot time is 400ms today; a ~200ms target is
-// ATTEMPTED (Alpenglow-class consensus change), not guaranteed — if it lands,
-// flip NOMINAL_SLOT_MS to 200 and redeploy (pacing re-derives: 300/300/150),
-// BEFORE `solana program set-upgrade-authority --final`. This log prints the
-// chain's MEASURED slot time (getRecentPerformanceSamples) against that
-// assumption every ~5 min so drift — devnet already runs slower than nominal —
-// is visible next to the pacing math.
-const NOMINAL_SLOT_MS = 400; // mirrors dex_buyback.rs — flip both together
+// derives from NOMINAL_SLOT_MS in dex_buyback.rs at compile time; this is the
+// keeper-side mirror (PACE_SLOTS). ACTIVE: 400ms (devnet/current chains).
+// MAINNET LAUNCH OPTIONS (labeled; pick ONE at mainnet deploy — see the
+// trade-off matrix in the dex_buyback.rs comment + MAINNET_CHECKLIST.md):
+//   SLOT_TIME_MAINNET_350 — front-run (68.4s@400 / 60s@350 / 42.8s@250 /
+//                          34.2s@200 per slice)
+//   SLOT_TIME_MAINNET_300 — conservative (80s@400 / 40s@200 per slice)
+// Post-`--final` re-tuning would need an authority-only state setter (open
+// checklist item), not this constant. This log prints the chain's MEASURED
+// slot time (getRecentPerformanceSamples) against the active assumption every
+// ~5 min so drift — devnet already runs slower than nominal — is visible.
+const SLOT_TIME_DEVNET_400 = 400; // mirrors dex_buyback.rs — current chains
+const SLOT_TIME_MAINNET_350 = 350; // MAINNET OPTION — front-run
+const SLOT_TIME_MAINNET_300 = 300; // MAINNET OPTION — conservative
+const NOMINAL_SLOT_MS = SLOT_TIME_DEVNET_400; // ← ACTIVE (mainnet deploy: point at a MAINNET OPTION)
 const PACE_SLOTS = 60_000 / NOMINAL_SLOT_MS; // ~1 slice/min — mirrors MIN_SLICE_SLOTS
 let lastSlotTimeCheck = 0;
 async function logSlotTimeOnce(connection: anchor.web3.Connection) {
