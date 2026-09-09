@@ -1,21 +1,27 @@
-# AFHO — defi on Market Hours
+# AFHO: a token tuned to market hours
 
-> Litepaper v0.1 · devnet stage
-> A plain-language description of how AFHO works, what it costs, and what it
-> is built on. not investment advice.
+The hours of Wall St have never applied to crypto. This protocol 
+runs a feature driven narrative response to "what if"
 
----
+TradFi has been slow or still on delivering new financial vehicles to retail investors.
+Certain securities became more accessible, but only crypto has pioneered and delivered 
+new financial formats.
 
-## Narrative through mechanics
+The recent emergence of perps insists that crypto driven securities design has only just begun.  
+After Hours brings another speculative perspective and an experimental, ironic approach to demand & distribution.
 
-AFHO is an SPL token with features driven by the NYSE market status: while the market is
-open, the protocol buys its own token back from the market. When the bell
+## Carrot & Stick
+
+AFHO is an SPL token with incentives & penalties driven by the NYSE market status: while Wall St
+trades, the protocol buys its own token back from the market. When the bell
 closes, a nightly "offer desk" sells discounted, vesting bond lots straight
 into staking positions.
 
 ### a ticker that knows its being watched
 The bonds' size, discount rate, and vesting period are determined by the
 performance of the token's staking and price.
+
+The wrong price conditions close the offer desk completely
 
 ## The market clock
 
@@ -25,26 +31,26 @@ permissionless keeper reading a Switchboard On-Demand feed:
 | State | Meaning | What happens |
 |---|---|---|
 | OPEN | NYSE trading hours | Buybacks run. Stakers can claim. |
-| AFTER-HOURS | 4:00–8:00 pm ET | Night desk opens. Unstaking costs a fee. |
-| CLOSED | Overnight / weekends | Night desk stays open. Larger unstake fee. |
-| HALTED | NYSE trading halt | Everything pauses. Largest unstake fee. |
+| AFTER-HOURS | early morning & evenings | Night desk opens. Unstaking penalizes principle |
+| CLOSED | Overnight / weekends | Night desk stays open. Larger unstake fee |
+| HALTED | rare trading halt | Largest unstake fee |
 
-Anyone can crank the state machine, but the keeper that flips the state earns
-a small bounty (~$0.75, +5%/yr), funded automatically from the treasury.
+## Cadence of the Coin
 
-## A day in the life
+- **At the bell (OPEN):** buybacks resume if last night's desk
+  actually sold bonds. No sales, no buyback. The highest buyback price sets 
+  the bond price floor. This ratcheting floor decays slowly during bear cycles.
 
-- **At the bell (OPEN):** buybacks resume — but only if last night's desk
-  actually sold bonds. No sales, no buyback: the protocol never spends to
-  prop up a token nobody bought.
-- **During the day:** the **dip reserve** watches the pool price around the
-  clock. A real dip (3%+ below its own recent average) triggers automatic
-  buying, dampening the drop.
-- **After the close (AFTER-HOURS / CLOSED):** the **night desk** posts a
-  fresh sheet of bond lots — AFHO at a discount, delivered directly into
-  vesting staked positions. Proceeds split 80/10/10.
-- **Back at the next open:** 80% of last night's proceeds buy back AFHO from
-  the open market; 10% goes to stakers; 10% refills the dip reserve.
+  During this time, exiting locked positions carries no penalty.
+- **All Day & Night:** the dip hunting feature watches the price. A real dip (3%+ below its own recent average) triggers automatic
+  buying, dampening turbulence & refilling the vault for bond offers. 
+- **AFTER-HOURS & CLOSED:** the **night desk** posts a
+  fresh sheet of bonds. AFHO at a discount, delivered directly into
+  vesting staked positions. 
+
+  Exiting staked positions during these hours comes with fees.
+- **Next Opening Bell:** 80% of last night's proceeds buy back AFHO from
+  the open market, 10% goes to lockup rewards, & 10% refills the dip reserve.
 
 ## The night desk — discounted bond sales
 

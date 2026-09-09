@@ -342,7 +342,7 @@ export default function OfferLists() {
                 <div className="desk-banner floor-held glass-pane" role="alert">
                     Desk closed, price too high to offer bonds.
                     Every tier currently priced at or above the live DEX
-                    price. Sales resume when the market AFHO price lowers.
+                    price. Sales resume if market AFHO price raises
                 </div>
             )}
             {data.deskOpen && !floorBlocksAll && (
@@ -382,6 +382,8 @@ export default function OfferLists() {
                         </span>
                     )}
                     <span className="order-total-label"><GlitchText text="Total order size (approx.)" variant="light" split="letter" step={0.3} /></span>
+                    {/* {currency == "sol" && (<div>
+                        <p className="sol-warn">Sol offers fails simulation in some wallets</p>< p className="sol-warn">and may require multiple transactions</p></div>)} */}
                     <div className="order-total-line">
                         <strong><FlashNumber value={displayCost} /></strong>
                         <div className="currency-picker" ref={pickerRef}>
@@ -491,9 +493,11 @@ export default function OfferLists() {
                 {currency === 'sol' && ' SOL payments swap to USDC at claim (you cover the 0.25% pool fee).'}
             </p>
 
-            {status === 'error' && claimError && (
-                <div ref={claimErrorRef} className="desk-banner error glass-pane">Claim failed: {claimError}</div>
-            )}
-        </section>
+            {
+                status === 'error' && claimError && (
+                    <div ref={claimErrorRef} className="desk-banner error glass-pane">Claim failed: {claimError}</div>
+                )
+            }
+        </section >
     );
 }

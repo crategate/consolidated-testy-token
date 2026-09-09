@@ -363,9 +363,10 @@ export function SupplyStakeChart() {
     return (
         <div className="supply-chart glass-pane neon-shadow shadow-wander-a neon-glitch">
             <header className="supply-chart-head">
-                <h3 className="supply-chart-title">Released supply &amp; staked supply</h3>
+                <h3 className="supply-chart-title">Minted Supply:</h3>
+                <h3 className="supply-chart-title">25% to Liquidity Pool, 75% into Bond Sales</h3>
                 <p className="supply-chart-sub">
-                    available = total supply − bond-desk inventory · locked = staked · one point per trading day (same-date points both plot)
+                    No developer cut and no insider pre-sales.
                 </p>
             </header>
             <div className="supply-chart-plot">
@@ -456,10 +457,10 @@ export function SupplyStakeChart() {
             </div>
             <div className="supply-chart-legend">
                 <span className="supply-chart-key">
-                    <i className="supply-chart-swatch swatch-available" /> Available {fmtTokens(available)}
+                    <i className="supply-chart-swatch swatch-available" />Supply - Bond Desk Vault {fmtTokens(available)}
                 </span>
                 <span className="supply-chart-key">
-                    <i className="supply-chart-swatch swatch-staked" /> Locked — staked {fmtTokens(locked)}
+                    <i className="supply-chart-swatch swatch-staked" /> Locked {fmtTokens(locked)}
                     {pctLabel ? ` (${pctLabel})` : ''}
                 </span>
             </div>

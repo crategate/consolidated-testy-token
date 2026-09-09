@@ -22,6 +22,7 @@ wallet = "~/.config/solana/id.json"
 # anchor run mint → anchor run amm-init → set-pools ->anchor run init → anchor run bount
 
 # or anchor run bount-test-watch with anchor run set-oracle -- 1 to update
+# zip -r … . in app/dist 
 
 feed-deploy = "npx ts-node ./scripts/oracle/feed-deploy.ts"
 mint = "npx ts-node scripts/mint-launch.ts"
