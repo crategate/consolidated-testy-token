@@ -649,8 +649,13 @@ export function useDashData() {
         retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
     });
 
-    // Floor-change history: tx-log scan (~30 RPC calls), so manual-refresh
-    // only — no interval, no window-focus refetch.
+    // Floor-change history: tx-log scan (~30 RPC calls, ~27s with the
+    // rate-limit sleeps), so manual-refresh only. refetchOnWindowFocus is
+    // explicitly disabled: with react-query's default (true) every return to
+    // the tab after 60s of staleness re-ran the whole scan, monopolizing the
+    // rate-limited devnet endpoint for ~half a minute and starving the shared
+    // snapshot + remaining queries into 429 backoff — the dash then sat on
+    // stale data while every other request fought the scan.
     const ratchetQuery = useQuery({
         queryKey: ['dashRatchet', deployment?.ammState ?? ''],
         queryFn: async () => {
@@ -659,6 +664,7 @@ export function useDashData() {
         },
         enabled: !!deployment?.ammState,
         staleTime: 60_000,
+        refetchOnWindowFocus: false,
         retry: (failureCount, error) => {
             const msg = error instanceof Error ? error.message : String(error);
             return /429|rate/i.test(msg) ? failureCount < 2 : failureCount < 1;

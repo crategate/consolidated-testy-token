@@ -365,8 +365,10 @@ pub(crate) fn execute_swap(
 // make_offers may never price a lot below the highest realized buyback price,
 // so when the live price falls to the floor the desk goes dark on its own.
 // It therefore only ever moves UP — call once per executed buyback fill.
-// Units: (input raw × 1e6) / afho raw — USDC-denominated for both swap paths.
-// buy_the_dip and distribute_staker_rewards ratchet through the same helper.
+// Units: (input raw × 1e12) / afho raw — floor units (nano-USD per whole
+// token) for the 6-dp USDC / 9-dp AFHO pair: usdc_raw×1e12/afho_raw =
+// price×1e9. buy_the_dip and distribute_staker_rewards ratchet through the
+// same helper.
 pub(crate) fn ratchet_buyback_basis(amm_state: &mut AmmState, executed_price: u64) {
     if executed_price > amm_state.highest_buyback_basis {
         amm_state.highest_buyback_basis = executed_price;

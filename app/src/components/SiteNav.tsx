@@ -55,15 +55,41 @@ interface SiteNavProps {
 
 /* Live AFHO price from the pinned CPMM pool (floor units → USD), floating
  * left just to the right of the logo. Reads the shared chain-data snapshot,
- * so it refreshes with the same cadence as the rest of the app. */
+ * so it refreshes with the same cadence as the rest of the app.
+ *
+ * The value is the SAME quantity offer_claim gates against: the pool's 10-minute
+ * observation-ring TWAP, falling back to the instant vault ratio when the ring
+ * is stale/sparse (no swap in ~10 min — the TWAP badge flips to "spot"). The
+ * meta suffix shows which one is live and how many seconds since the snapshot
+ * that produced it, so a rate-limited or dead-socket stretch is visible
+ * instead of silently freezing the number. */
 function HeaderTicker() {
-    const { livePrice } = useChainData();
+    const { livePrice, livePriceUpdatedAt } = useChainData();
     const price = livePrice.afhoUsdc;
+    const [nowMs, setNowMs] = useState(() => Date.now());
+    useEffect(() => {
+        // Age display tick — paused in background tabs.
+        const id = window.setInterval(() => {
+            if (!document.hidden) setNowMs(Date.now());
+        }, 2000);
+        return () => window.clearInterval(id);
+    }, []);
+    const ageSec = livePriceUpdatedAt ? Math.max(0, Math.round((nowMs - livePriceUpdatedAt) / 1000)) : null;
+    const stale = price !== null && (ageSec === null || ageSec > 60);
     return (
-        <span className="site-nav-ticker" title="AFHO live price (pinned pool spot)">
+        <span
+            className={`site-nav-ticker${stale ? ' stale' : ''}`}
+            title={
+                'AFHO live price — the pinned pool\u2019s 10-minute TWAP (the quantity offer claims gate on), ' +
+                'falling back to the instant pool ratio when the TWAP ring is stale or sparse'
+            }
+        >
             <span className="site-nav-ticker-symbol">AFHO</span>
             <span className="site-nav-ticker-price">
                 <FlashNumber value={price !== null ? formatHeaderTickerPrice(price) : '—'} />
+            </span>
+            <span className="site-nav-ticker-meta" aria-hidden="true">
+                {livePrice.afhoPriceIsTwap ? 'twap' : 'spot'}·{ageSec === null ? '—' : `${ageSec}s`}
             </span>
         </span>
     );

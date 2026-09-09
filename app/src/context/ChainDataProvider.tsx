@@ -64,7 +64,15 @@ function retryDelay(attemptIndex: number): number {
    All four watched accounts invalidate the ONE batched snapshot query, so the
    throttle is a shared module-level ref (not per-hook state): a flurry of
    account updates (or StrictMode double subscriptions) refetches the snapshot
-   at most once per 5s. */
+   at most once per 5s.
+
+   Subscriptions stay subscribed across visibility flips: tearing down ~10
+   WebSocket subscriptions on hide and recreating them on show churned the
+   socket layer on every tab switch (and lost liveness entirely whenever the
+   socket died in the background). While the tab is hidden the callback just
+   drops notifications — background tabs must not refetch — and the return to
+   visibility refetches via the snapshot query's enabled-flip (it refetches
+   when it re-enables with data older than staleTime). */
 
 const WS_INVALIDATE_MIN_MS = 5000;
 const wsLastInvalidateRef = { current: 0 };
@@ -76,15 +84,14 @@ function useAccountSubscription(
 ) {
     const { connection } = useConnection();
     const queryClient = useQueryClient();
-    const visible = usePageVisible();
 
     useEffect(() => {
         if (!account || !enabled || !connection) return;
-        if (!visible) return;
 
         const id = connection.onAccountChange(
             account,
             () => {
+                if (document.hidden) return; // background: drop, don't refetch
                 const now = Date.now();
                 if (now - wsLastInvalidateRef.current < WS_INVALIDATE_MIN_MS) return;
                 wsLastInvalidateRef.current = now;
@@ -96,7 +103,7 @@ function useAccountSubscription(
         return () => {
             void connection.removeAccountChangeListener(id);
         };
-    }, [connection, account, enabled, queryKey, queryClient, visible]);
+    }, [connection, account, enabled, queryKey, queryClient]);
 }
 
 // Variant for a variable-length list of derived accounts (the CPMM price
@@ -111,15 +118,14 @@ function useAccountsSubscription(
 ) {
     const { connection } = useConnection();
     const queryClient = useQueryClient();
-    const visible = usePageVisible();
     const accountsKey = useMemo(() => accounts.map((a) => a.toBase58()).join(','), [accounts]);
 
     useEffect(() => {
         if (!enabled || !connection || accountsKey === '') return;
-        if (!visible) return;
         const list = accountsKey.split(',').map((k) => new PublicKey(k));
 
         const onPriceAccountChange = () => {
+            if (document.hidden) return; // background: drop, don't refetch
             const now = Date.now();
             if (now - wsLastInvalidateRef.current < WS_INVALIDATE_MIN_MS) return;
             wsLastInvalidateRef.current = now;
@@ -130,7 +136,7 @@ function useAccountsSubscription(
         return () => {
             for (const id of ids) void connection.removeAccountChangeListener(id);
         };
-    }, [connection, accountsKey, enabled, queryKey, queryClient, visible]);
+    }, [connection, accountsKey, enabled, queryKey, queryClient]);
 }
 /* ── Provider ── */
 
@@ -178,6 +184,10 @@ export function ChainDataProvider({ children }: { children: ReactNode }) {
     const { marketStatusPda, ammStatePda, offerListPda, poolPda } = derived;
 
     const enabled = !!connection && !!deployment && visible;
+    // Subscriptions ride the chain data being known, not tab visibility:
+    // they stay subscribed across visibility flips (callbacks no-op while
+    // hidden) so the socket doesn't churn on every tab switch.
+    const subscribe = !!connection && !!deployment;
 
     /* Single batched snapshot. One getMultipleAccountsInfo per tick replaces
        the five per-account queries (market status, staking pool, AMM state,
@@ -271,10 +281,10 @@ export function ChainDataProvider({ children }: { children: ReactNode }) {
     });
 
     // Any watched account changing refetches the one snapshot (throttled).
-    useAccountSubscription(marketStatusPda, snapshotQueryKey, enabled);
-    useAccountSubscription(poolPda, snapshotQueryKey, enabled && !!poolPda);
-    useAccountSubscription(ammStatePda, snapshotQueryKey, enabled && !!ammStatePda);
-    useAccountSubscription(offerListPda, snapshotQueryKey, enabled && !!offerListPda);
+    useAccountSubscription(marketStatusPda, snapshotQueryKey, subscribe);
+    useAccountSubscription(poolPda, snapshotQueryKey, subscribe && !!poolPda);
+    useAccountSubscription(ammStatePda, snapshotQueryKey, subscribe && !!ammStatePda);
+    useAccountSubscription(offerListPda, snapshotQueryKey, subscribe && !!offerListPda);
 
     /* Refresh — every domain key now lands on the single batched snapshot. */
     const refresh = useCallback(
@@ -308,7 +318,7 @@ export function ChainDataProvider({ children }: { children: ReactNode }) {
     useAccountsSubscription(
         priceAccounts.filter((a) => !a.equals(PublicKey.default)),
         snapshotQueryKey,
-        enabled,
+        subscribe,
     );
 
     const value: ChainDataContextValue = {

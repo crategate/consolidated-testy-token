@@ -74,6 +74,26 @@
     color: var(--text-primary);
 }
 
+/* Source + age of the displayed price: "twap·4s" or "spot·12s". The stale
+   state (snapshot older than 60s — rate-limited stretch or dead socket)
+   dims the whole ticker so a frozen number is never mistaken for live. */
+.site-nav-ticker-meta {
+    font-size: 0.58rem;
+    letter-spacing: 0.08em;
+    color: var(--text-tertiary, var(--text-secondary));
+    opacity: 0.75;
+}
+
+.site-nav-ticker.stale .site-nav-ticker-price,
+.site-nav-ticker.stale .site-nav-ticker-meta {
+    opacity: 0.45;
+}
+
+.site-nav-ticker.stale .site-nav-ticker-meta {
+    color: var(--neon-amber, var(--text-secondary));
+    opacity: 0.9;
+}
+
 /* ─── Wide screens: inline links ─── */
 .site-nav-links {
     display: flex;
