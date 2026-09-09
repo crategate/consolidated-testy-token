@@ -1,13 +1,13 @@
 # AFHO: a token tuned to market hours
 
 The hours of Wall St have never applied to crypto. This protocol 
-runs a feature driven narrative response to "what if"
+runs a feature driven narrative response of "what if"
 
-TradFi has been slow or still on delivering new financial vehicles to retail investors.
+TradFi has failed on delivering new financial vehicles to retail investors.
 Certain securities became more accessible, but only crypto has pioneered and delivered 
-new financial formats.
+new investment formats.
 
-The recent emergence of perps insists that crypto driven securities design has only just begun.  
+The recent emergence of perps proves that crypto driven securities design has only just begun.  
 After Hours brings another speculative perspective and an experimental, ironic approach to demand & distribution.
 
 ## Carrot & Stick
@@ -42,6 +42,7 @@ permissionless keeper reading a Switchboard On-Demand feed:
   the bond price floor. This ratcheting floor decays slowly during bear cycles.
 
   During this time, exiting locked positions carries no penalty.
+
 - **All Day & Night:** the dip hunting feature watches the price. A real dip (3%+ below its own recent average) triggers automatic
   buying, dampening turbulence & refilling the vault for bond offers. 
 - **AFTER-HOURS & CLOSED:** the **night desk** posts a
@@ -52,31 +53,31 @@ permissionless keeper reading a Switchboard On-Demand feed:
 - **Next Opening Bell:** 80% of last night's proceeds buy back AFHO from
   the open market, 10% goes to lockup rewards, & 10% refills the dip reserve.
 
-## The night desk — discounted bond sales
+## Bond Desk 
 
-Every evening the desk prices three tiers of lots — **small, medium, big** —
+At the end of eat trading day, the desk prices three tiers of lots 
 from the day's price momentum and how committed stakers are:
 
-- **Discounts are strictly tiered** (big gets the deepest cut, small the
-  shallowest) and never price below the **buyback floor** — the highest price
-  the protocol itself has ever paid. If the market falls to the floor, the
+- **Discounts are strictly tiered** and never price below the **buyback floor** — the highest price
+  the protocol itself has paid during buybacks. If the market falls to the floor, the
   desk goes dark on its own rather than undercut its own buyers.
-- **Bonds vest**: purchased AFHO lands straight in a staked position locked
+- **Vesting length**: purchased AFHO lands straight in a staked position locked
   for **3 to 25 trading days**, so every bond buyer is also a staker from
   second one.
-- **Guardrails**: at most 5% of the vault is offered per sheet, and the desk
-  stays dark until it has at least 5 days of price history. No history, no
-  guessing, no sheet.
+- **Vault Balance Percentage**: at most 5% of the vault is offered per sheet. This maximum
+ offering market condition range was tuned to sustain the bond desk's lifespan.
+  
+The bond desk isn't sustainable and ultimately serves as the token's distribution model.
+75% of minted supply started in the protocol's bond desk vault, 25% went into Raydium pool.
 
 ## Buybacks — 80% of every bond sale
 
-Buybacks only run while the market is OPEN and only after real bond sales.
-The 80% share is sliced out over the session rather than dumped at once:
+Buybacks only run during trade hours and only after accepted bond offers.
+The transactions get sliced out over the session rather than dumped at once:
 
 - **Paced**: one slice every 150 slots, sized pseudo-randomly.
-- **Front-loaded**: roughly half the day's budget lands in the first hour,
-  when a post-close discount is cheapest to correct.
-- **Banded**: every fill must land within **5%** of the pool's TWAP price or
+- **Front-loaded**: roughly half the day's budget lands in the first hour
+- **Moderated**: every fill must land within **5%** of the pool's TWAP price or
   the transaction reverts.
 - **Rolls over**: unspent budget stays in the vault for the next session.
 - **Ratchets**: every executed buyback raises the desk's pricing floor, so
@@ -88,19 +89,19 @@ Ten percent of bond proceeds fund an always-on dip buyer:
 
 - Triggers when the pool price falls **3% or more** below the mean of its own
   last 32 samples (sampled every 75 slots).
-- Sizes its buys **quadratically** with depth — a 10% dip buys far more than
-  twice what a 5% dip buys — and throttles when the 20-day trend is falling.
-- Capped at **40% of the reserve per day**, so a knife never empties the
+- Sizes its buys **quadratically** with depth. A 10% dip buys far more than
+  twice what a 5% dip buys, and throttles when the 20-day trend is falling.
+- Capped at **40% of the dip reserve per day**, so a knife never empties the
   reserve in one afternoon.
 
-## Stakers — 10% + the rewards engine
+## Lockup Rewards - 10%
 
 Ten percent of every bond sale is converted to AFHO and distributed to
 stakers. Rewards are split by **weight**, and weight grows with commitment:
 
 - **Trading-day multiplier**: weight ramps from 1.0x toward a configured cap
-  (default **3.0x**) along a saturating curve — early days grow fast, later
-  days slow down.
+  (default **3.0x**) along a saturating curve. Early days grow fast, later
+  days slow down
 - **Claims are market-open only** (the desk's reward pool only pays out while
   the market is live), with a **5% protocol tax** that refills bond-sale
   inventory.
@@ -149,9 +150,6 @@ stakers. Rewards are split by **weight**, and weight grows with commitment:
   reader.
 - **Oracle**: Switchboard On-Demand for the market-status feed.
 - **Frontend**: React + Vite, wallet-connected, with a dev dashboard.
-- **Ops**: TypeScript scripts — deploy, pool pinning, the keeper, and X /
-  Telegram announcement bots that post every protocol event with the
-  receipts.
 
 ## Status
 

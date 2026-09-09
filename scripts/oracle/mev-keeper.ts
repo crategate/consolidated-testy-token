@@ -1111,21 +1111,16 @@ function sleep(ms: number) {
 // ── Slot-time assumption watch ─────────────────────────────────────────────
 // All on-chain pacing (MIN_SLICE_SLOTS / DIP_MIN_SLICE_SLOTS / SPOT_SAMPLE_SLOTS)
 // derives from NOMINAL_SLOT_MS in dex_buyback.rs at compile time; this is the
-// keeper-side mirror (PACE_SLOTS). ACTIVE: 400ms (devnet/current chains).
-// MAINNET LAUNCH OPTIONS (labeled; pick ONE at mainnet deploy — see the
-// trade-off matrix in the dex_buyback.rs comment + MAINNET_CHECKLIST.md):
-//   SLOT_TIME_MAINNET_350 — front-run (68.4s@400 / 60s@350 / 42.8s@250 /
-//                          34.2s@200 per slice)
-//   SLOT_TIME_MAINNET_300 — conservative (80s@400 / 40s@200 per slice)
-// Post-`--final` re-tuning would need an authority-only state setter (open
-// checklist item), not this constant. This log prints the chain's MEASURED
-// slot time (getRecentPerformanceSamples) against the active assumption every
-// ~5 min so drift — devnet already runs slower than nominal — is visible.
-const SLOT_TIME_DEVNET_400 = 400; // mirrors dex_buyback.rs — current chains
-const SLOT_TIME_MAINNET_350 = 350; // MAINNET OPTION — front-run
-const SLOT_TIME_MAINNET_300 = 300; // MAINNET OPTION — conservative
-const NOMINAL_SLOT_MS = SLOT_TIME_DEVNET_400; // ← ACTIVE (mainnet deploy: point at a MAINNET OPTION)
-const PACE_SLOTS = 60_000 / NOMINAL_SLOT_MS; // ~1 slice/min — mirrors MIN_SLICE_SLOTS
+// keeper-side mirror (PACE_SLOTS). ACTIVE: 200ms (2026-09-09 — baked the
+// floor of SIMD-0525's staged 400→200 plan so the program can be finalized
+// immediately; see dex_buyback.rs + MAINNET_CHECKLIST.md 2026-09-08 pass).
+// While chains run slower than 200ms, pacing runs SLOWER than design
+// (400ms-real → 120s/slice), the conservative direction; devnet's ~167ms
+// today → ~50s/slice, slightly hot but bounded. This log prints the chain's
+// MEASURED slot time (getRecentPerformanceSamples) against the active
+// assumption every ~5 min so the transition is visible as it lands.
+const NOMINAL_SLOT_MS = 200; // mirrors dex_buyback.rs — 2026-09-09 decision
+const PACE_SLOTS = 60_000 / NOMINAL_SLOT_MS; // 300 slots ≈ 60s @ 200ms — mirrors MIN_SLICE_SLOTS
 let lastSlotTimeCheck = 0;
 async function logSlotTimeOnce(connection: anchor.web3.Connection) {
     const now = Date.now();

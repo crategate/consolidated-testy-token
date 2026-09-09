@@ -5,38 +5,31 @@ use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 // Nominal slot duration every slot-denominated interval in this program is
 // derived from at COMPILE TIME (MIN_SLICE_SLOTS / DIP_MIN_SLICE_SLOTS /
 // SPOT_SAMPLE_SLOTS below and in buy_the_dip.rs) — single source of truth
-// for that derivation. Solana's nominal slot time is 400ms today; a ~200ms
-// target is ATTEMPTED (Alpenglow-class consensus change), not guaranteed.
+// for that derivation.
 //
-// ACTIVE VALUE (devnet/current chains): 400ms.
-// MAINNET LAUNCH OPTIONS — labeled, pick ONE at mainnet deploy by pointing
-// NOMINAL_SLOT_MS at it (decision tracked in MAINNET_CHECKLIST.md
-// "2026-09-07 pass"; the front-run bet we're counting on vs the trade-offs):
-//   SLOT_TIME_MAINNET_350 — front-runs the speedup. Derived pacing 171/171/85
-//     slots: 400ms-real → 68.4s/slice (−14% vs the 60s design; conservative,
-//     harmless) · 350 → exactly on target · 250 → 42.8s (+40% cadence) ·
-//     200 → 34.2s (+75% cadence — the most aggressive case; per-slice
-//     weights, the 5% band and day budgets still bound total spend).
-//   SLOT_TIME_MAINNET_300 — the conservative side of the same bet:
-//     200/200/100 slots: 400ms-real → 80s/slice (−33%) · 200 → 40s (+50%).
+// ACTIVE VALUE: 200ms (2026-09-09 decision — bake the floor of Solana's
+// announced staged reduction 400→350→300→250→200ms, SIMD-0525, and revoke
+// the upgrade authority immediately; tracked in MAINNET_CHECKLIST.md
+// 2026-09-08 pass). Derived pacing: 300/300/150 slots (slice ~1/min, dip
+// spot ring ~30s at 200ms). While chains still run slower, wall-clock
+// pacing runs SLOWER than design — the conservative direction:
+// 400ms-real → 120s/slice (hour-1 ≈ 36% of the day budget vs the ~50%
+// design; unspent budget rolls over) · 350 → 105s · 300 → 90s ·
+// 250 → 75s · 200 → 60s (design). Devnet's ~167ms today → ~50s/slice,
+// slightly hot but bounded by per-slice weights, the 5% band and day
+// budgets. Over-cadence vs design only occurs below 200ms — outside every
+// announced plan.
 //
 // POST-`--final` RE-TUNING: not possible through this constant — a
-// finalized program can never be redeployed. The only mechanism that
-// survives finalization is moving the slot counts into AmmState behind an
-// authority-only setter (state setters keep working after `--final`; the
-// frozen code just runs them) — tracked as an open item in
-// MAINNET_CHECKLIST.md, not yet built. Wall-clock windows (the 1h
-// first-hour weight gate, the 600s TWAP, day caps) are timestamp-based and
-// need nothing. The keeper logs measured ms/slot vs this assumption.
-#[allow(dead_code)]
-const SLOT_TIME_DEVNET_400: u64 = 400; // current chain nominal (devnet/mainnet today)
-#[allow(dead_code)]
-const SLOT_TIME_MAINNET_350: u64 = 350; // MAINNET OPTION — front-run (see matrix)
-#[allow(dead_code)]
-const SLOT_TIME_MAINNET_300: u64 = 300; // MAINNET OPTION — conservative
-pub(crate) const NOMINAL_SLOT_MS: u64 = SLOT_TIME_DEVNET_400; // ← ACTIVE (mainnet deploy: point at a MAINNET OPTION above)
-// Pacing intent: ~1 slice per minute of wall clock (150 slots @ 400ms,
-// 171 @ 350ms, 200 @ 300ms, 300 @ 200ms).
+// finalized program can never be redeployed. Accepted (2026-09-09): 200ms
+// is the announced floor and total spend stays bounded by per-slice
+// weights, the 5% band and day budgets at any slot time, so the
+// authority-only state setter was closed out as unnecessary. Wall-clock
+// windows (the 1h first-hour weight gate, the 600s TWAP, day caps) are
+// timestamp-based and need nothing. The keeper logs measured ms/slot vs
+// this assumption.
+pub(crate) const NOMINAL_SLOT_MS: u64 = 200;
+// Pacing intent: ~1 slice per minute of wall clock (300 slots @ 200ms).
 pub(crate) const SLICE_INTERVAL_MS: u64 = 60_000;
 // Minimum slots between slices — pacing so one crank burst can't drain the
 // day's budget in a single block.

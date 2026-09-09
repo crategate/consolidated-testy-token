@@ -39,9 +39,9 @@ use super::dex_buyback::{
 };
 
 // Spot ring: ~30s between samples (derived from dex_buyback::NOMINAL_SLOT_MS —
-// 75 slots @ 400ms devnet/current, 85 @ 350ms / 100 @ 300ms / 150 @ 200ms
-// mainnet options), 32 slots of history, 5 samples before the trigger arms
-// (cold start = no dip buys).
+// 150 slots @ 200ms; slower chains sample proportionally slower — 60s @
+// 400ms, ~25s on devnet's ~167ms today), 32 slots of history, 5 samples
+// before the trigger arms (cold start = no dip buys).
 const SPOT_SAMPLE_INTERVAL_MS: u64 = 30_000;
 const SPOT_SAMPLE_SLOTS: u64 = SPOT_SAMPLE_INTERVAL_MS / NOMINAL_SLOT_MS;
 const SPOT_MIN_SAMPLES: usize = 5;
@@ -54,8 +54,9 @@ const DIP_TREND_GAIN: i64 = 10; // multiplier bps per centi-percent of slope
 const DIP_TREND_FLOOR_BPS: i64 = 2_500; // knife guard: 25% of base
 const DIP_TREND_CAP_BPS: i64 = 12_500; // uptrend boost: 125% of base
 const DIP_DAY_CAP_BPS: u64 = 4_000; // <=40% of the day-start reserve per leg
-// Same rhythm as dex_buyback (~1 slice/min of wall clock — re-derives with
-// NOMINAL_SLOT_MS). This — not the trigger — is what throttles QUICK dips:
+// Same rhythm as dex_buyback (~1 slice/min of wall clock at 200ms —
+// re-derives with NOMINAL_SLOT_MS; slower chains pace proportionally
+// slower). This — not the trigger — is what throttles QUICK dips:
 // at 3.5% depth a slice is only
 // ~3% of the reserve, so a slow pacing window means a minutes-long dip gets
 // one small slice and the ring mean re-adapts before the next one.
