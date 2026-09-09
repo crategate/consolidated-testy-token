@@ -277,10 +277,19 @@ async function fetchRatchetHistory(
     const events: RatchetDecayEvent[] = [];
     let scanned = 0;
     for (const s of sigs.slice().reverse()) {
-        const t = await rpcRetry(() =>
-            connection.getTransaction(s.signature, { maxSupportedTransactionVersion: 0 })
-        );
+        // v1 claims (SIMD-0385) share this PDA's history with legacy/v0
+        // keeper txs. Ask for v1 and skip signatures the 1.x SDK can't
+        // decode — the scanner only reads logMessages (decay logs come from
+        // the keeper's legacy/v0 txs), so skipping a v1 sig loses nothing.
         scanned += 1;
+        let t: Awaited<ReturnType<Connection['getTransaction']>> = null;
+        try {
+            t = await rpcRetry(() =>
+                connection.getTransaction(s.signature, { maxSupportedTransactionVersion: 1 })
+            );
+        } catch {
+            continue;
+        }
         if (!t || t.meta?.err) continue;
         for (const line of t.meta?.logMessages ?? []) {
             const m = line.match(DECAY_LOG_RE);

@@ -77,8 +77,6 @@ The transactions get sliced out over the session rather than dumped at once:
 
 - **Paced**: one slice every 150 slots, sized pseudo-randomly.
 - **Front-loaded**: roughly half the day's budget lands in the first hour
-- **Moderated**: every fill must land within **5%** of the pool's TWAP price or
-  the transaction reverts.
 - **Rolls over**: unspent budget stays in the vault for the next session.
 - **Ratchets**: every executed buyback raises the desk's pricing floor, so
   the desk can never sell cheaper than the protocol itself paid.
@@ -118,7 +116,7 @@ stakers. Rewards are split by **weight**, and weight grows with commitment:
   - AFTER-HOURS: 3%
   - CLOSED: 6%
   - HALTED: 18%
-- **Keeper bounty**: ~$0.75 per real state flip, +5%/yr, auto-funded by the
+- **Keeper bounty**: ~$0.75 per real state flip, +5%/yr for inflation, auto-funded by the
   treasury.
 - All bps parameters are fixed at pool initialization and capped at 100%.
 

@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
-import { useConnection } from '@solana/wallet-adapter-react';
+import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { BN } from '@coral-xyz/anchor';
-import { ComputeBudgetProgram, PublicKey, SendTransactionError, SystemProgram, Transaction, TransactionMessage, VersionedTransaction, AddressLookupTableAccount } from '@solana/web3.js';
+import { ComputeBudgetProgram, PublicKey, SendTransactionError, SystemProgram, Transaction, TransactionMessage, VersionedTransaction, AddressLookupTableAccount, type TransactionInstruction } from '@solana/web3.js';
 import {
     ASSOCIATED_TOKEN_PROGRAM_ID,
     getAccount,
@@ -12,6 +12,17 @@ import {
 import { STAKING_PROGRAM_ID, useAmmProgram } from '../../anchor/setup.ts';
 import { formatSol, formatUsdc, lamportsForCost, lamportsForCostExact } from './offerMath.ts';
 import type { ClaimAccounts, SolClaimAccounts } from './useAmmData.ts';
+import {
+    V1_CLAIM_CU_LIMIT,
+    V1_CLAIM_DATA_SIZE_LIMIT,
+    V1_SOL_CLAIM,
+    buildV1MessageBytes,
+    estimateMicroLamportsPerCu,
+    estimateV1PriorityFeeLamports,
+    sendV1Transaction,
+    signV1Message,
+    simulateV1Transaction,
+} from '../../sdk/v1Transaction.ts';
 
 export interface ClaimSelection {
     tier: number;   // 0 = sml, 1 = med, 2 = big
@@ -54,6 +65,7 @@ export function useOfferClaim(
     usdcDecimals: number,
 ): UseOfferClaimReturn {
     const { connection } = useConnection();
+    const { wallet } = useWallet();
     const program = useAmmProgram();
     const [status, setStatus] = useState<ClaimStatus>('idle');
     const [txSig, setTxSig] = useState<string | null>(null);
@@ -182,6 +194,20 @@ export function useOfferClaim(
             }
 
             const tx = new Transaction();
+            // Priority fee (helius skill: estimate from live data, never
+            // hardcode). One fetch feeds the ComputeBudget price for the
+            // legacy/v0 paths AND the v1 config total-lamports field.
+            const priorityAccountKeys = [
+                buyer.toBase58(),
+                accounts.ammState.toBase58(),
+                accounts.marketStatus.toBase58(),
+            ];
+            let microLamportsPerCu = 1;
+            try {
+                microLamportsPerCu = await estimateMicroLamportsPerCu(connection, priorityAccountKeys);
+            } catch {
+                // fee estimation is best-effort — floor at 1 microLamport/CU
+            }
             // Bake a FINALIZED blockhash + fee payer here rather than letting
             // the wallet fill them: wallets preflight against their OWN RPC
             // node, and a blockhash fetched at `confirmed` can be a slot or
@@ -194,6 +220,7 @@ export function useOfferClaim(
             tx.recentBlockhash = (await connection.getLatestBlockhash('finalized')).blockhash;
             // Raise the CU ceiling: a transaction with no compute-budget
             // instruction defaults to 200k CU per instruction.
+            tx.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: microLamportsPerCu }));
             tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 1_000_000 }));
             // Chunking: the USDC instruction is ~950 bytes, so all tiers fit in
             // one transaction. A single SOL instruction is ~1180 bytes (+33 for
@@ -201,6 +228,7 @@ export function useOfferClaim(
             // 1232-byte packet limit — SOL claims go out as one transaction per
             // tier (one wallet prompt each).
             const txs: (Transaction | VersionedTransaction)[] = currency === 'usdc' ? [tx] : [];
+            const solIxs: TransactionInstruction[] = [];
             for (let i = 0; i < active.length; i++) {
                 const { tier, units } = active[i];
                 const index = nextIndex + BigInt(i);
@@ -323,6 +351,7 @@ export function useOfferClaim(
                     // own RPC, and a too-fresh blockhash fails that sim
                     // with BlockhashNotFound before the buyer can even
                     // decide.
+                    solIxs.push(solIx);
                     const solTx = new Transaction();
                     solTx.add(solIx);
                     solTx.feePayer = buyer;
@@ -331,9 +360,11 @@ export function useOfferClaim(
                     if (opts.claimLookupTable) {
                         let lookup: AddressLookupTableAccount | null = null;
                         // One retry on a transient RPC error before falling
-                        // back: the legacy tx cannot carry a CU instruction,
+                        // back: the legacy tx cannot carry a CU instruction
+                        // (it sits ~19 bytes under the 1232-byte packet limit),
                         // so the fallback is a strictly worse simulation
-                        // profile, not a stylistic choice.
+                        // profile, not a stylistic choice — and it has no room
+                        // for a priority-fee instruction either.
                         for (let attempt = 0; attempt < 2 && !lookup; attempt++) {
                             try {
                                 lookup = (await connection.getAddressLookupTable(
@@ -359,6 +390,7 @@ export function useOfferClaim(
                                 payerKey: buyer,
                                 recentBlockhash: blockhash,
                                 instructions: [
+                                    ComputeBudgetProgram.setComputeUnitPrice({ microLamports: microLamportsPerCu }),
                                     ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
                                     solIx,
                                 ],
@@ -368,6 +400,45 @@ export function useOfferClaim(
                         }
                     }
                     if (!pushed) txs.push(solTx);
+                }
+            }
+
+            // ── v1 single-tx SOL claim (SIMD-0385) ──────────────────────────
+            // One v1 transaction carries every SOL tier (3 instructions ≈
+            // 1.5–2KB < 4096, no ALT, explicit CU + data-size limits and the
+            // priority fee in the transaction config) → one wallet prompt
+            // instead of one per tier. Signing covers the message bytes via
+            // the wallet's signMessage, so no wallet v1 support is required.
+            // Built + dry-run FIRST: a null sim (RPC refused v1) or a sim
+            // error (desk closed, floor held, …) falls back to the v0+ALT
+            // txs above, whose preflight surfaces the same readable errors.
+            const adapter = wallet?.adapter as unknown as {
+                signMessage?: (m: Uint8Array) => Promise<Uint8Array>;
+            } | null;
+            const signMessage = adapter?.signMessage
+                ? adapter.signMessage.bind(adapter)
+                : undefined;
+            let v1Message: Uint8Array | null = null;
+            if (currency === 'sol' && solIxs.length > 0 && V1_SOL_CLAIM && signMessage) {
+                try {
+                    const v1Blockhash = (await connection.getLatestBlockhash('finalized')).blockhash;
+                    const v1Fee = await estimateV1PriorityFeeLamports(connection, priorityAccountKeys);
+                    const msg = buildV1MessageBytes({
+                        feePayer: buyer,
+                        recentBlockhash: v1Blockhash,
+                        instructions: solIxs,
+                        config: {
+                            priorityFeeLamports: v1Fee,
+                            computeUnitLimit: V1_CLAIM_CU_LIMIT,
+                            loadedAccountsDataSizeLimit: V1_CLAIM_DATA_SIZE_LIMIT,
+                        },
+                    });
+                    const sim = await simulateV1Transaction(connection, msg);
+                    if (sim !== null && !sim.err) {
+                        v1Message = msg;
+                    }
+                } catch {
+                    v1Message = null; // any v1-specific failure → v0+ALT path
                 }
             }
 
@@ -418,9 +489,18 @@ export function useOfferClaim(
                 }
             };
             let lastSig: string | null = null;
-            for (const t of txs) {
-                await preflight(t);
-                lastSig = await sendAndConfirm(t);
+            if (v1Message && signMessage) {
+                // One prompt: the wallet signs the v1 message bytes, the
+                // signature is appended, and the raw tx goes out (the dry
+                // run above already passed against this cluster).
+                const signed = await signV1Message(v1Message, signMessage);
+                lastSig = await sendV1Transaction(connection, signed);
+                await connection.confirmTransaction(lastSig, 'confirmed');
+            } else {
+                for (const t of txs) {
+                    await preflight(t);
+                    lastSig = await sendAndConfirm(t);
+                }
             }
             if (!lastSig) throw new Error('Claim produced no transactions');
             setTxSig(lastSig);
@@ -452,7 +532,7 @@ export function useOfferClaim(
             setStatus('error');
             return false;
         }
-    }, [program, accounts, solAccounts, connection, usdcDecimals]);
+    }, [program, accounts, solAccounts, connection, usdcDecimals, wallet]);
 
     return { claim, status, txSig, error, reset };
 }
