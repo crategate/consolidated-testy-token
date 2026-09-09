@@ -482,7 +482,19 @@ export function useOfferClaim(
                     const logs = sim.value.logs ?? [];
                     const headline = logs.find((l) => l.includes('Error Code') || l.includes('Error Message') || l.includes('failed'))
                         ?? `Simulation failed: ${JSON.stringify(sim.value.err)}`;
+                    // Translate the price-gate reverts into the same language
+                    // the desk tiles use (singleOffer's floor-held note) —
+                    // the buyer should never have to parse program logs to
+                    // learn the desk went dark between page load and click.
+                    const friendly = /FloorHeldAtSpot|floor holds|no discount available/.test(headline)
+                        ? 'Buyback floor is at/above the live pool price — this offer is no longer below spot. The desk resumes when the floor decays or the pool price recovers.'
+                        : /DeskClosed|state 1 or 2|desk trades at night/.test(headline)
+                            ? 'Desk closed — bond sales only run in the after-hours and closed sessions.'
+                            : /StaleOfferSheet|only tonight's sheet/.test(headline)
+                                ? 'Offer sheet expired — waiting for tonight\'s new sheet.'
+                                : null;
                     throw new Error(
+                        (friendly ? `${friendly} ` : '') +
                         `Dry run failed — nothing was signed or spent. ${headline}` +
                         (logs.length ? `\n\nLogs:\n${logs.join('\n')}` : '')
                     );

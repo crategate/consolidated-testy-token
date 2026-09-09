@@ -14,6 +14,9 @@ interface SingleOfferProps {
     solPoolReserves: { wsolRaw: bigint; usdcRaw: bigint } | null;
     afhoDecimals: number;
     disabled: boolean;
+    /** Live-price snapshot too old to quote against — the tile shows its
+     *  stale note and freezes the steppers until the next refresh lands. */
+    priceStale?: boolean;
     onQtyChange: (qty: number) => void;
 }
 
@@ -28,6 +31,7 @@ export default function SingleOffer({
     solPoolReserves,
     afhoDecimals,
     disabled,
+    priceStale,
     onQtyChange,
 }: SingleOfferProps) {
     const soldOut = offer.remaining === 0;
@@ -128,7 +132,7 @@ export default function SingleOffer({
 
     return (
         <article
-            className={`offer-card glass-pane ${selected ? 'selected' : ''} ${soldOut ? 'sold-out' : ''} ${floorHeld ? 'floor-held' : ''}`}
+            className={`offer-card glass-pane ${selected ? 'selected' : ''} ${soldOut ? 'sold-out' : ''} ${floorHeld ? 'floor-held' : ''} ${priceStale && !soldOut ? 'price-stale' : ''}`}
             data-tier={offer.tier}
             style={{
                 '--tier-excite': String(excite),
@@ -200,6 +204,11 @@ export default function SingleOffer({
                 </button>
             </div>
             {soldOut && <p className="offer-soldout">Sold out for today</p>}
+            {priceStale && !soldOut && (
+                <p className="offer-floor-held" role="status">
+                    Live price stale — buy paused until the next refresh
+                </p>
+            )}
             {floorHeld && (
                 <p className="offer-floor-held" role="status">
                     Floor held — not below spot{bonusApplied ? ' (late-nite bonus applied)' : ''}

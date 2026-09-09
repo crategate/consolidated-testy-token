@@ -21,6 +21,15 @@ import FlashNumber from '../FlashNumber.tsx';
 
 const PERCENT_STEPS = [25, 50, 75, 100] as const;
 
+// A buy decision must never run on a stale price snapshot: the poll cadence
+// is POLL_MS (30s default) and websocket account-change notifications keep a
+// healthy session fresh within seconds, but a rate-limited (429) stretch can
+// silently age the price well past that. After PRICE_STALE_MS the desk stops
+// quoting and blocks the buy until a fresh tick lands — a locked price on a
+// moving pool is exactly how "buyable" quotes turn into on-chain reverts.
+const PRICE_STALE_MS = 90_000;
+const PRICE_AGE_TICK_MS = 5_000;
+
 function deskMessage(state: number | null, sheetStale: boolean, offersLive: boolean): string {
     if (state === 0) return 'Desk opens after market close — check back at the end of the trading day.';
     if (state === 3) return 'Market halted — the offer desk is closed.';
@@ -48,6 +57,16 @@ export default function OfferLists() {
     const pickerRef = useRef<HTMLDivElement>(null);
     const claimErrorRef = useRef<HTMLDivElement>(null);
     const rpcErrorRef = useRef<HTMLDivElement>(null);
+
+    // Age of the live-price snapshot, re-ticked every few seconds so the
+    // staleness gate flips without waiting for a render.
+    const [nowMs, setNowMs] = useState(() => Date.now());
+    useEffect(() => {
+        const id = window.setInterval(() => setNowMs(Date.now()), PRICE_AGE_TICK_MS);
+        return () => window.clearInterval(id);
+    }, []);
+    const priceAgeMs = data.updatedAt ? Math.max(0, nowMs - new Date(data.updatedAt).getTime()) : null;
+    const priceStale = data.livePrice !== null && (priceAgeMs === null || priceAgeMs > PRICE_STALE_MS);
 
     // Errors render at the bottom of the section — pull them into view when
     // they appear so a failed claim is never silent below the fold.
@@ -202,7 +221,7 @@ export default function OfferLists() {
     const solReady = data.solAccounts !== null && solPriceKnown;
 
     const canBuy = connected && data.deskOpen && totalLots > 0 && priceKnown &&
-        status !== 'pending' && !atOrAboveSpot &&
+        status !== 'pending' && !atOrAboveSpot && !priceStale &&
         (currency === 'usdc' ? data.accounts !== null : solReady && !solPoolShort);
 
     const buyLabel = !connected
@@ -213,11 +232,13 @@ export default function OfferLists() {
                 ? 'Desk closed — floor above spot'
                 : atOrAboveSpot
                     ? 'Offer prices not below spot'
-                    : solPoolShort
-                        ? 'SOL pool too thin'
-                        : status === 'pending'
-                            ? 'Claiming…'
-                            : 'Buy selected offers';
+                    : priceStale
+                        ? 'Live price stale — waiting for refresh'
+                        : solPoolShort
+                            ? 'SOL pool too thin'
+                            : status === 'pending'
+                                ? 'Claiming…'
+                                : 'Buy selected offers';
 
     const handleBuy = async () => {
         const ok = await claim(selections, estCostRaw, {
@@ -340,7 +361,7 @@ export default function OfferLists() {
             )}
             {!data.loading && data.deskOpen && floorBlocksAll && (
                 <div className="desk-banner floor-held glass-pane" role="alert">
-                    Desk closed, price too high to offer bonds.
+                    Desk closed, prices too low to offer bonds.
                     Every tier currently priced at or above the live DEX
                     price. Sales resume if market AFHO price raises
                 </div>
@@ -363,6 +384,7 @@ export default function OfferLists() {
                     solPoolReserves={data.solPoolReserves}
                     afhoDecimals={data.afhoDecimals}
                     disabled={!data.deskOpen || floorBlocksAll || status === 'pending'}
+                    priceStale={priceStale}
                     onQtyChange={setQty}
                 />
             )}
@@ -458,13 +480,14 @@ export default function OfferLists() {
                     {priceKnown && (
                         <span className="order-live-price">
                             Live AFHO ≈ ${livePxStr !== null ? <FlashNumber value={livePxStr} /> : '—'}{' '}
-                            · source: {data.accounts ? 'pool (spot)' : 'oracle'}
+                            · source: {data.accounts ? (data.afhoPriceIsTwap ? 'pool (TWAP)' : 'pool (spot)') : 'oracle'}
                             {data.updatedAt && (
                                 <> · updated <FlashNumber
                                     value={data.updatedAt}
                                     render={(v) => Math.max(0, Math.round((Date.now() - new Date(v as string).getTime()) / 1000))}
                                 />s ago</>
                             )}
+                            {priceStale && ' · stale — buy paused until the next price refresh'}
                         </span>
                     )}
                 </div>

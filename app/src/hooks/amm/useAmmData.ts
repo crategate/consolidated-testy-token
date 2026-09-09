@@ -74,6 +74,10 @@ export interface SolClaimAccounts {
 export interface OfferDeskData {
     tiers: OfferTierData[];
     livePrice: bigint | null;
+    /** True when livePrice is the pinned pool's observation-ring TWAP — the
+     *  same quantity the on-chain claim gates against — and false when the
+     *  ring was stale/sparse and the raw vault ratio is shown instead. */
+    afhoPriceIsTwap: boolean;
     solPrice: bigint | null;
     // Raw vault reserves of the pinned SOL/USDC pool — lets the UI mirror
     // the exact offer_claim_sol charge solve instead of the spot ratio.
@@ -355,6 +359,7 @@ export function useAmmData(): OfferDeskData {
     return {
         tiers: tiersDisplay,
         livePrice: livePrice.afhoUsdc,
+        afhoPriceIsTwap: livePrice.afhoPriceIsTwap,
         solPrice: livePrice.solUsdc,
         solPoolReserves: livePrice.solPoolReserves,
         claimLookupTable: deployment?.claimLookupTable ?? null,

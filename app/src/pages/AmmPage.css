@@ -794,6 +794,24 @@
     animation: soldoutFlicker 10s infinite;
 }
 
+/* Stale-price tiles: the snapshot is too old to quote a buy against. Softer
+   than floor-held (the desk is not dark — data is just late); amber note,
+   muted card until the next poll/ws tick refreshes the price. */
+.offer-card.price-stale {
+    opacity: 0.62;
+    border-color: rgba(255, 193, 107, 0.45);
+    filter: saturate(0.8);
+}
+
+.offer-card.price-stale::after {
+    content: none;
+}
+
+.offer-card.price-stale .offer-floor-held {
+    color: #ffc16b;
+    animation: none;
+}
+
 /* Desk-closed indicator inside the Total Order Size tile — visible BEFORE
    the buyer tries to add an offer to the cart. */
 .order-desk-closed {

@@ -70,7 +70,7 @@ from the day's price momentum and how committed stakers are:
 The bond desk isn't sustainable and ultimately serves as the token's distribution model.
 75% of minted supply started in the protocol's bond desk vault, 25% went into Raydium pool.
 
-## Buybacks — 80% of every bond sale
+### Buybacks — 80% of every bond sale
 
 Buybacks only run during trade hours and only after accepted bond offers.
 The transactions get sliced out over the session rather than dumped at once:

@@ -300,7 +300,7 @@ export function SupplyStakeChart() {
 
         const pct =
             stats && stats.totalSupply > 0
-                ? `${((locked / stats.totalSupply) * 100).toFixed(1)}% of supply staked`
+                ? `${((locked / stats.totalSupply) * 100).toFixed(1)}% of supply`
                 : null;
 
         return { pathAvailable, pathLocked, areaAvailable, areaLocked, yTicks: ticks, xLabels: labels, pctLabel: pct, series: pts, xs, ysAvail, ysLocked };
@@ -457,7 +457,7 @@ export function SupplyStakeChart() {
             </div>
             <div className="supply-chart-legend">
                 <span className="supply-chart-key">
-                    <i className="supply-chart-swatch swatch-available" />Supply - Bond Desk Vault {fmtTokens(available)}
+                    <i className="supply-chart-swatch swatch-available" />Available Supply {fmtTokens(available)}
                 </span>
                 <span className="supply-chart-key">
                     <i className="supply-chart-swatch swatch-staked" /> Locked {fmtTokens(locked)}

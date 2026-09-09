@@ -906,11 +906,12 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "blake3",
- "bytemuck",
  "constant_time_eq",
  "hex",
  "litesvm",
  "openssl",
+ "serde_json",
+ "solana-program",
  "solana-sdk",
  "switchboard-on-demand",
 ]

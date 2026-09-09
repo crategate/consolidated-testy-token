@@ -24,6 +24,7 @@ import {
     derivePriceAccounts,
     fetchDeployment,
     isRateLimitError,
+    pub,
     type AmmStateData,
     type LivePriceData,
 } from './chainDataHelpers';
@@ -98,6 +99,39 @@ function useAccountSubscription(
     }, [connection, account, enabled, queryKey, queryClient, visible]);
 }
 
+// Variant for a variable-length list of derived accounts (the CPMM price
+// set). Hooks can't be called in a loop over a changing array, so one effect
+// subscribes to ALL accounts and re-subscribes only when the SET changes —
+// keyed on the joined base58 list, not the array identity (the derivation
+// produces fresh PublicKey instances each snapshot).
+function useAccountsSubscription(
+    accounts: PublicKey[],
+    queryKey: unknown[],
+    enabled: boolean,
+) {
+    const { connection } = useConnection();
+    const queryClient = useQueryClient();
+    const visible = usePageVisible();
+    const accountsKey = useMemo(() => accounts.map((a) => a.toBase58()).join(','), [accounts]);
+
+    useEffect(() => {
+        if (!enabled || !connection || accountsKey === '') return;
+        if (!visible) return;
+        const list = accountsKey.split(',').map((k) => new PublicKey(k));
+
+        const onPriceAccountChange = () => {
+            const now = Date.now();
+            if (now - wsLastInvalidateRef.current < WS_INVALIDATE_MIN_MS) return;
+            wsLastInvalidateRef.current = now;
+            void queryClient.invalidateQueries({ queryKey, refetchType: 'active' });
+        };
+        const ids = list.map((account) => connection.onAccountChange(account, onPriceAccountChange, 'confirmed'));
+
+        return () => {
+            for (const id of ids) void connection.removeAccountChangeListener(id);
+        };
+    }, [connection, accountsKey, enabled, queryKey, queryClient, visible]);
+}
 /* ── Provider ── */
 
 export function ChainDataProvider({ children }: { children: ReactNode }) {
@@ -175,7 +209,6 @@ export function ChainDataProvider({ children }: { children: ReactNode }) {
             const mint = deployment.mintKey;
             const previousAmmState = lastAmmStateRef.current;
             const priceAccounts = previousAmmState ? derivePriceAccounts(previousAmmState, mint) : [];
-
             const infos = await connection.getMultipleAccountsInfo(
                 [
                     marketStatusPda,
@@ -191,18 +224,28 @@ export function ChainDataProvider({ children }: { children: ReactNode }) {
 
             const ammState = ammStateInfo ? decodeAmmState(ammStateInfo.data) : null;
 
+            // Quote mints for the TWAP orientation check: the AFHO mint is
+            // the deployment mint; the quote is whatever this deployment's
+            // AMM state pins as usdc_mint (read from the previous/fresh
+            // decode — never a hardcoded mainnet-USDC assumption, devnet
+            // uses its own 6-dp USDC mint).
+            const quoteMint = previousAmmState
+                ? pub(previousAmmState, 'usdcMint', 'usdc_mint')
+                : ammState
+                    ? pub(ammState, 'usdcMint', 'usdc_mint')
+                    : null;
             // Cold start: no previous AMM state to derive price accounts from,
             // so fetch them now against the freshly decoded state — one extra
             // batched call on the first tick, never again.
             let livePrice: LivePriceData = previousAmmState
-                ? computeLivePrice(priceInfos)
-                : { afhoUsdc: null, solUsdc: null, solPoolReserves: null };
+                ? computeLivePrice(priceInfos, mint, quoteMint ?? undefined)
+                : { afhoUsdc: null, afhoPriceIsTwap: false, solUsdc: null, solPoolReserves: null };
             if (!previousAmmState && ammState) {
                 const coldStartInfos = await connection.getMultipleAccountsInfo(
                     derivePriceAccounts(ammState, mint),
                     'confirmed',
                 );
-                livePrice = computeLivePrice(coldStartInfos);
+                livePrice = computeLivePrice(coldStartInfos, mint, quoteMint ?? undefined);
             }
 
             if (ammState) lastAmmStateRef.current = ammState;
@@ -244,6 +287,30 @@ export function ChainDataProvider({ children }: { children: ReactNode }) {
 
     const snapshot = snapshotQuery.data ?? null;
 
+    // Price accounts ride the same snapshot but are NOT covered by the
+    // subscriptions above: the CPMM vaults + observation accounts are what
+    // actually move between polls, and every swap changes them. Without
+    // these subscriptions the displayed live price (and with it the desk's
+    // floor-held/buy gate) can sit tens of seconds — minutes through a 429
+    // stretch — behind the pool, which is exactly how a "buyable" quote
+    // turns into an on-chain FloorHeldAtSpot revert. Derived from the
+    // latest snapshot's AMM state (client-side PDA math), so a pool re-pin
+    // re-subscribes on the next tick.
+    const priceAccounts = useMemo(() => {
+        const s = snapshot?.ammState;
+        if (!s || !mintKey) return [];
+        try {
+            return derivePriceAccounts(s, new PublicKey(mintKey));
+        } catch {
+            return [];
+        }
+    }, [snapshot?.ammState, mintKey]);
+    useAccountsSubscription(
+        priceAccounts.filter((a) => !a.equals(PublicKey.default)),
+        snapshotQueryKey,
+        enabled,
+    );
+
     const value: ChainDataContextValue = {
         deployment,
         deploymentLoading: deploymentQuery.isLoading,
@@ -255,7 +322,7 @@ export function ChainDataProvider({ children }: { children: ReactNode }) {
         ammStateLoading: snapshotQuery.isLoading,
         offerList: snapshot?.offerList ?? null,
         offerListLoading: snapshotQuery.isLoading,
-        livePrice: snapshot?.livePrice ?? { afhoUsdc: null, solUsdc: null, solPoolReserves: null },
+        livePrice: snapshot?.livePrice ?? { afhoUsdc: null, afhoPriceIsTwap: false, solUsdc: null, solPoolReserves: null },
         livePriceLoading: snapshotQuery.isLoading,
         livePriceUpdatedAt: snapshotQuery.dataUpdatedAt || null,
         refresh,

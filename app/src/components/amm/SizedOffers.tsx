@@ -12,6 +12,9 @@ interface SizedOffersProps {
     solPoolReserves: { wsolRaw: bigint; usdcRaw: bigint } | null;
     afhoDecimals: number;
     disabled: boolean;
+    /** True when the live-price snapshot is too old to quote a buy against —
+     *  tiles show their stale note and stop accepting quantities. */
+    priceStale?: boolean;
     onQtyChange: (tierKey: string, qty: number) => void;
 }
 
@@ -26,6 +29,7 @@ export default function SizedOffers({
     solPoolReserves,
     afhoDecimals,
     disabled,
+    priceStale,
     onQtyChange,
 }: SizedOffersProps) {
     return (
@@ -42,7 +46,8 @@ export default function SizedOffers({
                     solPrice={solPrice}
                     solPoolReserves={solPoolReserves}
                     afhoDecimals={afhoDecimals}
-                    disabled={disabled}
+                    disabled={disabled || priceStale === true}
+                    priceStale={priceStale}
                     onQtyChange={(q) => onQtyChange(offer.key, q)}
                 />
             ))}
