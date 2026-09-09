@@ -752,15 +752,67 @@ fn quote_claim(
     // the tier refused until the decay (or price recovery) restores a real
     // discount.
     let floor = amm_state.highest_buyback_basis;
-    let bonus_stored = boosted_stored.saturating_sub(discount_stored);
-    let bonus_bps = bonus_stored as u64 * 10;
-    let allowance = live_price.saturating_mul(bonus_bps) / 10_000;
-    let night_floor = floor.saturating_sub(allowance);
 
-    let effective_price = if current_state == 2 {
-        discounted.max(night_floor)
+    // ── TIER SCALING UNDER THE RATCHET ──
+    // Without this, every tier the floor clamps prices at exactly `bound`
+    // and the sheet's strict big>med>sml deal structure collapses (a 1-lot
+    // and a 100k-lot bond would cost the same per token). Rule, applied per
+    // tier from the SHALLOWEST discount down:
+    //   unclamped (discounted ≥ bound): the tier keeps its full discounted
+    //     quote — untouched, exactly as before;
+    //   clamped (discounted < bound): the tier rides the bound plus the
+    //     spread its discounted quote holds over the DEEPEST tier's
+    //     discounted quote, capped just under the next shallower tier's
+    //     effective price so the sheet's ordering survives the middle
+    //     regime (floor between med's and sml's discounted quotes).
+    // Invariants: no tier ever prices below its own full discounted quote
+    // (the late-nite allowance is the only thing that reaches below the
+    // basis, and only for the anchor tier), no tier prices below its bound,
+    // clamped tiers stay strictly ordered whenever the sheet's discounts
+    // differ, and fully-unclamped sheets price bit-identically to the old
+    // max(discounted, floor) rule. Bounds are per-tier: each tier's own
+    // late-nite allowance applies to its own effective price (they only
+    // diverge at the u8 discount-cap saturation).
+    let tier_quote = |d: u8| -> u64 {
+        let boosted = if current_state == 2 {
+            d.saturating_add(5)
+        } else {
+            d
+        };
+        live_price.saturating_sub(live_price.saturating_mul(boosted as u64 * 10) / 10_000)
+    };
+    let tier_bound = |d: u8| -> u64 {
+        let boosted = d.saturating_add(if current_state == 2 { 5 } else { 0 });
+        let tier_allowance = live_price.saturating_mul(boosted.saturating_sub(d) as u64 * 10) / 10_000;
+        floor.saturating_sub(tier_allowance)
+    };
+    let q_sml = tier_quote(offer_list.sml_offer.discount_bps);
+    let q_med = tier_quote(offer_list.med_offer.discount_bps);
+    let q_big = tier_quote(offer_list.big_offer.discount_bps);
+    let b_sml = tier_bound(offer_list.sml_offer.discount_bps);
+    let b_med = tier_bound(offer_list.med_offer.discount_bps);
+    let b_big = tier_bound(offer_list.big_offer.discount_bps);
+    // sml holds the shallowest discount (highest quote) — if even sml is
+    // clamped, every tier is; spreads then order the whole sheet above the
+    // bound with nothing to cap against.
+    let eff_sml = if q_sml >= b_sml {
+        q_sml
     } else {
-        discounted.max(floor)
+        b_sml.saturating_add(q_sml.saturating_sub(q_big))
+    };
+    let eff_med = if q_med >= b_med {
+        q_med
+    } else {
+        b_med
+            .saturating_add(q_med.saturating_sub(q_big))
+            .min(eff_sml.saturating_sub(1))
+            .max(b_med)
+    };
+    let eff_big = q_big.max(b_big);
+    let effective_price = match tier {
+        0 => eff_sml,
+        1 => eff_med,
+        _ => eff_big,
     };
     if effective_price > discounted {
         msg!(

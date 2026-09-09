@@ -68,7 +68,14 @@
     flex-direction: column;
     gap: 10px;
     margin-bottom: 14px;
-    margin-top: -50px;
+    align-items: center;
+    margin-top: -34px;
+}
+
+.amm-title {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
 }
 
 .amm-title h1 {
@@ -136,6 +143,42 @@
 
     81% {
         box-shadow: 0 0 11px rgba(5, 255, 161, 0.32);
+    }
+}
+
+/* Yellow variant for the offer desk's open banner — same sparse flicker
+   shape as deskOpenPulse, yellow glow instead of the market badge's green
+   (which keeps deskOpenPulse). */
+@keyframes deskOpenPulseYellow {
+
+    0%,
+    13%,
+    31%,
+    48%,
+    66%,
+    84%,
+    100% {
+        box-shadow: none;
+    }
+
+    10% {
+        box-shadow: 0 0 5px rgba(255, 233, 100, 0.18);
+    }
+
+    28% {
+        box-shadow: 0 0 10px rgba(255, 233, 100, 0.3);
+    }
+
+    45% {
+        box-shadow: 0 0 5px rgba(255, 233, 100, 0.2);
+    }
+
+    63% {
+        box-shadow: 0 0 8px rgba(255, 233, 100, 0.26);
+    }
+
+    81% {
+        box-shadow: 0 0 11px rgba(255, 233, 100, 0.32);
     }
 }
 
@@ -261,9 +304,10 @@
 }
 
 .desk-banner.open {
-    border-color: #2f5d43;
-    color: #b7f0cd;
-    animation: deskOpenPulse 10s ease-in-out infinite;
+    border-color: #5d5427;
+    color: #ffe98a;
+    background: rgba(255, 220, 80, 0.05);
+    animation: deskOpenPulseYellow 10s ease-in-out infinite;
 }
 
 .desk-banner.closed {
@@ -281,16 +325,16 @@
     border-color: #2f5d43;
 }
 
-/* Desk dark by the buyback floor: the night window is open and the sheet
-   is live, but every tier prices at/above spot — the red state replaces the
-   green "Desk open" banner. */
-.desk-banner.floor-held {
-    color: #ffb3b3;
-    border-color: #7a3030;
-    background: rgba(122, 40, 40, 0.12);
+/* Desk paused (open window, no sales): floor ≥ spot, or the live-price
+   snapshot went stale. Orange replaces the old red — "paused", not "error"
+   — and pairs with the yellow open banner. */
+.desk-banner.paused {
+    color: #ffcf9e;
+    border-color: #7a4a1f;
+    background: rgba(255, 170, 0, 0.1);
 }
 
-.desk-banner.floor-held::after {
+.desk-banner.paused::after {
     opacity: 0.6;
     animation-duration: calc(var(--fx-desk-shadow-cycle) * 1.8);
 }
@@ -1205,6 +1249,7 @@
     .amm-topbar {
         flex-direction: row;
         align-items: center;
+        margin-top: -40px;
         justify-content: space-between;
         margin-bottom: 18px;
     }
@@ -1217,6 +1262,10 @@
 @media (min-width: 720px) {
     .offer-grid {
         grid-template-columns: repeat(3, 1fr);
+    }
+
+    .amm-topbar {
+        margin-top: -30px;
     }
 
     .amm-page-shell {

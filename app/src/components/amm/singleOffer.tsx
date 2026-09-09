@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { formatSol, formatTokens, lamportsForCost, lamportsForCostExact, pricePerToken, quoteCostRaw, quoteEffectivePrice } from '../../hooks/amm/offerMath.ts';
+import { formatSol, formatTokens, lamportsForCost, lamportsForCostExact, pricePerToken, quoteCostRaw, quoteDiscounted } from '../../hooks/amm/offerMath.ts';
 import type { OfferTierData } from '../../hooks/amm/useAmmData.ts';
 import FlashNumber from '../FlashNumber.tsx';
 
@@ -7,12 +7,14 @@ interface SingleOfferProps {
     offer: OfferTierData;
     qty: number;
     livePrice: bigint | null;
-    floorBasis: bigint;
     marketState: number | null;
     currency: 'usdc' | 'sol';
     solPrice: bigint | null;
     solPoolReserves: { wsolRaw: bigint; usdcRaw: bigint } | null;
     afhoDecimals: number;
+    /** Sheet-aware effective price for THIS tier (quoteSheetEffective) — the
+     *  claim-consistent quote including the ratchet tier scaling. */
+    sheet: Record<string, bigint> | null;
     disabled: boolean;
     /** Live-price snapshot too old to quote against — the tile shows its
      *  stale note and freezes the steppers until the next refresh lands. */
@@ -24,12 +26,12 @@ export default function SingleOffer({
     offer,
     qty,
     livePrice,
-    floorBasis,
     marketState,
     currency,
     solPrice,
     solPoolReserves,
     afhoDecimals,
+    sheet,
     disabled,
     priceStale,
     onQtyChange,
@@ -62,10 +64,9 @@ export default function SingleOffer({
     let perLotUnit = 'USDC';
     let perLotNote: string | null = null;
     if (livePrice !== null && livePrice > 0n) {
+        const eff = sheet?.[offer.key] ?? null;
         if (currency === 'sol' && solPrice !== null && solPrice > 0n) {
-            const usdcRaw = quoteCostRaw(
-                livePrice, offer.discountBps, offer.bonusBps, floorBasis, offer.lotTier, 1, afhoDecimals, marketState,
-            );
+            const usdcRaw = quoteCostRaw(eff ?? 0n, offer.lotTier, 1, afhoDecimals);
             const exact = lamportsForCostExact(usdcRaw, solPoolReserves);
             if (exact !== null) {
                 perLot = formatSol(exact);
@@ -75,8 +76,7 @@ export default function SingleOffer({
                 perLot = formatSol(lamportsForCost(usdcRaw, solPrice));
             }
             perLotUnit = 'SOL';
-        } else if (currency === 'usdc') {
-            const eff = quoteEffectivePrice(livePrice, offer.discountBps, offer.bonusBps, floorBasis, marketState);
+        } else if (currency === 'usdc' && eff !== null) {
             const usd = pricePerToken(eff) * offer.lotTokens;
             perLot = usd >= 1
                 ? usd.toLocaleString('en-US', { maximumFractionDigits: 2 })
@@ -93,9 +93,7 @@ export default function SingleOffer({
     //   full discount + late-nite     → slow green↔blue pulse
     //   bonus only (floor would bind) → blue   (bonus is the live discount)
     //   ratchet holds, no bonus       → muted  (partial discount)
-    const eff = livePrice !== null && livePrice > 0n
-        ? quoteEffectivePrice(livePrice, offer.discountBps, offer.bonusBps, floorBasis, marketState)
-        : null;
+    const eff = sheet?.[offer.key] ?? null;
     const realPct = eff !== null && livePrice !== null
         ? Math.max(0, (1 - Number(eff) / Number(livePrice)) * 100)
         : null;
@@ -103,8 +101,8 @@ export default function SingleOffer({
     // full listed discount — i.e. it equals the discounted quote itself,
     // with no floor uplift. The bonus only exists in state 2 (closed
     // session), where it also deepens the quote.
-    const fullDiscount = eff !== null && livePrice !== null && livePrice > 0n && eff < livePrice
-        ? eff <= livePrice - (livePrice * BigInt(Math.min(255, offer.discountBps + (marketState === 2 ? offer.bonusBps : 0))) * 10n) / 10_000n
+    const fullDiscount = eff !== null && livePrice !== null && livePrice > 0n
+        ? eff <= quoteDiscounted(livePrice, offer.discountBps, offer.bonusBps, marketState)
         : false;
     // The late-nite bonus is a CLOSED-session (state 2) feature only.
     // Enforce that invariant at the render boundary too: even if a stray

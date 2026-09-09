@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { getAccount, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from '@solana/spl-token';
@@ -12,7 +12,7 @@ import {
     lamportsForCostExact,
     pricePerToken,
     quoteCostRaw,
-    quoteEffectivePrice,
+    quoteSheetEffective,
     ratchetActive,
 } from '../../hooks/amm/offerMath.ts';
 import SizedOffers from './SizedOffers.tsx';
@@ -160,11 +160,18 @@ export default function OfferLists() {
     const totalTokens = data.tiers.reduce(
         (n, t) => n + (quantities[t.key] ?? 0) * t.lotTokens, 0
     );
+    // Sheet-aware effective prices — the exact mirror of quote_claim
+    // (discount + state-2 boost + ratchet floor + the tier-scaling rule that
+    // keeps clamped tiers strictly ordered big>med>sml). Every display and
+    // gate below reads from this one quote.
+    const sheet = useMemo(
+        () => quoteSheetEffective(data.livePrice, data.floorBasis, data.marketState,
+            data.tiers.map((t) => ({ key: t.key, discountTenths: t.discountBps, bonusTenths: t.bonusBps }))),
+        [data.livePrice, data.floorBasis, data.marketState, data.tiers],
+    );
+    const tierPrice = (t: OfferTierData): bigint | null => sheet?.[t.key] ?? null;
     const estCostRaw = data.tiers.reduce(
-        (sum, t) => sum + quoteCostRaw(
-            data.livePrice ?? 0n, t.discountBps, t.bonusBps, data.floorBasis,
-            t.lotTier, quantities[t.key] ?? 0, data.afhoDecimals, data.marketState,
-        ),
+        (sum, t) => sum + quoteCostRaw(tierPrice(t) ?? 0n, t.lotTier, quantities[t.key] ?? 0, data.afhoDecimals),
         0n,
     );
 
@@ -182,7 +189,8 @@ export default function OfferLists() {
         currency === 'sol' && solPriceKnown && totalLots > 0 &&
         data.solPoolReserves !== null && solCharge(estCostRaw) === null;
     const ratchet = priceKnown && data.tiers.some(
-        (t) => (quantities[t.key] ?? 0) > 0 && ratchetActive(data.livePrice as bigint, t.discountBps, t.bonusBps, data.floorBasis, data.marketState)
+        (t) => (quantities[t.key] ?? 0) > 0 &&
+            tierPrice(t) !== null && ratchetActive(data.livePrice as bigint, t.discountBps, t.bonusBps, data.floorBasis, data.marketState)
     );
     // At-or-above spot: the effective price (floor-held, with only the
     // bonus's own depth allowed below the floor at night — state 2 only)
@@ -192,10 +200,6 @@ export default function OfferLists() {
     // strictly dominated by buying on the pool, and fills slow the floor's
     // decay (demand keep in calc_completed_offers), so gating these
     // accelerates the return to real discounts.
-    const tierPrice = (t: OfferTierData): bigint | null =>
-        data.livePrice !== null && data.livePrice > 0n
-            ? quoteEffectivePrice(data.livePrice, t.discountBps, t.bonusBps, data.floorBasis, data.marketState)
-            : null;
     const atOrAboveSpot = priceKnown && data.tiers.some(
         (t) => (quantities[t.key] ?? 0) > 0 &&
             (tierPrice(t) ?? 0n) >= (data.livePrice as bigint)
@@ -214,7 +218,7 @@ export default function OfferLists() {
     // mirror — spot + the order's own price impact — is applied to the whole
     // order in displayCost / handleBuy / useOfferClaim below.
     const costPerLot = (t: OfferTierData): bigint => {
-        const c = quoteCostRaw(data.livePrice ?? 0n, t.discountBps, t.bonusBps, data.floorBasis, t.lotTier, 1, data.afhoDecimals, data.marketState);
+        const c = quoteCostRaw(tierPrice(t) ?? 0n, t.lotTier, 1, data.afhoDecimals);
         return currency === 'usdc' ? c : lamportsForCost(c, data.solPrice ?? 0n);
     };
 
@@ -360,15 +364,20 @@ export default function OfferLists() {
                 <div className="desk-banner closed glass-pane">{closedMessage}</div>
             )}
             {!data.loading && data.deskOpen && floorBlocksAll && (
-                <div className="desk-banner floor-held glass-pane" role="alert">
-                    Desk closed, prices too low to offer bonds.
+                <div className="desk-banner paused glass-pane" role="alert">
+                    Desk paused.. prices too low to offer bonds.
                     Every tier currently priced at or above the live DEX
                     price. Sales resume if market AFHO price raises
                 </div>
             )}
-            {data.deskOpen && !floorBlocksAll && (
+            {data.deskOpen && !floorBlocksAll && priceStale && (
+                <div className="desk-banner paused glass-pane" role="status">
+                    Desk paused..  live price is stale; buys resume on the next price refresh.
+                </div>
+            )}
+            {data.deskOpen && !floorBlocksAll && !priceStale && (
                 <div className="desk-banner open glass-pane">
-                    Desk open — purchased AFHO goes straight into a vesting stake position, not your wallet.
+                    Desk open.. purchased AFHO goes straight into a vesting stake position, not your wallet.
                 </div>
             )}
 
@@ -377,12 +386,12 @@ export default function OfferLists() {
                     tiers={data.tiers}
                     quantities={quantities}
                     livePrice={data.livePrice}
-                    floorBasis={data.floorBasis}
                     marketState={data.marketState}
                     currency={currency}
                     solPrice={data.solPrice}
                     solPoolReserves={data.solPoolReserves}
                     afhoDecimals={data.afhoDecimals}
+                    sheet={sheet}
                     disabled={!data.deskOpen || floorBlocksAll || status === 'pending'}
                     priceStale={priceStale}
                     onQtyChange={setQty}
@@ -399,8 +408,8 @@ export default function OfferLists() {
                     {deskBlocked && (
                         <span className="order-desk-closed" role="status">
                             {!data.deskOpen
-                                ? 'Desk closed — sales open after the next close→open roll'
-                                : 'Desk closed — buyback floor at or above the live pool price; sales resume once it decays below spot'}
+                                ? 'Desk closed.. sales open after the next close→open roll'
+                                : 'Desk closed.. buyback floor at or above the live pool price; sales resume once it decays below spot'}
                         </span>
                     )}
                     <span className="order-total-label"><GlitchText text="Total order size (approx.)" variant="light" split="letter" step={0.3} /></span>

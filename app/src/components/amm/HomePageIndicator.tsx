@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useAmmData } from '../../hooks/amm/useAmmData.ts';
-import { quoteEffectivePrice } from '../../hooks/amm/offerMath.ts';
+import { quoteSheetEffective } from '../../hooks/amm/offerMath.ts';
 import FlashNumber from '../FlashNumber.tsx';
 import './amm.css';
 
@@ -17,12 +17,13 @@ export function HomePageIndicator() {
     const closedBonus = marketState === 2 && totalLots > 0;
     // Desk dark by the buyback floor: every tier prices at/above the live
     // pool price (quote_claim would revert FloorHeldAtSpot) — say so up
-    // front instead of advertising offers that can't be bought.
+    // front instead of advertising offers that can't be bought. Uses the
+    // sheet-aware quote (ratchet tier scaling included).
+    const sheet = quoteSheetEffective(livePrice, floorBasis, marketState,
+        tiers.map((t) => ({ key: t.key, discountTenths: t.discountBps, bonusTenths: t.bonusBps })));
     const floorPaused =
         livePrice !== null && livePrice > 0n && tiers.length > 0 &&
-        tiers.every((t) =>
-            quoteEffectivePrice(livePrice, t.discountBps, t.bonusBps, floorBasis, marketState) >= livePrice,
-        );
+        tiers.every((t) => (sheet?.[t.key] ?? livePrice) >= livePrice);
     const maxDiscount = tiers.reduce((m, t) => Math.max(m, t.discountBps), 0) / 10;
 
     return (

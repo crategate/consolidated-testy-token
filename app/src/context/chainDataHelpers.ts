@@ -460,16 +460,19 @@ export function computeLivePrice(
     }
     let afhoPriceIsTwap = false;
     if (afhoUsdc !== null && baseMint && quoteMint && afhoPoolStateInfo?.data && afhoObservationInfo?.data) {
-        // Pool mints sit at fixed offsets in Raydium's zero-copy PoolState:
-        // bump(1)@8, amm_config(32)@9, owner(32)@41, token_mint0(32)@73,
-        // token_mint1(32)@105. The CPMM stores mints sorted (mint0 < mint1),
-        // so read them and match against this leg's own mint pair — the same
-        // orientation check q32_to_floor performs on-chain.
+        // Pool mints sit at fixed offsets in this Raydium CPMM fork's
+        // zero-copy PoolState — the SAME offsets pool_state_mints() reads
+        // on-chain (programs/amm/src/instructions/raydium.rs): token_mint0
+        // @168..200, token_mint1 @200..232. Do NOT "fix" these to the
+        // vanilla raydium-cp-swap layout (73/105) — this fork's header is
+        // larger, and wrong offsets make the orientation check fail, which
+        // silently demotes the desk to the instant vault ratio while the
+        // chain still gates on the TWAP (the 2026-09-09 buy-gate divergence).
         const pd = afhoPoolStateInfo.data;
         const sample = readTwapSample(afhoObservationInfo.data, Date.now() / 1000);
-        if (sample && pd.length >= 137) {
-            const mint0 = new PublicKey(pd.slice(73, 105));
-            const mint1 = new PublicKey(pd.slice(105, 137));
+        if (sample && pd.length >= 232) {
+            const mint0 = new PublicKey(pd.slice(168, 200));
+            const mint1 = new PublicKey(pd.slice(200, 232));
             const token0IsBase = mint0.equals(baseMint) && mint1.equals(quoteMint);
             const token0IsQuote = mint0.equals(quoteMint) && mint1.equals(baseMint);
             if (token0IsBase || token0IsQuote) {
