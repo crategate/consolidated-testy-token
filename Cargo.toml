@@ -9,6 +9,19 @@ overflow-checks = true
 opt-level = "s"
 lto = "fat"
 codegen-units = 1
+panic = "abort"
+
+# Size-focused codegen for the two programs that are not on the CU-critical
+# claim path. amm deliberately keeps "s": opt-level="z" is not
+# stack-budget-tested there and initialize_amm blew the SBF stack until "s"
+# (AGENTS.md). Note fat-LTO applies the profile opt-level in the link pass, so
+# per-package gains are partial; measure before assuming.
+[profile.release.package.crank-oracle]
+opt-level = "z"
+
+[profile.release.package.staking]
+opt-level = "z"
+
 [profile.release.build-override]
 opt-level = 3
 incremental = false

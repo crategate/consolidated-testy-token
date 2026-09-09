@@ -36,8 +36,9 @@ export default function AmmPage() {
                 <div className="fx-blob fx-blob--4" />
             </div>
             <header className="amm-topbar">
+                <img src="/Logo/color-on-trans-logo.png" className="logo" />
                 <div className="amm-title">
-                    <h1><GlitchText text="Bond Offer Desk" variant="bluepink" step={0.14} /></h1>
+                    <h1><GlitchText text="Bond Desk" variant="bluepink" step={0.14} /></h1>
                     <span className={`market-badge ${deskOpen ? 'open' : ''}`}>
                         {marketState !== null ? MARKET_LABELS[marketState] ?? 'Unknown' : 'Market status unknown'}
                         {deskOpen ? ' · desk open' : ''}
