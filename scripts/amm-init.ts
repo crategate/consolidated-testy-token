@@ -7,20 +7,28 @@ import {
     TOKEN_2022_PROGRAM_ID,
     TOKEN_PROGRAM_ID,
     NATIVE_MINT,
-    createTransferCheckedInstruction,
     createAssociatedTokenAccountInstruction,
     createAssociatedTokenAccountIdempotentInstruction,
-    getAccount,
 } from "@solana/spl-token";
 import { pubkey, writeDeploymentState } from "./deployment-state";
 
-// Run this AFTER minting AFHO tokens. It:
+// Run this AFTER mint-create (the mint account must exist; supply must NOT —
+// the vaults are born empty). It:
 //   1. Reads the AFHO mint from the saved keypair
-//   2. Creates all AMM accounts (state, offer list, vaults)
-//   3. Transfers a configured % of AFHO supply from authority → AMM vault
+//   2. Initializes the staking pool + all AMM accounts (state, offer list, vaults)
 //
-// Usage: npx ts-node scripts/init-amm.ts [PERCENTAGE_TO_TRANSFER]
-//   Default percentage: 10% (0.10)
+// Supply funding moved to scripts/fund-launch.ts (2026-09-09 launch split):
+// fund-launch mints 75% straight into afho_vault + 25% into the pool seed ATA
+// and revokes mint/metadata authority in one tx, so no supply ever sits in
+// the authority wallet (screener concentration flags — MAINNET_CHECKLIST §5).
+//
+// LAUNCH_AUTHORITY=<pubkey> initializes with a different authority (e.g. a
+// Squads vault PDA). authority is a Signer AND the rent payer for all state
+// accounts, so a PDA authority cannot sign a plain transaction — the script
+// then prints the instruction's account map for Squads instead of sending.
+// Note: with a multisig AMM authority, set-pools / set_keeper /
+// set-bounty-usd become multisig proposals too; the staking pool keeps the
+// wallet authority (its vaults are address-pinned post-audit).
 
 // Devnet USDC faucet mint. MAINNET: use EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v.
 // const USDC_MINT = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"); // MAINNET
@@ -32,7 +40,7 @@ async function main() {
     const provider = anchor.AnchorProvider.env();
     anchor.setProvider(provider);
 
-    // ── 1. Load AFHO mint (must exist after mint-launch.ts) ──
+    // ── 1. Load AFHO mint (must exist after mint-create.ts) ──
     const mintKeyPath = path.join(
         process.cwd(), "target", "deploy", "afho_token-keypair.json"
     );
@@ -145,10 +153,26 @@ async function main() {
         STAKING_PROGRAM_ID
     );
 
+    // ── Authority (multisig launch override) ──
+    // Default: the provider wallet is the AMM authority (devnet / simple
+    // launches). LAUNCH_AUTHORITY=<pubkey> initializes with a different
+    // authority (e.g. a Squads vault PDA) — every authority-gated op
+    // (set-pools, set_keeper, set-bounty-usd) then requires a multisig
+    // proposal. authority is a Signer AND the rent payer for all state
+    // accounts, so a PDA authority cannot sign a plain transaction: the
+    // script switches to PRINT MODE and emits the account map for composing
+    // the Squads vault transaction instead of sending.
+    const AUTHORITY = process.env.LAUNCH_AUTHORITY
+        ? new PublicKey(process.env.LAUNCH_AUTHORITY)
+        : provider.wallet.publicKey;
+    const PRINT_MODE = !AUTHORITY.equals(provider.wallet.publicKey);
+
     // ── Initialize the staking pool (offer_claim / distribute CPI into it) ──
     // Was a separate `anchor run pool`; folded here so amm-init sets up the
     // whole mint-keyed stack in one pass. Idempotent-ish: skips if present.
-    {
+    // (Skipped in print mode — the staking pool keeps the wallet authority;
+    // run `anchor run pool` separately from the wallet.)
+    if (!PRINT_MODE) {
         const stakingIdl = JSON.parse(
             fs.readFileSync(path.join(process.cwd(), "target", "idl", "staking.json"), "utf-8")
         );
@@ -172,7 +196,7 @@ async function main() {
             await stakingProgram.methods
                 .initializePool(CRANK_PROGRAM_ID, 30000, 500, 300, 600, 1800, AMM_PROGRAM_ID)
                 .accounts({
-                    authority: provider.wallet.publicKey,
+                    authority: AUTHORITY,
                     mint: AFHO_MINT,
                     pool: stakingPoolPda,
                     vault: stakingVaultPda,
@@ -234,6 +258,50 @@ async function main() {
     }
     const priceOracle = new PublicKey(deployment.oracleQuoteAccount);
 
+    // Shared accounts for initializeAmm (normal send + print mode).
+    const initializeAmmAccounts = {
+        authority: AUTHORITY,
+        afhoMint: AFHO_MINT,
+        usdcMint: USDC_MINT,
+        solVault: solVaultPda,
+        usdcVault: usdcVaultAta,
+        afhoVault: afhoVaultAta,
+        usdcDip: usdcDipPda,
+        usdcRewards: usdcRewardsPda,
+        solRewards: solRewardsPda,
+        solDip: solDipPda,
+        ammState: ammStatePda,
+        offerList: offerListPda,
+        acceptedOffers: acceptedOffersPda,
+        metrics: metricsPda,
+        marketStatusPda: marketStatusPda,
+        crankProgram: CRANK_PROGRAM_ID,
+        priceOracle: priceOracle,
+        dexProgram: DEX_PROGRAM_ID,
+        associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        token2022Program: TOKEN_2022_PROGRAM_ID,
+        systemProgram: anchor.web3.SystemProgram.programId,
+    };
+
+    if (PRINT_MODE) {
+        console.log("\n LAUNCH_AUTHORITY is set — PRINT MODE (nothing sent).");
+        console.log(" authority is a Signer and the rent payer for every account");
+        console.log(" below, so a PDA authority (e.g. a Squads vault) must execute");
+        console.log(" this inside a multisig vault transaction. Compose in Squads:\n");
+        console.log("   program: initialize_amm @ " + AMM_PROGRAM_ID.toBase58());
+        console.log("   args:    spot_oracle=Pubkey::default(), staking_pool, sol_oracle=Pubkey::default()");
+        console.log("   accounts (signer + rent payer = authority):");
+        for (const [name, key] of Object.entries(initializeAmmAccounts)) {
+            console.log(`     - ${name.padEnd(24)} ${(key as PublicKey).toBase58()}`);
+        }
+        console.log("\n   Pre-create both vault ATAs idempotently (payer=authority)");
+        console.log("   before initialize_amm: afho_vault (Token-2022), usdc_vault (Token).");
+        console.log("\n Staking pool init is NOT part of this tx — it keeps the wallet");
+        console.log(" authority; run `anchor run pool` separately from the wallet.");
+        return;
+    }
+
     console.log("\n Derived AMM accounts:");
     console.log("  AMM State:     ", ammStatePda.toBase58());
     console.log("  Offer List:    ", offerListPda.toBase58());
@@ -277,30 +345,7 @@ async function main() {
     try {
         const tx = await ammProgram.methods
             .initializeAmm(spotOraclePda, stakingPoolPda, solOraclePda)
-            .accounts({
-                authority: provider.wallet.publicKey,
-                afhoMint: AFHO_MINT,
-                usdcMint: USDC_MINT,
-                solVault: solVaultPda,
-                usdcVault: usdcVaultAta,
-                afhoVault: afhoVaultAta,
-                usdcDip: usdcDipPda,
-                usdcRewards: usdcRewardsPda,
-                solRewards: solRewardsPda,
-                solDip: solDipPda,
-                ammState: ammStatePda,
-                offerList: offerListPda,
-                acceptedOffers: acceptedOffersPda,
-                metrics: metricsPda,
-                marketStatusPda: marketStatusPda,
-                crankProgram: CRANK_PROGRAM_ID,
-                priceOracle: priceOracle,
-                dexProgram: DEX_PROGRAM_ID,
-                associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
-                tokenProgram: TOKEN_PROGRAM_ID,
-                token2022Program: TOKEN_2022_PROGRAM_ID,
-                systemProgram: anchor.web3.SystemProgram.programId,
-            })
+            .accounts(initializeAmmAccounts)
             .rpc();
 
         console.log(" AMM initialized! Tx:", tx);
@@ -313,54 +358,10 @@ async function main() {
         }
     }
 
-    // ── 6. Transfer AFHO from authority → AMM vault ──
-    const transferPct = parseFloat(process.argv[2] || "1.0"); // mainnet 1.0 for 100 percent
-    if (transferPct > 0) {
-        console.log(`\n Transferring ${(transferPct * 100).toFixed(0)}% of supply to AMM vault...`);
-
-        const authorityAfhoAta = getAssociatedTokenAddressSync(
-            AFHO_MINT,
-            provider.wallet.publicKey,
-            false,
-            TOKEN_2022_PROGRAM_ID
-        );
-
-        // Check authority balance
-        const authorityAccount = await getAccount(
-            provider.connection,
-            authorityAfhoAta,
-            "confirmed",
-            TOKEN_2022_PROGRAM_ID
-        );
-        const authorityBalance = Number(authorityAccount.amount);
-        console.log(`   Authority balance: ${(authorityBalance / 1e9).toFixed(4)} AFHO`);
-
-        const transferAmount = Math.floor(authorityBalance * transferPct);
-        console.log(`   Transfer amount:   ${(transferAmount / 1e9).toFixed(4)} AFHO`);
-
-        if (transferAmount > 0) {
-            const transferIx = createTransferCheckedInstruction(
-                authorityAfhoAta,          // from
-                AFHO_MINT,                  // mint
-                afhoVaultAta,               // to
-                provider.wallet.publicKey,   // authority (signer)
-                BigInt(transferAmount),      // amount
-                9,        // decimals
-                undefined,
-                TOKEN_2022_PROGRAM_ID
-            );
-
-            const tx = new Transaction().add(transferIx);
-            const { blockhash } = await provider.connection.getLatestBlockhash("confirmed");
-            tx.recentBlockhash = blockhash;
-            tx.feePayer = provider.wallet.publicKey;
-
-            const sig = await provider.sendAndConfirm(tx);
-            console.log(` Transferred! Tx: ${sig}`);
-        } else {
-            console.log("!! Nothing to transfer (balance is zero).");
-        }
-    }
+    // ── 6. (removed 2026-09-09) Supply funding moved to scripts/fund-launch.ts ──
+    // fund-launch mints straight into afho_vault + the pool-seed ATA and
+    // revokes mint/metadata authority in one tx, so no supply ever sits in
+    // the authority wallet (screener concentration flags — MAINNET_CHECKLIST §5).
 
     // ── 7. Write deployment state ──
     writeDeploymentState({

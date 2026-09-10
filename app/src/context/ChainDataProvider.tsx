@@ -335,6 +335,7 @@ export function ChainDataProvider({ children }: { children: ReactNode }) {
         livePrice: snapshot?.livePrice ?? { afhoUsdc: null, afhoPriceIsTwap: false, solUsdc: null, solPoolReserves: null },
         livePriceLoading: snapshotQuery.isLoading,
         livePriceUpdatedAt: snapshotQuery.dataUpdatedAt || null,
+        snapshotFetching: snapshotQuery.isFetching,
         refresh,
     };
 

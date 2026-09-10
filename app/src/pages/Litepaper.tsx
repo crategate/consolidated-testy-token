@@ -9,6 +9,7 @@ import './Litepaper.css';
  * single source of truth in the repo's litepaper.md. */
 
 import litepaperRaw from '../../../litepaper.md?raw';
+import LitepaperCharts from './LitepaperCharts';
 
 /* ── tiny inline formatter: **bold**, `code` ── */
 function inline(text: string, keyBase: string): ReactNode[] {
@@ -34,15 +35,16 @@ type Block =
     | { kind: 'h1' | 'h2' | 'h3'; text: string }
     | { kind: 'p'; text: string }
     | { kind: 'quote'; text: string }
-    | { kind: 'list'; items: string[] }
+    | { kind: 'list'; items: { text: string; children: string[] }[] }
     | { kind: 'table'; head: string[]; rows: string[][] }
+    | { kind: 'charts' }
     | { kind: 'hr' };
 
 function parse(md: string): Block[] {
     const lines = md.split('\n');
     const blocks: Block[] = [];
     let para: string[] = [];
-    let list: string[] | null = null;
+    let list: { text: string; children: string[] }[] | null = null;
 
     const flushPara = () => {
         if (para.length) {
@@ -94,10 +96,22 @@ function parse(md: string): Block[] {
             blocks.push({ kind: 'quote', text: trimmed.slice(2) });
             continue;
         }
+        // Nested bullet (indented "- " under the previous item).
+        if (list && /^\s{2,}[-*] /.test(line)) {
+            list[list.length - 1].children.push(trimmed.slice(2));
+            continue;
+        }
         if (/^[-*] /.test(trimmed)) {
             flushPara();
             list ??= [];
-            list.push(trimmed.slice(2));
+            list.push({ text: trimmed.slice(2), children: [] });
+            continue;
+        }
+        // Chart block marker: renders the key-numbers charts (LitepaperCharts).
+        if (trimmed === '{{charts}}') {
+            flushPara();
+            flushList();
+            blocks.push({ kind: 'charts' });
             continue;
         }
         // Table row? (| … | … |) — collect the whole table greedily.
@@ -121,7 +135,7 @@ function parse(md: string): Block[] {
         }
         // Continuation line of a list item (indented under "- ").
         if (list && /^\s{2,}\S/.test(line)) {
-            list[list.length - 1] += ` ${trimmed}`;
+            list[list.length - 1].text += ` ${trimmed}`;
             continue;
         }
         flushList();
@@ -148,7 +162,16 @@ function renderBlock(block: Block, i: number): ReactNode {
             return (
                 <ul key={i} className="litepaper-list">
                     {block.items.map((item, j) => (
-                        <li key={j}>{inline(item, `li-${i}-${j}`)}</li>
+                        <li key={j}>
+                            {inline(item.text, `li-${i}-${j}`)}
+                            {item.children.length > 0 && (
+                                <ul className="litepaper-sublist">
+                                    {item.children.map((c, k) => (
+                                        <li key={k}>{inline(c, `li-${i}-${j}-${k}`)}</li>
+                                    ))}
+                                </ul>
+                            )}
+                        </li>
                     ))}
                 </ul>
             );
@@ -167,6 +190,8 @@ function renderBlock(block: Block, i: number): ReactNode {
                     </table>
                 </div>
             );
+        case 'charts':
+            return <LitepaperCharts key={i} />;
         case 'hr':
             return <hr key={i} className="litepaper-hr" />;
     }

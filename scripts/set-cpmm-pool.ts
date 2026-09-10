@@ -5,7 +5,7 @@ import { PublicKey } from "@solana/web3.js";
 
 // Pins the Raydium CPMM pool + amm_config into the AMM state so the swap
 // adapter routes buybacks/dip/rewards through it. Reads the pool/amm_config
-// addresses written by mint-launch (createPool). Run after `amm-init`
+// addresses written by create-pool (createPool). Run after `amm-init`
 // (or via `anchor run set-pools`, which also pins the SOL/USDC pool and
 // refreshes the claim lookup table).
 export async function setCpmmPool(): Promise<void> {

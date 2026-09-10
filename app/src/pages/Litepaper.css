@@ -149,3 +149,111 @@
     color: var(--text-primary);
     text-shadow: 0 0 8px rgba(0, 240, 255, 0.5);
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Key-numbers charts ({{charts}} block → LitepaperCharts)
+   Dependency-free SVG cards, styled to the glass document.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.charts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
+    gap: 1rem;
+    margin: 1.75rem 0;
+}
+
+.chart-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 1.1rem 1.1rem 0.9rem;
+}
+
+.chart-title {
+    margin: 0 0 0.9rem;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.chart-svg {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+.chart-label {
+    fill: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.04em;
+}
+
+.chart-value {
+    fill: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 11px;
+}
+
+.chart-center-top {
+    fill: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 21px;
+}
+
+.chart-center-bottom {
+    fill: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.chart-legend {
+    list-style: none;
+    margin: 0.9rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.chart-legend li {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.03em;
+    color: var(--text-secondary);
+}
+
+.chart-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    flex: none;
+}
+
+.chart-note {
+    margin: 0.9rem 0 0;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+}
+
+/* Nested bullets (the fees section's unstake penalties etc.) */
+.litepaper-sublist {
+    margin: 0.35rem 0 0.1rem;
+    padding-left: 1.2rem;
+}
+
+.litepaper-sublist li {
+    color: var(--text-secondary);
+    line-height: 1.6;
+    font-size: 0.95em;
+}

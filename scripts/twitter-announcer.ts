@@ -10,6 +10,11 @@
 //   4b. Closed-session flash sale: AFTER-HOURS → CLOSED with bonds still on
 //       the sheet — every remaining tier is 0.5% deeper for the closed window
 //   5. Monday market open (open + fee + % supply staked + bond vault remaining)
+//   6. Ratchet-floor decay digest — the bond offer floor decayed (old → new
+//       floor + % change). NOT posted when the cut lands: decays fire at the
+//       day-start transition, and the digest holds them for the first poll at
+//       or after 12:00 ET, once per ET calendar day. Ratchets (floor moving
+//       up on buyback fills) shift the baseline silently.
 //
 // All post copy lives in the MESSAGE DEFINITIONS block at the top of this
 // file. Copy supports SEO-style "text spinning": {a|b|c} groups pick one
@@ -56,11 +61,7 @@ import * as path from "path";
 
 dotenv.config();
 
-// ════════════════════════════════════════════════════════════════════════════
-// MESSAGE DEFINITIONS — all post copy lives here. Edit this block only.
-// ════════════════════════════════════════════════════════════════════════════
 
-// Prepended to every announcement when devnet mode is enabled.
 export const DEVNET_PREFIX = "devnet testing: ";
 
 // crank-oracle market-status mapping (0=open, 1=after-hours, 2=closed, 3=halted).
@@ -102,8 +103,6 @@ export function formatPrice(p: number): string {
     return `$${p.toFixed(decimals)}`;
 }
 
-// Unstake fee label for a market state. Open = no fee; otherwise the staking
-// pool's penalty tier (bps) for that state, shown as a whole/tenth percent.
 export function unstakeFeeLabel(pool: any, state: number): string {
     if (state === 0) return "no unlock fees";
     const bpsByState: Record<number, number> = {
@@ -206,10 +205,10 @@ export function bondsMessage(sheet: {
 }): string {
     const lines: string[] = [
         pick([
-            "discounted bonds are now available",
-            "The {OTC|after hours desk} {just|has| } {posted|dropped|published} {tonights's|the daily} {bond|offer} {sheet|deals}",
+            "{discounted|Vesting|AFHO|Bulk token} bond{s| offers} {are now available|have posted|now trading}",
+            "The {OTC|after hours desk} {just|has|} {posted|dropped|published} {tonights's|the daily} {bond|offer} {sheet|deals}",
             "{Fresh|New} AFHO bonds just {hit the desk|went on sale}",
-            "Bond desk {is open|opened} — AFHO bonds {now available|on sale now}",
+            "{Bond desk|Offer desk|OTC office} {is open|opened|now open|trading now}..  AFHO {bonds|vesting bulk bonds} {now available|on sale now}",
         ]),
     ];
     if (sheet.big.size > 0) lines.push(tierLine("Big", sheet.big));
@@ -228,9 +227,9 @@ export function buybackCompleteMessage(
     const p = formatPrice(avgPrice);
     const u = formatUsdc(usdc);
     return pick([
-        `Daily buyback complete: ${a} AFHO @ ${p} avg for ${u} USDC`,
-        `Buyback {done|finished|wrapped up}: ${a} AFHO at ${p} {average|avg} · ${u} USDC {spent|used}`,
-        `{Today's|The day's} buyback {closed|ended}: ${a} AFHO @ ${p} · ${u} USDC`,
+        `{Daily buyback|Buyback vault drain|Bond buyback spend} {complete|finished|ended}: ${a} AFHO token at ${p} avg for ${u} USDC`,
+        `Buyback {done|finished|concluded|terminated}: ${a} AFHO at ${p} {average|avg}.. ${u} USDC {spent|used}`,
+        `{Today's|The day's} buyback {closed|ended} after spending ${u} USDC on ${a} AFHO @ ${p} average `,
     ]);
 }
 
@@ -301,6 +300,25 @@ export function mondayOpenMessage(
     ]);
 }
 
+// 6. Ratchet-floor decay digest. Floor units are nano-USD (price per whole
+// token × 1e9), the same convention the /dash "Ratchet floor (USDC)" row
+// shows, so 4792 → "$0.000004792". The floor only ever moves DOWN via
+// calc_completed_offers decay (fills ratchet it up), so the message is the
+// desk easing its no-discount boundary toward the live market after days
+// with no bond sales. Posted at the noon ET slot, not when the cut lands.
+export function floorDecayMessage(oldFloorUsd: number, newFloorUsd: number): string {
+    const fmt = (v: number) => `$${v.toFixed(9)}`;
+    const pct = oldFloorUsd > 0 ? ((newFloorUsd - oldFloorUsd) / oldFloorUsd) * 100 : 0;
+    const pctLabel = `${pct > 0 ? "+" : "-"}${Math.abs(pct).toFixed(1)}%`;
+    const o = fmt(oldFloorUsd);
+    const n = fmt(newFloorUsd);
+    return pick([
+        `Bond floor {update|adjustment}: ratcheted bond offer floor ${o} → ${n} (${pctLabel}) — {the desk re-prices toward market|bond pricing eases toward the tape|the floor steps down to meet demand}`,
+        `{Floor digest|Floor check}: ratcheted bond offer floor now ${n}, down from ${o} (${pctLabel}) — {unsold|unfilled} bond pricing {eases|moves closer to the live market}`,
+        `The ratcheted bond offer floor {stepped down|eased|slid} ${o} → ${n} (${pctLabel}) — {no takers at the old floor|the desk meets the market where it is|pricing re-anchors to live trade}`,
+    ]);
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // CONFIG & CREDENTIALS
 // ════════════════════════════════════════════════════════════════════════════
@@ -342,6 +360,20 @@ export function isMondayEt(now: Date = new Date()): boolean {
         weekday: "short",
     }).format(now);
     return parts === "Mon";
+}
+
+// True once the ET clock has reached noon (12:00 America/New_York) for the
+// current day. Host-TZ-independent like isMondayEt — the decay digest holds
+// until this flips, so a 9:30 ET day-start cut posts ~12:00 ET, not instantly.
+export function isNoonEtOrLater(now: Date = new Date()): boolean {
+    const hour = Number(
+        new Intl.DateTimeFormat("en-US", {
+            timeZone: "America/New_York",
+            hour: "numeric",
+            hourCycle: "h23",
+        }).format(now)
+    );
+    return hour >= 12;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -778,6 +810,15 @@ async function main(): Promise<void> {
     // first announces the desk; later opens/closes the same calendar day
     // stay silent (price-flap reopenings are noise, not events).
     let deskAnnouncedDate: string | null = null;
+    // Ratchet-floor decay digest (section 6): the floor only ever moves DOWN
+    // via decay — buyback/dip fills ratchet it UP — so current floor < last
+    // announced floor = a decay happened. Held for the noon ET slot (decays
+    // land at the day-start transition, ~9:30 ET on mainnet; the digest
+    // batches them to lunch), once per ET calendar day. Ratchets upward move
+    // the baseline silently. Seeded from live state on restart so a mid-day
+    // restart never re-announces an old decay; the NEXT decay re-arms it.
+    let floorAnnouncedRaw: number | null = null;
+    let decayAnnouncedDate: string | null = null;
     const etDate = (): string =>
         new Intl.DateTimeFormat("en-CA", {
             timeZone: "America/New_York",

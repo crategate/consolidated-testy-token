@@ -16,7 +16,7 @@
 //   2. deployment.json points at the MAINNET deployment (program IDs,
 //      mint, Switchboard queue/feed, marketStatusFeedId, oracleQuoteAccount).
 //   3. AmmState pool pins: cpmm_pool_state = the AFHO/USDC pool created by
-//      mint-launch, cpmm_sol_usdc_pool = the deep canonical wSOL/USDC pool
+//      create-pool, cpmm_sol_usdc_pool = the deep canonical wSOL/USDC pool
 //      (creator fee OFF) — set via set-cpmm-pool / set-sol-usdc-pool with
 //      DEVNET_SOL_USDC_POOL/_CONFIG pointing at it. Bounty pricing and
 //      SOL claims read these pins from bounty_config/amm_state, so nothing

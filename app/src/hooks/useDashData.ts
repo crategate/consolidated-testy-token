@@ -435,7 +435,7 @@ function buildDashData(
                     ? `${pct(floor, spot)} ${floor >= spot ? 'above — decay territory' : 'below — desk trades over the floor'}`
                     : '—',
             },
-            { label: 'Untaken days', value: `${untaken} (decay kicks in after 3)` },
+            { label: 'Untaken days', value: `${untaken} (decay starts on the 4th straight locked day)` },
         );
         const last = ratchet?.events[ratchet.events.length - 1] ?? null;
         if (last) {

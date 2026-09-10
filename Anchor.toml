@@ -18,14 +18,18 @@ cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-# current flow after feed is set:
-# anchor run mint → anchor run amm-init → set-pools ->anchor run init → anchor run bount
+# launch flow (2026-09-09 split of mint-launch.ts — see scripts/mint-create.ts header):
+# anchor run mint-create → init → feed-deploy → amm-init → fund-launch → create-pool
+#   → set-pools → burn-lp (REAL LAUNCH ONLY, EXECUTE=1; skip in the Phase-0 rehearsal) → bount
 
 # or anchor run bount-test-watch with anchor run set-oracle -- 1 to update
 # zip -r … . in app/dist 
 
 feed-deploy = "npx ts-node ./scripts/oracle/feed-deploy.ts"
-mint = "npx ts-node scripts/mint-launch.ts"
+mint-create = "npx ts-node scripts/mint-create.ts" # phase 1: mint + metadata, 0 supply
+fund-launch = "npx ts-node scripts/fund-launch.ts" # phase 2: THE supply tx (75% vault + 25% seed + revoke both authorities, one tx)
+create-pool = "npx ts-node scripts/create-pool.ts" # phase 3: Raydium CPMM from the seed ATA (AFHO_TO_LP/USDC_TO_LP/USDC_MINT env)
+burn-lp = "npx ts-node scripts/burn-lp.ts"         # final: burn 100% of LP — dry-run by default, EXECUTE=1; SKIP in Phase-0 rehearsal
 amm-init = "npx ts-node ./scripts/amm-init.ts"
 amm-offers = "npx ts-node ./scripts/amm-offers.ts" # devnet only feature    
 amm-test-data = "npx ts-node ./scripts/amm-test-data.ts" #devnet only 

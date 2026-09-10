@@ -25,6 +25,9 @@ export interface ChainDataContextValue {
     livePriceLoading: boolean;
     /** Last successful live-price fetch (ms epoch) — 0/null when never fetched. */
     livePriceUpdatedAt: number | null;
+    /** True while the shared snapshot query has a fetch in flight (initial,
+    *   polled, WS-invalidated, or the visibility-return recovery fetch). */
+    snapshotFetching: boolean;
     refresh: (key: RefreshKey) => Promise<void>;
 }
 

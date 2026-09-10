@@ -10,6 +10,7 @@ import '@solana/wallet-adapter-react-ui/styles.css';
 import './index.css';
 import App from './App';
 import { HomePageIndicator } from './components/amm/HomePageIndicator';
+import { StaleDataBanner } from './components/StaleDataBanner';
 import { ChainDataProvider } from './context/ChainDataProvider';
 
 // Route-level code splitting: each non-landing page (and its Solana-heavy
@@ -18,6 +19,7 @@ import { ChainDataProvider } from './context/ChainDataProvider';
 const Dash = lazy(() => import('./pages/Dash'));
 const Records = lazy(() => import('./pages/Records'));
 const Litepaper = lazy(() => import('./pages/Litepaper'));
+const Disclaimer = lazy(() => import('./pages/Disclaimer'));
 const AmmPage = lazy(() => import('./pages/AmmPage'));
 
 const queryClient = new QueryClient({
@@ -47,6 +49,7 @@ function Shell() {
         pathname.startsWith('/records/');
     return (
         <>
+            <StaleDataBanner />
             {!hideIndicator && <HomePageIndicator />}
             <Suspense
                 fallback={
@@ -75,6 +78,7 @@ createRoot(document.getElementById('root')!).render(
                                         <Route path="/dash" element={<Dash />} />
                                         <Route path="/records" element={<Records />} />
                                         <Route path="/litepaper" element={<Litepaper />} />
+                                        <Route path="/disclaimer" element={<Disclaimer />} />
                                         <Route path="/offer-desk" element={<AmmPage />} />
                                     </Route>
                                 </Routes>

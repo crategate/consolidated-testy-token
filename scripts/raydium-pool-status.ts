@@ -5,7 +5,7 @@ import * as path from "path";
 
 // Prints the Raydium CPMM pool's state: pool/vault/LP-mint addresses, the
 // AFHO + USDC vault balances, and the implied AFHO/USDC price. Reads the
-// addresses written by mint-launch (createPool) into deployment.json.
+// addresses written by create-pool (createPool) into deployment.json.
 async function main() {
     const connection = new Connection(
         process.env.ANCHOR_PROVIDER_URL || "https://api.devnet.solana.com"

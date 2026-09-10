@@ -1332,3 +1332,61 @@ h3 {
     letter-spacing: 0.05em;
     text-align: center;
 }
+
+.site-footer-note .site-footer-disclaimer {
+    color: var(--text-secondary);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.site-footer-note .site-footer-disclaimer:hover {
+    color: var(--text-primary);
+}
+
+/* ── Full-width stall banner ──
+   Rendered by StaleDataBanner when the shared chain snapshot has had no
+   successful fetch for 10 minutes (RPC outage / rate-limit stretch). Fixed
+   above the nav (SiteNav z-index 20, menus 90); vanishes the moment the
+   snapshot recovers — no manual dismiss. */
+.stall-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 150;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: 0.55rem 1rem;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.06em;
+    color: var(--neon-amber);
+    background: rgba(22, 13, 0, 0.93);
+    border-bottom: 1px solid rgba(255, 170, 0, 0.45);
+    box-shadow: 0 0 18px rgba(255, 170, 0, 0.18);
+    backdrop-filter: blur(6px);
+}
+
+.stall-banner-refresh {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--neon-amber);
+    background: transparent;
+    border: 1px solid rgba(255, 170, 0, 0.55);
+    border-radius: var(--radius-sm, 4px);
+    padding: 0.25rem 0.7rem;
+    cursor: pointer;
+}
+
+.stall-banner-refresh:hover {
+    background: rgba(255, 170, 0, 0.12);
+}
+
+.stall-banner-refresh:disabled {
+    opacity: 0.5;
+    cursor: default;
+}

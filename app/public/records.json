@@ -1526,6 +1526,660 @@
         "penaltyVault": "0",
         "posrVault": "0"
       }
+    },
+    {
+      "dayIndex": 19,
+      "recordedAt": 1788997516,
+      "date": "2026-09-09",
+      "marketState": 0,
+      "offerDesk": {
+        "big": {
+          "lotTier": 17,
+          "lotTokens": 250000,
+          "vestingDays": 11,
+          "discountBps": 46,
+          "remaining": 3,
+          "totalOffered": 3
+        },
+        "med": {
+          "lotTier": 15,
+          "lotTokens": 50000,
+          "vestingDays": 6,
+          "discountBps": 31,
+          "remaining": 13,
+          "totalOffered": 13
+        },
+        "sml": {
+          "lotTier": 0,
+          "lotTokens": 0,
+          "vestingDays": 0,
+          "discountBps": 0,
+          "remaining": 0,
+          "totalOffered": 0
+        },
+        "totalComplete": 12820000,
+        "sheetDayIndex": 18
+      },
+      "fills": {
+        "big": [
+          40,
+          0,
+          60,
+          100,
+          0
+        ],
+        "med": [
+          0,
+          0,
+          0,
+          100,
+          0
+        ],
+        "sml": [
+          0,
+          0,
+          0,
+          8,
+          0
+        ]
+      },
+      "market": {
+        "afhoPrice": "1408",
+        "spotMin": "1397",
+        "spotMax": "1408",
+        "spotSamples": 32,
+        "priceChanges": [
+          -1434,
+          16,
+          14,
+          0,
+          15,
+          0,
+          14,
+          0,
+          15,
+          0,
+          -4934,
+          334,
+          6118,
+          -451,
+          -3662,
+          -5165,
+          0,
+          0,
+          0,
+          0
+        ],
+        "sampleHead": 16,
+        "momentum": 2440,
+        "momentumSamples": 12,
+        "highestBuybackBasis": "4792",
+        "afhoVault": "474882639170172097",
+        "usdcVault": "26641798",
+        "usdcDip": "1728143"
+      },
+      "staking": {
+        "totalStaked": "48819866000000000",
+        "totalWeightedStake": "48819866000000000",
+        "totalSupply": "1000000000000000000",
+        "stakedPct": 4.88,
+        "trailingStakeHealth": [
+          1,
+          2,
+          4,
+          4,
+          4
+        ],
+        "stakeVault": "48819866000000000",
+        "rewardVault": "1938328844147687",
+        "penaltyVault": "0",
+        "posrVault": "0"
+      }
+    },
+    {
+      "dayIndex": 20,
+      "recordedAt": 1789000463,
+      "date": "2026-09-09",
+      "marketState": 0,
+      "offerDesk": {
+        "big": {
+          "lotTier": 16,
+          "lotTokens": 100000,
+          "vestingDays": 11,
+          "discountBps": 48,
+          "remaining": 9,
+          "totalOffered": 9
+        },
+        "med": {
+          "lotTier": 14,
+          "lotTokens": 20000,
+          "vestingDays": 6,
+          "discountBps": 33,
+          "remaining": 33,
+          "totalOffered": 33
+        },
+        "sml": {
+          "lotTier": 0,
+          "lotTokens": 0,
+          "vestingDays": 0,
+          "discountBps": 0,
+          "remaining": 0,
+          "totalOffered": 0
+        },
+        "totalComplete": 12820000,
+        "sheetDayIndex": 19
+      },
+      "fills": {
+        "big": [
+          0,
+          60,
+          100,
+          0,
+          0
+        ],
+        "med": [
+          0,
+          0,
+          100,
+          0,
+          0
+        ],
+        "sml": [
+          0,
+          0,
+          8,
+          0,
+          0
+        ]
+      },
+      "market": {
+        "afhoPrice": "1408",
+        "spotMin": "1408",
+        "spotMax": "1408",
+        "spotSamples": 32,
+        "priceChanges": [
+          -1434,
+          16,
+          14,
+          0,
+          15,
+          0,
+          14,
+          0,
+          15,
+          0,
+          -4934,
+          334,
+          6118,
+          -451,
+          -3662,
+          -5165,
+          71,
+          0,
+          0,
+          0
+        ],
+        "sampleHead": 17,
+        "momentum": 2210,
+        "momentumSamples": 13,
+        "highestBuybackBasis": "4792",
+        "afhoVault": "474882639170172097",
+        "usdcVault": "26641798",
+        "usdcDip": "1728143"
+      },
+      "staking": {
+        "totalStaked": "48819866000000000",
+        "totalWeightedStake": "48819866000000000",
+        "totalSupply": "1000000000000000000",
+        "stakedPct": 4.88,
+        "trailingStakeHealth": [
+          2,
+          4,
+          4,
+          4,
+          4
+        ],
+        "stakeVault": "48819866000000000",
+        "rewardVault": "1938328844147687",
+        "penaltyVault": "0",
+        "posrVault": "0"
+      }
+    },
+    {
+      "dayIndex": 22,
+      "recordedAt": 1789000852,
+      "date": "2026-09-09",
+      "marketState": 0,
+      "offerDesk": {
+        "big": {
+          "lotTier": 0,
+          "lotTokens": 0,
+          "vestingDays": 0,
+          "discountBps": 0,
+          "remaining": 0,
+          "totalOffered": 0
+        },
+        "med": {
+          "lotTier": 0,
+          "lotTokens": 0,
+          "vestingDays": 0,
+          "discountBps": 0,
+          "remaining": 0,
+          "totalOffered": 0
+        },
+        "sml": {
+          "lotTier": 0,
+          "lotTokens": 0,
+          "vestingDays": 0,
+          "discountBps": 0,
+          "remaining": 0,
+          "totalOffered": 0
+        },
+        "totalComplete": 12820000,
+        "sheetDayIndex": 20
+      },
+      "fills": {
+        "big": [
+          0,
+          60,
+          100,
+          0,
+          0
+        ],
+        "med": [
+          0,
+          0,
+          100,
+          0,
+          0
+        ],
+        "sml": [
+          0,
+          0,
+          8,
+          0,
+          0
+        ]
+      },
+      "market": {
+        "afhoPrice": "1408",
+        "spotMin": "1408",
+        "spotMax": "1408",
+        "spotSamples": 32,
+        "priceChanges": [
+          -1434,
+          16,
+          14,
+          0,
+          15,
+          0,
+          14,
+          0,
+          15,
+          0,
+          -4934,
+          334,
+          6118,
+          -451,
+          -3662,
+          -5165,
+          71,
+          0,
+          0,
+          0
+        ],
+        "sampleHead": 18,
+        "momentum": 0,
+        "momentumSamples": 13,
+        "highestBuybackBasis": "4792",
+        "afhoVault": "474882639170172097",
+        "usdcVault": "26641798",
+        "usdcDip": "1728143"
+      },
+      "staking": {
+        "totalStaked": "48819866000000000",
+        "totalWeightedStake": "48819866000000000",
+        "totalSupply": "1000000000000000000",
+        "stakedPct": 4.88,
+        "trailingStakeHealth": [
+          4,
+          4,
+          4,
+          4,
+          4
+        ],
+        "stakeVault": "48819866000000000",
+        "rewardVault": "1938328844147687",
+        "penaltyVault": "0",
+        "posrVault": "0"
+      }
+    },
+    {
+      "dayIndex": 23,
+      "recordedAt": 1789003162,
+      "date": "2026-09-09",
+      "marketState": 0,
+      "offerDesk": {
+        "big": {
+          "lotTier": 0,
+          "lotTokens": 0,
+          "vestingDays": 0,
+          "discountBps": 0,
+          "remaining": 0,
+          "totalOffered": 0
+        },
+        "med": {
+          "lotTier": 0,
+          "lotTokens": 0,
+          "vestingDays": 0,
+          "discountBps": 0,
+          "remaining": 0,
+          "totalOffered": 0
+        },
+        "sml": {
+          "lotTier": 0,
+          "lotTokens": 0,
+          "vestingDays": 0,
+          "discountBps": 0,
+          "remaining": 0,
+          "totalOffered": 0
+        },
+        "totalComplete": 12820000,
+        "sheetDayIndex": 22
+      },
+      "fills": {
+        "big": [
+          60,
+          100,
+          0,
+          0,
+          0
+        ],
+        "med": [
+          0,
+          100,
+          0,
+          0,
+          0
+        ],
+        "sml": [
+          0,
+          8,
+          0,
+          0,
+          0
+        ]
+      },
+      "market": {
+        "afhoPrice": "1408",
+        "spotMin": "1408",
+        "spotMax": "1408",
+        "spotSamples": 32,
+        "priceChanges": [
+          -1434,
+          16,
+          14,
+          0,
+          15,
+          0,
+          14,
+          0,
+          15,
+          0,
+          -4934,
+          334,
+          6118,
+          -451,
+          -3662,
+          -5165,
+          71,
+          0,
+          0,
+          0
+        ],
+        "sampleHead": 19,
+        "momentum": 0,
+        "momentumSamples": 13,
+        "highestBuybackBasis": "4792",
+        "afhoVault": "474882639170172097",
+        "usdcVault": "26641798",
+        "usdcDip": "1728143"
+      },
+      "staking": {
+        "totalStaked": "48819866000000000",
+        "totalWeightedStake": "48819866000000000",
+        "totalSupply": "1000000000000000000",
+        "stakedPct": 4.88,
+        "trailingStakeHealth": [
+          4,
+          4,
+          4,
+          4,
+          4
+        ],
+        "stakeVault": "48819866000000000",
+        "rewardVault": "1938328844147687",
+        "penaltyVault": "0",
+        "posrVault": "0"
+      }
+    },
+    {
+      "dayIndex": 24,
+      "recordedAt": 1789004216,
+      "date": "2026-09-09",
+      "marketState": 0,
+      "offerDesk": {
+        "big": {
+          "lotTier": 16,
+          "lotTokens": 100000,
+          "vestingDays": 11,
+          "discountBps": 52,
+          "remaining": 9,
+          "totalOffered": 9
+        },
+        "med": {
+          "lotTier": 14,
+          "lotTokens": 20000,
+          "vestingDays": 5,
+          "discountBps": 37,
+          "remaining": 33,
+          "totalOffered": 33
+        },
+        "sml": {
+          "lotTier": 12,
+          "lotTokens": 10000,
+          "vestingDays": 3,
+          "discountBps": 22,
+          "remaining": 28,
+          "totalOffered": 28
+        },
+        "totalComplete": 12820000,
+        "sheetDayIndex": 23
+      },
+      "fills": {
+        "big": [
+          100,
+          0,
+          0,
+          0,
+          0
+        ],
+        "med": [
+          100,
+          0,
+          0,
+          0,
+          0
+        ],
+        "sml": [
+          8,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "market": {
+        "afhoPrice": "1408",
+        "spotMin": "1408",
+        "spotMax": "1408",
+        "spotSamples": 32,
+        "priceChanges": [
+          -1434,
+          16,
+          14,
+          0,
+          15,
+          0,
+          14,
+          0,
+          15,
+          0,
+          -4934,
+          334,
+          6118,
+          -451,
+          -3662,
+          -5165,
+          71,
+          0,
+          0,
+          0
+        ],
+        "sampleHead": 0,
+        "momentum": 1160,
+        "momentumSamples": 13,
+        "highestBuybackBasis": "4251",
+        "afhoVault": "474882639170172097",
+        "usdcVault": "26641798",
+        "usdcDip": "1728143"
+      },
+      "staking": {
+        "totalStaked": "48819866000000000",
+        "totalWeightedStake": "48819866000000000",
+        "totalSupply": "1000000000000000000",
+        "stakedPct": 4.88,
+        "trailingStakeHealth": [
+          4,
+          4,
+          4,
+          4,
+          4
+        ],
+        "stakeVault": "48819866000000000",
+        "rewardVault": "1938328844147687",
+        "penaltyVault": "0",
+        "posrVault": "0"
+      }
+    },
+    {
+      "dayIndex": 25,
+      "recordedAt": 1789004736,
+      "date": "2026-09-09",
+      "marketState": 0,
+      "offerDesk": {
+        "big": {
+          "lotTier": 16,
+          "lotTokens": 100000,
+          "vestingDays": 11,
+          "discountBps": 55,
+          "remaining": 9,
+          "totalOffered": 9
+        },
+        "med": {
+          "lotTier": 14,
+          "lotTokens": 20000,
+          "vestingDays": 5,
+          "discountBps": 40,
+          "remaining": 33,
+          "totalOffered": 33
+        },
+        "sml": {
+          "lotTier": 12,
+          "lotTokens": 10000,
+          "vestingDays": 3,
+          "discountBps": 25,
+          "remaining": 28,
+          "totalOffered": 28
+        },
+        "totalComplete": 12820000,
+        "sheetDayIndex": 24
+      },
+      "fills": {
+        "big": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "med": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "sml": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "market": {
+        "afhoPrice": "1408",
+        "spotMin": "1408",
+        "spotMax": "1408",
+        "spotSamples": 32,
+        "priceChanges": [
+          0,
+          16,
+          14,
+          0,
+          15,
+          0,
+          14,
+          0,
+          15,
+          0,
+          -4934,
+          334,
+          6118,
+          -451,
+          -3662,
+          -5165,
+          71,
+          0,
+          0,
+          0
+        ],
+        "sampleHead": 1,
+        "momentum": 3810,
+        "momentumSamples": 12,
+        "highestBuybackBasis": "3797",
+        "afhoVault": "474882639170172097",
+        "usdcVault": "26641798",
+        "usdcDip": "1728143"
+      },
+      "staking": {
+        "totalStaked": "48819866000000000",
+        "totalWeightedStake": "48819866000000000",
+        "totalSupply": "1000000000000000000",
+        "stakedPct": 4.88,
+        "trailingStakeHealth": [
+          4,
+          4,
+          4,
+          4,
+          4
+        ],
+        "stakeVault": "48819866000000000",
+        "rewardVault": "1938328844147687",
+        "penaltyVault": "0",
+        "posrVault": "0"
+      }
     }
   ]
 }

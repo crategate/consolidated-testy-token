@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom';
+
 // Social links — update the Telegram URL to the channel's public username
 // (https://t.me/<username>) once one is set in Telegram channel settings.
 // The numeric id below works for the bot but not as a join link.
@@ -48,7 +50,8 @@ export function SiteFooter() {
             <img className="logo" src="/Logo/color-on-trans-logo.png" />
 
             <p className="site-footer-note">
-                AFHO is experimental token protocol. Nothing here is financial advice.
+                AFHO is experimental token protocol. Nothing here is financial advice.{' '}
+                <Link to="/disclaimer" className="site-footer-disclaimer">Read the full disclaimer.</Link>
             </p>
         </footer>
     );

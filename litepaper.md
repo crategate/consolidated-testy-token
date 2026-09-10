@@ -17,11 +17,11 @@ trades, the protocol buys its own token back from the market. When the bell
 closes, a nightly "offer desk" sells discounted, vesting bond lots straight
 into staking positions.
 
-### a ticker that knows its being watched
+### a ticker that knows it's being watched
 The bonds' size, discount rate, and vesting period are determined by the
 performance of the token's staking and price.
 
-The wrong price conditions close the offer desk completely
+The wrong price conditions close the offer desk completely.
 
 ## The market clock
 
@@ -31,7 +31,7 @@ permissionless keeper reading a Switchboard On-Demand feed:
 | State | Meaning | What happens |
 |---|---|---|
 | OPEN | NYSE trading hours | Buybacks run. Stakers can claim. |
-| AFTER-HOURS | early morning & evenings | Night desk opens. Unstaking penalizes principle |
+| AFTER-HOURS | early morning & evenings | Night desk opens. Unstaking penalizes principal |
 | CLOSED | Overnight / weekends | Night desk stays open. Larger unstake fee |
 | HALTED | rare trading halt | Largest unstake fee |
 
@@ -55,7 +55,7 @@ permissionless keeper reading a Switchboard On-Demand feed:
 
 ## Bond Desk 
 
-At the end of eat trading day, the desk prices three tiers of lots 
+At the end of each trading day, the desk prices three tiers of lots 
 from the day's price momentum and how committed stakers are:
 
 - **Discounts are strictly tiered** and never price below the **buyback floor** — the highest price
@@ -97,21 +97,20 @@ Ten percent of bond proceeds fund an always-on dip buyer:
 Ten percent of every bond sale is converted to AFHO and distributed to
 stakers. Rewards are split by **weight**, and weight grows with commitment:
 
-- **Trading-day multiplier**: weight ramps from 1.0x toward a configured cap
-  (default **3.0x**) along a saturating curve. Early days grow fast, later
-  days slow down
+- **Trading-day multiplier**: weight ramps from 1.0x toward a configured peak
+  (approaching **3.0x**) along a saturating curve
 - **Claims are market-open only** (the desk's reward pool only pays out while
   the market is live), with a **5% protocol tax** that refills bond-sale
-  inventory.
+  inventory
 - **Vested bond positions** participate with full weight immediately and
   unlock after their vesting period.
 
 ## Fees, penalties & costs at a glance
 
-- **Pool fee**: Raydium CPMM's 0.25% per swap — paid by bond buyers on the
+- **Pool fee**: Raydium CPMM's 0.25% per swap, paid by bond buyers on the
   payment leg (SOL buyers pay +25 bps to cover the conversion).
-- **Claim tax**: 5% of every claim (default, set at pool init).
-- **Unstake penalties** (principal, by market state — defaults):
+- **Claim tax**: 5% of every claim
+- **Unstake penalties** (principal, by market state):
   - OPEN: none
   - AFTER-HOURS: 3%
   - CLOSED: 6%
@@ -123,20 +122,22 @@ stakers. Rewards are split by **weight**, and weight grows with commitment:
 ## Token & liquidity
 
 - **Supply**: 1,000,000,000 AFHO, SPL **Token-2022**.
-- **Trust posture**: mint authority revoked; token metadata immutable.
+- **Trust posture**: mint authority revoked. token metadata immutable.
 - **Liquidity**: protocol-owned Raydium CPMM pool. Pricing (TWAP) comes from
   the same pool the swaps execute against, so the desk, the dip buyer, and
   the buyback all read and trade one honest venue.
 - **Launch plan**: 25% of supply seeded to the pool, 75% to the protocol
   vault, per the mainnet checklist.
 
+{{charts}}
+
 ## Roles
 
-- **Authority** — sets the keeper, pins the pools, moves protocol funds.
-- **Keeper** — a hot wallet running the daily crank bot: flips market state,
+- **Authority**  sets the keeper, pins the pools, moves protocol funds.
+- **Keeper**  a hot wallet running the daily crank bot: flips market state,
   posts the sheet, fires buyback/dip slices. Cannot re-pin pools or touch
   vault funds directly.
-- **Bond buyers & stakers** — the protocol's whole reason to exist.
+- **Bond buyers & stakers**  the protocol's participants 
 
 ## Tech stack
 
@@ -148,17 +149,6 @@ stakers. Rewards are split by **weight**, and weight grows with commitment:
   reader.
 - **Oracle**: Switchboard On-Demand for the market-status feed.
 - **Frontend**: React + Vite, wallet-connected, with a dev dashboard.
-
-## Status
-
-Devnet. The full launch checklist lives in `MAINNET_CHECKLIST.md` in the
-repo (build-in-public progress): security fixes from two audit passes are
-landed, the Raydium adapter and TWAP pricing are live on devnet, and the
-remaining work is liquidity seeding, devnet-only code removal, and a final
-external audit.
-
----
-
 ## Risks & disclaimer (summary)
 
 AFHO is experimental software in development. The token has no intrinsic

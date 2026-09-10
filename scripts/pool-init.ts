@@ -48,7 +48,7 @@ async function main() {
         const mintArg = process.argv[2];
         if (!mintArg) {
             console.error("Usage: npx ts-node scripts/init-pool.ts <MINT_PUBKEY>");
-            console.error("   Or deploy the token first with mint-launch.ts to auto-detect");
+            console.error("   Or deploy the token first with mint-create.ts to auto-detect");
             process.exit(1);
         }
         AFHO_MINT = new PublicKey(mintArg);
