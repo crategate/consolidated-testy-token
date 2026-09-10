@@ -246,8 +246,8 @@ async function main() {
     let testDay: number | null = TEST_DAY;
 
     // Bounty recycling: immediately re-fund the bounty vault with whatever
-    // the crank just paid out, so the vault stays above the 0.2 SOL
-    // bounty_top_up threshold while this keeper is the only earner (the
+    // the crank just paid out, so the vault stays above the 10-payment
+    // bounty_top_up low water while this keeper is the only earner (the
     // operator is effectively paying themselves; the keeper nets ~0 minus
     // the recycle tx fee). Default ON in production, OFF under --test-state
     // (the test harness drains the vault on purpose so the bounty_top_up
@@ -1022,14 +1022,27 @@ async function main() {
                     const solPoolUsdc = (await tokenAmount(solUsdc.solUsdcOutputVault)) ?? 0n;
                     const afhoPrice = afhoPoolRaw > 0n && usdcPoolRaw > 0n ? (usdcPoolRaw * 1_000_000_000_000n) / afhoPoolRaw : 0n;
                     const solPrice = wsolPoolRaw > 0n && solPoolUsdc > 0n ? (solPoolUsdc * 1_000_000_000_000n) / wsolPoolRaw : 0n;
-                    const TOPUP_SOL = 400_000_000n; // 0.4 SOL added each top-up
-                    const usdcNeeded = solPrice > 0n ? (TOPUP_SOL * solPrice * 10_025n) / 1_000_000_000_000n / 10_000n : 0n;
+                    // Bounty sizing mirrors the on-chain math (bounty_top_up):
+                    // refill by TOPUP_PAYMENTS × bounty_usd when the vault's
+                    // USDC value (at the pinned pool's SOL price) is at/below
+                    // LOW_WATER_PAYMENTS × bounty_usd. bounty_usd_raw is u64 LE
+                    // at offset 48..56 of the crank's BountyConfig.
+                    const LOW_WATER_PAYMENTS = 10n;
+                    const TOPUP_PAYMENTS = 10n;
+                    const cfgInfo = await connection.getAccountInfo(bountyConfigPda);
+                    const bountyUsd = cfgInfo && cfgInfo.data.length >= 56
+                        ? cfgInfo.data.readBigUInt64LE(48)
+                        : 0n;
+                    const vaultUsdc = solPrice > 0n ? (bountyBal * solPrice) / 1_000_000_000_000n : 0n;
+                    const payments = bountyUsd > 0n ? vaultUsdc / bountyUsd : 0n;
+                    const neededLamports = solPrice > 0n ? (TOPUP_PAYMENTS * bountyUsd * 1_000_000_000_000n) / solPrice : 0n;
+                    const usdcNeeded = solPrice > 0n ? (neededLamports * solPrice * 10_025n) / 1_000_000_000_000n / 10_000n : 0n;
                     const afhoIn = afhoPrice > 0n ? (usdcNeeded * 1_000_000_000_000n * 10_025n) / afhoPrice / 10_000n : 0n;
                     console.log(
-                        `${evc(ANSI.brightBlue, "bounty_top_up")}bounty=${fmtSolL(bountyBal)} (tops up +0.4 SOL when < 0.2) ` +
+                        `${evc(ANSI.brightBlue, "bounty_top_up")}bounty=${fmtSolL(bountyBal)} ≈${payments} payments (${fmtUsdc(vaultUsdc)}) ` +
                         `afho_price=${afhoPrice > 0n ? fmtPrice(afhoPrice) : "—"} sol_price=${solPrice > 0n ? fmtPrice(solPrice) : "—"} ` +
-                        `→ est AFHO sold=${fmtAfho(afhoIn)} (${pctOf(afhoIn, afhoVaultBal)} of afho_vault) ` +
-                        `est USDC hop=${fmtUsdc(usdcNeeded)}`
+                        `→ refill +${TOPUP_PAYMENTS} payments (${fmtUsdc(usdcNeeded)}) when ≤${LOW_WATER_PAYMENTS} ` +
+                        `est AFHO sold=${fmtAfho(afhoIn)} (${pctOf(afhoIn, afhoVaultBal)} of afho_vault)`
                     );
                     const topupIx = await ammProgram.methods
                         .bountyTopUp()
@@ -1037,6 +1050,7 @@ async function main() {
                             cranker: keypair.publicKey,
                             ammState: ammStatePda,
                             bountyVault: bountyVaultPda,
+                            bountyConfig: bountyConfigPda,
                             afhoVault: ammState.afhoVault,
                             usdcVault: ammState.usdcVault,
                             afhoMint,
@@ -1079,10 +1093,10 @@ async function main() {
                             `bounty=${fmtSolL(bountyBal)} est AFHO=${fmtAfho(afhoIn)} (${pctOf(afhoIn, afhoVaultBal)} of afho_vault)`
                         );
                         console.log(`  ${ANSI.dim}${ANSI.gray}last logs:${ANSI.reset}`, topupSim.value.logs?.slice(-4) ?? []);
-                    } else if (bountyBal >= 200_000_000n) {
+                    } else if (bountyUsd > 0n && vaultUsdc > LOW_WATER_PAYMENTS * bountyUsd) {
                         // Simulation passed because the on-chain low-water check
                         // no-ops — don't spend a tx on a healthy vault.
-                        console.log(`${skip(`bounty_top_up no-op (vault healthy: ${fmtSolL(bountyBal)} ≥ 0.2 SOL)`)}`);
+                        console.log(`${skip(`bounty_top_up no-op (vault healthy: ${payments} payments > ${LOW_WATER_PAYMENTS} low water)`)}`);
                     } else {
                         const topupSig = await connection.sendTransaction(topupTx);
                         await connection.confirmTransaction(topupSig, "confirmed");

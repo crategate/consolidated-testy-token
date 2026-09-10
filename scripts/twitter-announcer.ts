@@ -5,7 +5,11 @@
 //
 //   1. Daily bond offer sheet goes up for sale (bond sizes / discounts / vesting days)
 //   2. Daily buyback completes (AFHO purchased, average price, USDC spent)
-//   3. Buy-the-dip trigger (AFHO bought, price, remaining dip vault)
+//   3. Buy-the-dip digest — ONE post per ET calendar day at a random
+//       minute inside the 10–11am or 1–3pm ET band (re-rolled daily, so
+//       the slot changes), only when at least one dip slice fired since
+//       the previous digest (slices, AFHO bought, avg price, USDC
+//       deployed, dip vault left)
 //   4. Market-state changes (with the associated unstake fee)
 //   4b. Closed-session flash sale: AFTER-HOURS → CLOSED with bonds still on
 //       the sheet — every remaining tier is 0.5% deeper for the closed window
@@ -233,19 +237,62 @@ export function buybackCompleteMessage(
     ]);
 }
 
-// 3. Buy-the-dip slice fired.
-export function dipBuyMessage(
+// Daily dip-digest window: the digest lands at a random minute inside one
+// of these ET bands (50/50 band pick, re-rolled every ET calendar day so
+// the slot changes). Minutes are ET minutes-of-day (10:00 = 600).
+export const DIP_SLOT_BANDS: Array<[number, number]> = [
+    [10 * 60, 11 * 60], // mid-morning 10:00–10:59 ET
+    [13 * 60, 15 * 60], // mid-afternoon 13:00–14:59 ET
+];
+
+// Random digest slot: uniform minute inside a random band.
+export function rollDipSlotMinute(): number {
+    const [lo, hi] =
+        DIP_SLOT_BANDS[Math.floor(Math.random() * DIP_SLOT_BANDS.length)];
+    return lo + Math.floor(Math.random() * (hi - lo));
+}
+
+// Re-roll inside the band that contains `nowMin` — used when a dip fires
+// after today's slot already passed: uniform minute in [nowMin, hi).
+export function rollDipSlotMinuteFrom(nowMin: number, hi: number): number {
+    return nowMin + Math.floor(Math.random() * (hi - nowMin));
+}
+
+// 3. Daily buy-the-dip digest. Per-slice posts are gone: slices accumulate
+// in the poll loop and ONE digest posts per ET calendar day, at a random
+// minute inside the 10–11am or 1–3pm ET band, only when at least one slice
+// fired since the last digest.
+export function dipDigestMessage(
+    slices: number,
     afho: number,
+    usdc: number,
     price: number,
     dipUsdcRemaining: number
 ): string {
     const a = formatAfho(afho);
-    const p = formatPrice(price);
+    const u = formatUsdc(usdc);
     const r = formatUsdc(dipUsdcRemaining);
+    const n = formatWhole(slices);
+    if (afho <= 0) {
+        // No measurable AFHO across the whole window (claims or buyback
+        // slices shared every poll window) — report spend and vault only.
+        return pick([
+            `Dip {digest|recap}: ${n} dip ${slices === 1 ? "buy" : "buys"} · ${u} USDC deployed · ${r} {still in|left in} the dip vault`,
+            `Buy-the-dip {update|report}: ${n} slice${slices === 1 ? "" : "s"} fired for ${u} USDC · ${r} USDC left in the vault`,
+        ]);
+    }
+    const p = formatPrice(price);
+    if (slices === 1) {
+        return pick([
+            `Dip {buy|scoop} today: ${a} AFHO @ ${p} · ${u} USDC deployed · ${r} {still in|left in} the dip vault`,
+            `One dip {executed|fired} since the last update: ${a} AFHO @ ${p} · ${r} USDC {remains|left} in the dip vault`,
+            `{Bought|Picked up} ${a} AFHO @ ${p} on the dip · ${u} USDC in · ${r} USDC left in the vault`,
+        ]);
+    }
     return pick([
-        `Buy the dip: bought ${a} AFHO @ ${p} · ${r} USDC left in dip vault`,
-        `Dip buy {executed|fired}: ${a} AFHO @ ${p} · ${r} USDC {remains|left} in the dip vault`,
-        `{Bought|Picked up} ${a} AFHO @ ${p} on the dip · ${r} USDC {still in|left in} the dip vault`,
+        `Dip {digest|recap|report}: ${n} dip buys — ${a} AFHO @ ${p} avg · ${u} USDC deployed · ${r} {still in|left in} the dip vault`,
+        `Buy-the-dip {update|report}: ${n} slices fired · ${a} AFHO {scooped|picked up} @ ${p} avg · ${u} USDC spent · ${r} USDC left`,
+        `${n} dip buys since the last update — ${a} AFHO @ ${p} avg, ${u} USDC in · dip vault at ${r}`,
     ]);
 }
 
@@ -374,6 +421,19 @@ export function isNoonEtOrLater(now: Date = new Date()): boolean {
         }).format(now)
     );
     return hour >= 12;
+}
+
+// ET minutes-of-day (10:30 ET = 630). Host-TZ-independent like the helpers
+// above — the dip digest compares this against its daily random slot.
+export function etMinutesOfDay(now: Date = new Date()): number {
+    const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/New_York",
+        hour: "numeric",
+        minute: "2-digit",
+        hourCycle: "h23",
+    }).format(now); // "9:05" / "13:45"
+    const [h, m] = parts.split(":").map(Number);
+    return h * 60 + m;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -819,6 +879,20 @@ async function main(): Promise<void> {
     // restart never re-announces an old decay; the NEXT decay re-arms it.
     let floorAnnouncedRaw: number | null = null;
     let decayAnnouncedDate: string | null = null;
+    // Buy-the-dip digest (loop section 4): slices accumulate into a pending
+    // window; ONE digest per ET calendar day at a random minute inside the
+    // 10–11am / 1–3pm ET bands (re-rolled daily so the slot changes), only
+    // when ≥1 slice fired since the previous digest. A dip landing after
+    // today's slot but still inside a band re-rolls a fresh slot later
+    // today (the once-per-day cap stands). In-memory like the decay
+    // baseline: a mid-day restart forgets the pending window and re-rolls
+    // today's slot.
+    let dipPendingSlices = 0;
+    let dipPendingAfhoWhole = 0;
+    let dipPendingUsdcWhole = 0;
+    let dipAnnouncedDate: string | null = null;
+    let dipSlotDate = "";
+    let dipSlotMinute = -1;
     const etDate = (): string =>
         new Intl.DateTimeFormat("en-CA", {
             timeZone: "America/New_York",
@@ -1003,22 +1077,78 @@ async function main(): Promise<void> {
                     buybackSnapshot = null;
                 }
 
-                // ── 4: buy-the-dip slice fired ──────────────────────────────────────
+                // ── 4: buy-the-dip — randomized-slot daily digest ────────────────────
+                // Per-slice posts are gone: slices accumulate into a pending
+                // window and ONE digest fires per ET day, at a random minute
+                // inside the 10–11am / 1–3pm band, ONLY when at least one
+                // slice fired since the previous digest. AFHO bought is
+                // measured per-slice from the afho_vault delta (a claim or
+                // buyback slice in the same 60s poll window skews that
+                // slice's figure) — the same convention the old per-slice
+                // post used. dip_slice_count/dip_spent_usdc reset to 0 on
+                // day rollover, so a shrinking counter = day reset.
+                if (dipSlotDate !== etDate()) {
+                    dipSlotDate = etDate();
+                    dipSlotMinute = rollDipSlotMinute();
+                }
+                const sliceDelta =
+                    dipSliceCount >= prevDipSliceCount
+                        ? dipSliceCount - prevDipSliceCount
+                        : dipSliceCount;
+                const spentDelta =
+                    dipSpentUsdc >= prevDipSpentUsdc
+                        ? dipSpentUsdc - prevDipSpentUsdc
+                        : dipSpentUsdc;
+                if (sliceDelta > 0 || spentDelta > 0) {
+                    dipPendingSlices += Math.max(
+                        sliceDelta,
+                        spentDelta > 0 ? 1 : 0
+                    );
+                    dipPendingUsdcWhole += toWhole(spentDelta, usdcDecimals);
+                    const afhoDelta = afhoVaultRaw - prevAfhoVaultRaw;
+                    if (afhoDelta > 0) {
+                        dipPendingAfhoWhole += toWhole(
+                            afhoDelta,
+                            afhoDecimals
+                        );
+                    }
+                    // Dip fired after today's slot but still inside a band →
+                    // fresh random slot later today. Outside the bands the
+                    // pending window simply waits for tomorrow's slot.
+                    const etNow = etMinutesOfDay();
+                    const band = DIP_SLOT_BANDS.find(
+                        ([lo, hi]) => etNow >= lo && etNow < hi
+                    );
+                    if (
+                        dipAnnouncedDate !== etDate() &&
+                        band &&
+                        dipSlotMinute <= etNow
+                    ) {
+                        dipSlotMinute = rollDipSlotMinuteFrom(etNow, band[1]);
+                    }
+                }
                 if (
-                    dipSliceCount > prevDipSliceCount ||
-                    dipSpentUsdc > prevDipSpentUsdc
+                    (dipPendingSlices > 0 || dipPendingUsdcWhole > 0) &&
+                    dipAnnouncedDate !== etDate() &&
+                    etMinutesOfDay() >= dipSlotMinute
                 ) {
-                    const afhoBought = toWhole(
-                        afhoVaultRaw - prevAfhoVaultRaw,
-                        afhoDecimals
+                    const price =
+                        dipPendingAfhoWhole > 0
+                            ? dipPendingUsdcWhole / dipPendingAfhoWhole
+                            : 0;
+                    await announce(
+                        dipDigestMessage(
+                            dipPendingSlices,
+                            dipPendingAfhoWhole,
+                            dipPendingUsdcWhole,
+                            price,
+                            toWhole(usdcDipRaw, usdcDecimals)
+                        )
                     );
-                    const usdcSpent = toWhole(
-                        dipSpentUsdc - prevDipSpentUsdc,
-                        usdcDecimals
-                    );
-                    const price = afhoBought > 0 ? usdcSpent / afhoBought : 0;
-                    const dipRemaining = toWhole(usdcDipRaw, usdcDecimals);
-                    await announce(dipBuyMessage(afhoBought, price, dipRemaining));
+                    dipAnnouncedDate = etDate();
+                    dipPendingSlices = 0;
+                    dipPendingAfhoWhole = 0;
+                    dipPendingUsdcWhole = 0;
                 }
 
                 // ── 5: ratchet-floor decay — noon ET digest ─────────────

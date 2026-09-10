@@ -13,8 +13,15 @@ use super::raydium::cpmm_swap_base_input_ix;
 // into the bounty vault. Permissionless. Two pool hops, one atomic instruction
 // (the intermediate USDC lands in `usdc_vault` and leaves again within the same
 // instruction, so it is never observable by other transactions).
-const LOW_LAMPORTS: u64 = 200_000_000; // 0.2 SOL — only top up below this
-const TOPUP_AMOUNT: u64 = 400_000_000; // 0.4 SOL added each top-up
+// Bounty vault sizing is denominated in bounty PAYMENTS (bounty_config's
+// bounty_usd_raw, USDC raw 6dp), not SOL: SOL's rising price kept shrinking a
+// fixed 0.2/0.4 SOL band into mis-sized top-ups, while a payment's SOL cost is
+// computed at collection time anyway. Refill by TOPUP_PAYMENTS payments when
+// the vault's USDC value has fallen to LOW_WATER_PAYMENTS payments or below
+// (10/10 → the vault oscillates ~10..20 payments, ≈ $7.50..$15 at a $0.75
+// bounty).
+const LOW_WATER_PAYMENTS: u128 = 10;
+const TOPUP_PAYMENTS: u128 = 10;
 
 #[derive(Accounts)]
 pub struct BountyTopUp<'info> {
@@ -31,6 +38,12 @@ pub struct BountyTopUp<'info> {
     /// CHECK: crank-oracle bounty vault PDA (lamports are topped up here)
     #[account(mut, seeds = [b"bounty_vault"], seeds::program = amm_state.crank_program, bump)]
     pub bounty_vault: AccountInfo<'info>,
+
+    /// CHECK: crank-oracle BountyConfig PDA — its bounty_usd_raw (u64 LE at
+    /// offset 48..56) sizes the top-up in payments. PDA-constrained under the
+    /// pinned crank program so a caller cannot fake the bounty size.
+    #[account(seeds = [b"bounty_config"], seeds::program = amm_state.crank_program, bump)]
+    pub bounty_config: AccountInfo<'info>,
 
     /// AFHO funding source (the treasury reserve).
     #[account(mut, address = amm_state.afho_vault)]
@@ -103,15 +116,6 @@ pub struct BountyTopUp<'info> {
 }
 
 pub fn handler(ctx: Context<BountyTopUp>) -> Result<()> {
-    let current = ctx.accounts.bounty_vault.lamports();
-    if current >= LOW_LAMPORTS {
-        msg!("bounty vault healthy ({} lamports)", current);
-        return Ok(());
-    }
-    // Top up BY 0.4 SOL (not TO a fixed balance) so the refill is constant and
-    // predictable regardless of how far the vault drained.
-    let needed = TOPUP_AMOUNT;
-
     let amm_state = &ctx.accounts.amm_state;
     let cpmm_program = amm_state.cpmm_program;
     let afho_pinned = amm_state.cpmm_pool_state != Pubkey::default();
@@ -177,6 +181,44 @@ pub fn handler(ctx: Context<BountyTopUp>) -> Result<()> {
     )
     .ok_or(ErrorCode::InvalidOracle)?;
     require!(sol_price > 0 && afho_price > 0, ErrorCode::InvalidOracle);
+
+    // ── Size the top-up in bounty PAYMENTS (USDC), not SOL ──
+    // BountyConfig layout (crank-oracle): disc(8) + authority(32) +
+    // bounty_amount(8) + bounty_usd_raw(8) → u64 LE at offset 48..56.
+    let cfg = ctx.accounts.bounty_config.try_borrow_data()?;
+    require!(cfg.len() >= 56, ErrorCode::InvalidPoolAccount);
+    let bounty_usd_raw = u64::from_le_bytes(cfg[48..56].try_into().unwrap()) as u128;
+    drop(cfg);
+    require!(bounty_usd_raw > 0, ErrorCode::ZeroAmount);
+
+    // Vault value in USDC raw: lamports × (usdc_raw × 1e12 / lamports) / 1e12.
+    let vault_usdc_raw = (ctx.accounts.bounty_vault.lamports() as u128)
+        .checked_mul(sol_price as u128)
+        .ok_or(ErrorCode::MathOverflow)?
+        .checked_div(1_000_000_000_000u128)
+        .ok_or(ErrorCode::MathOverflow)?;
+    // Healthy vault → cheap no-op (the keeper sims before sending, so this
+    // keeps the skip path free of a spent transaction).
+    if vault_usdc_raw > LOW_WATER_PAYMENTS.saturating_mul(bounty_usd_raw) {
+        msg!(
+            "bounty vault healthy: {} raw USDC ≈ {} payments (low water {})",
+            vault_usdc_raw,
+            vault_usdc_raw / bounty_usd_raw.max(1),
+            LOW_WATER_PAYMENTS
+        );
+        return Ok(());
+    }
+    // Top up BY TOPUP_PAYMENTS payments (not TO a fixed balance) so the refill
+    // is constant regardless of how far the vault drained. Convert the refill
+    // to lamports at the pinned pool's SOL price: the wSOL lands via the
+    // USDC hop below; the 25bps input-leg fee is paid out of the swap itself.
+    let needed = (TOPUP_PAYMENTS
+        .checked_mul(bounty_usd_raw)
+        .ok_or(ErrorCode::MathOverflow)?
+        .checked_mul(1_000_000_000_000u128)
+        .ok_or(ErrorCode::MathOverflow)?
+        .checked_div(sol_price as u128)
+        .ok_or(ErrorCode::MathOverflow)?) as u64;
 
     // USDC needed to buy `needed` wSOL (25bps input fee on the SOL/USDC leg).
     let usdc_needed = (needed as u128)
@@ -358,9 +400,10 @@ pub fn handler(ctx: Context<BountyTopUp>) -> Result<()> {
     ))?;
 
     msg!(
-        "bounty topped up: sold {} AFHO → {} SOL",
+        "bounty topped up: sold {} AFHO → ≈{} lamports ({} payments worth)",
         afho_in,
-        needed
+        needed,
+        TOPUP_PAYMENTS
     );
     Ok(())
 }
