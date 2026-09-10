@@ -884,6 +884,7 @@ async function main(): Promise<void> {
             const dipSpentUsdc = num(ammState.dipSpentUsdc);
             const dipSliceCount = ammState.dipSliceCount as number;
             const offerDay = num(offerList.dayIndex);
+            const floorRaw = num(ammState.highestBuybackBasis);
 
             // Buyback baseline: prefer the freshest pre-open afho_vault read when we
             // first see a day-start open (1→0 or 2→0 — the same pair the crank
@@ -1019,10 +1020,39 @@ async function main(): Promise<void> {
                     const dipRemaining = toWhole(usdcDipRaw, usdcDecimals);
                     await announce(dipBuyMessage(afhoBought, price, dipRemaining));
                 }
+
+                // ── 5: ratchet-floor decay — noon ET digest ─────────────
+                // The floor never moves down except via calc_completed_offers
+                // decay (fills ratchet it up), so floor < last-announced floor
+                // = a decay happened. Held for the noon slot: decays land at
+                // the day-start transition (~9:30 ET on mainnet) and the
+                // digest posts them at the first poll at-or-after 12:00 ET,
+                // once per ET calendar day. Ratchets upward move the baseline
+                // silently so the next decay measures from the true peak.
+                if (floorAnnouncedRaw === null) floorAnnouncedRaw = floorRaw;
+                if (floorRaw > floorAnnouncedRaw) floorAnnouncedRaw = floorRaw;
+                if (
+                    floorRaw < floorAnnouncedRaw &&
+                    isNoonEtOrLater() &&
+                    decayAnnouncedDate !== etDate()
+                ) {
+                    await announce(
+                        floorDecayMessage(
+                            Number(floorAnnouncedRaw) / 1e9,
+                            Number(floorRaw) / 1e9
+                        )
+                    );
+                    decayAnnouncedDate = etDate();
+                    floorAnnouncedRaw = floorRaw;
+                }
             }
 
             // ── advance cross-poll memory ──────────────────────────────────────────
             if (!initialized) {
+                // Decay digest seed: baseline = the live floor at startup, so
+                // a mid-session restart never re-announces an old decay; the
+                // NEXT decay (floor dropping below this baseline) re-arms it.
+                floorAnnouncedRaw = floorRaw;
                 // Restart seed: treat the desk as already-announced ONLY if it
                 // is live AND currently passing the discount gate — a mid-
                 // session restart must not re-tweet, but a desk sitting below

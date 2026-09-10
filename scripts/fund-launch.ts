@@ -12,7 +12,6 @@ import {
     createSetAuthorityInstruction,
     AuthorityType,
 } from "@solana/spl-token";
-import { createUpdateAuthorityInstruction as _unusedMetadataRevoke } from "@solana/spl-token-metadata";
 import { readDeploymentState } from "./deployment-state";
 
 // fund-launch.ts — launch phase 2: THE one supply transaction. Run AFTER

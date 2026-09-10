@@ -81,9 +81,9 @@ async function main() {
     const metadata: TokenMetadata = {
         mint: mint.publicKey,
         name: 'After Hours',
-        symbol: 'AFHO9-8',
-        uri: 'https://copper-quick-koi-488.mypinata.cloud/ipfs/bafkreibzpsjq7c2hqogq2ukdz4wbadv75v5rdy2xgzgo56iie6agef5xhe',
-        additionalMetadata: [['description', 'a token bound by the hours of Wall Street']],
+        symbol: 'AFHO',
+        uri: 'https://copper-quick-koi-488.mypinata.cloud/ipfs/bafkreidihrqkabs3ic7tx4ek7kpnbcbvdnx5bwxri3ji3g6sh7jkkkxlwa',
+        additionalMetadata: [['description', 'defi token bound by tradfi hours']],
     };
     const metadataLen = pack(metadata).length + TYPE_SIZE + LENGTH_SIZE;
     const mintLen = getMintLen([ExtensionType.MetadataPointer]);
