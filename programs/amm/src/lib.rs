@@ -127,6 +127,43 @@ pub mod amm {
     pub fn buy_the_dip(ctx: Context<BuyTheDip>) -> Result<()> {
         buy_the_dip::handler(ctx)
     }
+
+    // Alt desk sheet post: a second, fixed-terms bond sheet (exactly 5% of
+    // the bond vault; big −5%/med −4%/sml −3% off live price at claim time;
+    // 7/4/3-day vesting) that the keeper posts ONLY while the market-status
+    // feed reports the suspended state (3), at most ONE sheet per trading
+    // day. Deliberately a separate instruction family: the night desk's
+    // quote_claim pricing, ratchet floor and above-spot gate are untouched,
+    // and alt fills never touch the metrics (accepted_offers / demand-keep
+    // / ratchet are blind to this desk).
+    pub fn make_alt_offers(ctx: Context<MakeAltOffers>) -> Result<()> {
+        alt_offers::handler_make(ctx)
+    }
+
+    // Alt desk taking instruction (USDC): valid ONLY while the suspended
+    // state holds — any 3→(0|1|2) transition retires the sheet. Payment
+    // splits 80/10/10 exactly like the night desk; purchased AFHO goes
+    // directly into a vesting StakePosition via CPI.
+    pub fn alt_offer_claim(
+        ctx: Context<AltOfferClaim>,
+        tier: u8,
+        units: u32,
+        index: u64,
+    ) -> Result<()> {
+        alt_offers::handler_claim(ctx, tier, units, index)
+    }
+
+    // Alt desk taking instruction (SOL): the USDC-terms cost is charged in
+    // lamports and swapped to USDC on the pinned SOL/USDC pool, then splits
+    // 80/10/10 into the USDC buyback / dip / staker-rewards vaults.
+    pub fn alt_offer_claim_sol(
+        ctx: Context<AltOfferClaimSol>,
+        tier: u8,
+        units: u32,
+        index: u64,
+    ) -> Result<()> {
+        alt_offers::handler_claim_sol(ctx, tier, units, index)
+    }
 }
 #[derive(Accounts)]
 pub struct CompletedOffers<'info> {

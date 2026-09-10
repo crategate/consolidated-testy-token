@@ -16,9 +16,15 @@
 //   5. Monday market open (open + fee + % supply staked + bond vault remaining)
 //   6. Ratchet-floor decay digest — the bond offer floor decayed (old → new
 //       floor + % change). NOT posted when the cut lands: decays fire at the
-//       day-start transition, and the digest holds them for the first poll at
-//       or after 12:00 ET, once per ET calendar day. Ratchets (floor moving
-//       up on buyback fills) shift the baseline silently.
+//       day-start transition, and the digest holds for a RANDOM minute inside
+//       the 12:00–13:00 ET window (re-rolled daily), once per ET calendar
+//       day. Ratchets (floor moving up on buyback fills) shift the baseline
+//       silently.
+//   7. Alt-sheet window — the second, fixed-terms sheet the keeper posts in
+//       the suspended market state. Announced ONCE per trading day, 5 minutes
+//       AFTER the window opens (and only if it is still open at post time —
+//       an early close posts nothing, by design). Copy is deliberately
+//       oblique: no state names, no sale jargon.
 //
 // All post copy lives in the MESSAGE DEFINITIONS block at the top of this
 // file. Copy supports SEO-style "text spinning": {a|b|c} groups pick one
@@ -67,6 +73,10 @@ dotenv.config();
 
 
 export const DEVNET_PREFIX = "devnet testing: ";
+
+// Alt-sheet announcement delay: the window is announced 5 minutes AFTER it
+// opens (and only if it is still open at post time).
+const ALT_ANNOUNCE_DELAY_MS = 5 * 60 * 1000;
 
 // crank-oracle market-status mapping (0=open, 1=after-hours, 2=closed, 3=halted).
 const MARKET_NAMES: Record<number, string> = {
@@ -367,6 +377,42 @@ export function floorDecayMessage(oldFloorUsd: number, newFloorUsd: number): str
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// 7. Alt-sheet window (suspended state only). Announced once per trading
+// day, 5 minutes after the window opens, and only while the window is
+// still open at post time. Copy is deliberately oblique — no state names,
+// no sale jargon; the tier lines carry the concrete terms.
+export function altSheetMessage(tiers: {
+    big: TierLine & { left: number; total: number };
+    med: TierLine & { left: number; total: number };
+    sml: TierLine & { left: number; total: number };
+}): string {
+    const altLine = (
+        name: string,
+        t: TierLine & { left: number; total: number }
+    ) =>
+        `${name}: ${t.left} of ${t.total} × ${formatWhole(t.size)} AFHO @ ${t.discountPct.toFixed(1)}% {under market|off live price} · ${t.vestingDays}d {unlock|vest}`;
+    const lines: string[] = [
+        pick([
+            `Something {rare|unusual} just {hit|landed on} the bond desk 👀 — a {limited|one-off} sheet is live, {3–5%|3 to 5 percent} {under market|off live price}, {short|quick} {unlock|vesting}. When it's gone, it's gone.`,
+            `{Rare drop|Special window}: the desk just listed a {one-time|limited} bond sheet at {3–5%|3 to 5 percent} {under market|off the live price} — {no schedule|no warning}, {no reruns today|gone when the window closes}.`,
+            `The desk just opened a {side window|second shelf}: bonds at {3–5%|3 to 5 percent} {under market|off live}, {3–7|3 to 7} day {unlock|vesting}. {First come|Fastest hands} win.`,
+        ]),
+    ];
+    if (tiers.big.total > 0) lines.push(altLine("Big", tiers.big));
+    if (tiers.med.total > 0) lines.push(altLine("Med", tiers.med));
+    if (tiers.sml.total > 0) lines.push(altLine("Sml", tiers.sml));
+    return lines.join("\n");
+}
+
+// Decay digest window: the digest lands at a random minute inside
+// 12:00–13:00 ET ("around noon", re-rolled daily so the exact time moves).
+const DECAY_SLOT_BAND: [number, number] = [12 * 60, 13 * 60];
+
+export function rollDecaySlotMinute(): number {
+    const [lo, hi] = DECAY_SLOT_BAND;
+    return lo + Math.floor(Math.random() * (hi - lo));
+}
+
 // CONFIG & CREDENTIALS
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -409,19 +455,8 @@ export function isMondayEt(now: Date = new Date()): boolean {
     return parts === "Mon";
 }
 
-// True once the ET clock has reached noon (12:00 America/New_York) for the
-// current day. Host-TZ-independent like isMondayEt — the decay digest holds
-// until this flips, so a 9:30 ET day-start cut posts ~12:00 ET, not instantly.
-export function isNoonEtOrLater(now: Date = new Date()): boolean {
-    const hour = Number(
-        new Intl.DateTimeFormat("en-US", {
-            timeZone: "America/New_York",
-            hour: "numeric",
-            hourCycle: "h23",
-        }).format(now)
-    );
-    return hour >= 12;
-}
+// (retired: the decay digest now uses a randomized daily slot — see
+// rollDecaySlotMinute / etMinutesOfDay)
 
 // ET minutes-of-day (10:30 ET = 630). Host-TZ-independent like the helpers
 // above — the dip digest compares this against its daily random slot.
@@ -527,8 +562,11 @@ function postTweet(text: string): Promise<void> {
 }
 
 // Post to every enabled channel with the SAME text — the template is spun
-// once per event, so X and Telegram always mirror each other.
-async function announce(text: string): Promise<void> {
+// once per event, so X and Telegram always mirror each other. `silent` opts
+// the post out of Telegram push notifications (X has no equivalent): routine
+// state changes post silently so the notable events actually ping phones.
+async function announce(text: string, opts?: { silent?: boolean }): Promise<void> {
+    const silent = opts?.silent ?? false;
     const body = spin(DEVNET_MODE ? DEVNET_PREFIX + text : text);
 
     // Channels are independent: a failure on one (rate limit, revoked
@@ -555,8 +593,8 @@ async function announce(text: string): Promise<void> {
             console.log(`[dry-run][tg] would post:\n${body}\n`);
         } else {
             try {
-                await sendTelegram(body);
-                console.log(`[tg] ${body.replace(/\n/g, " ")}`);
+                await sendTelegram(body, silent);
+                console.log(`[tg]${silent ? " (silent)" : ""} ${body.replace(/\n/g, " ")}`);
             } catch (e) {
                 console.error(`!! [tg] post failed: ${(e as Error).message}`);
             }
@@ -651,12 +689,13 @@ async function initTelegram(): Promise<void> {
     }
 }
 
-async function sendTelegram(text: string): Promise<void> {
+async function sendTelegram(text: string, silent = false): Promise<void> {
     await telegramApi("sendMessage", {
         chat_id: TELEGRAM_CHANNEL_ID,
         text: escapeHtml(text),
         parse_mode: "HTML",
         disable_web_page_preview: true,
+        disable_notification: silent,
     });
 }
 
@@ -827,6 +866,12 @@ async function main(): Promise<void> {
         [Buffer.from("market_status")],
         crankProgramId
     );
+    // Alt desk sheet (same OfferList layout, separate PDA) — read lazily at
+    // post time; the fetch throws while the account doesn't exist yet.
+    const [altListPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("alt_offer_list"), afhoMint.toBuffer()],
+        ammProgramId
+    );
 
     // Token decimals are immutable; resolve once.
     const ammState0 = await (ammProgram.account as any).ammState.fetch(
@@ -893,6 +938,13 @@ async function main(): Promise<void> {
     let dipAnnouncedDate: string | null = null;
     let dipSlotDate = "";
     let dipSlotMinute = -1;
+    // Decay digest slot: randomized daily inside 12:00–13:00 ET (replaces
+    // the old "first poll at-or-after noon" — same batching, moving time).
+    let decaySlotDate = "";
+    let decaySlotMinute = -1;
+    // Alt-sheet window: one announcement per trading day, scheduled 5
+    // minutes after the window opens (see section 7 in the poll loop).
+    let haltAnnouncedDay = -1;
     const etDate = (): string =>
         new Intl.DateTimeFormat("en-CA", {
             timeZone: "America/New_York",
@@ -1003,14 +1055,63 @@ async function main(): Promise<void> {
                                 feeLabel,
                                 stakePct,
                                 toWhole(afhoVaultRaw, afhoDecimals)
-                            )
+                            ),
+                            { silent: true }
                         );
                     } else if (dayStartedOpen) {
                         // Morning open is a real daily event — announce it.
-                        await announce(marketStateMessage(state, feeLabel));
+                        await announce(marketStateMessage(state, feeLabel), {
+                            silent: true,
+                        });
                     } else if (state === 3) {
                         // Halts are safety-relevant — announce the change.
-                        await announce(marketStateMessage(state, feeLabel));
+                        await announce(marketStateMessage(state, feeLabel), {
+                            silent: true,
+                        });
+                        // ── 7: alt-sheet window — 5-minute delayed post ──
+                        // Scheduled the moment the window opens; the post
+                        // itself re-reads the market state and only fires if
+                        // the window is STILL open (an early close posts
+                        // nothing — no end-of-window announcement, by
+                        // design). Latched once per trading day at schedule
+                        // time, so window flaps never double-post. A
+                        // mid-window restart seeds silently (never
+                        // re-announces), same rule as every other latch.
+                        if (haltAnnouncedDay !== marketDay) {
+                            haltAnnouncedDay = marketDay;
+                            setTimeout(async () => {
+                                try {
+                                    const status = await (
+                                        crankProgram.account as any
+                                    ).marketStatus.fetch(marketStatusPda);
+                                    if ((status.currentState as number) !== 3)
+                                        return;
+                                    const day = num(status.tradingDayIndex);
+                                    const alt = await (
+                                        ammProgram.account as any
+                                    ).offerList.fetch(altListPda);
+                                    if (num(alt.dayIndex) !== day) return;
+                                    const empty =
+                                        num(alt.bigOffer.totalOffered) === 0 &&
+                                        num(alt.medOffer.totalOffered) === 0 &&
+                                        num(alt.smlOffer.totalOffered) === 0;
+                                    if (empty) return;
+                                    const sheet = buildSheet(alt);
+                                    await announce(
+                                        altSheetMessage({
+                                            big: { ...sheet.big, left: num(alt.bigOffer.remaining), total: num(alt.bigOffer.totalOffered) },
+                                            med: { ...sheet.med, left: num(alt.medOffer.remaining), total: num(alt.medOffer.totalOffered) },
+                                            sml: { ...sheet.sml, left: num(alt.smlOffer.remaining), total: num(alt.smlOffer.totalOffered) },
+                                        })
+                                    );
+                                } catch (e) {
+                                    // No sheet account yet / transient RPC —
+                                    // the window stays unannounced rather
+                                    // than late.
+                                    console.error(`!! alt-sheet post failed: ${(e as Error).message}`);
+                                }
+                            }, ALT_ANNOUNCE_DELAY_MS);
+                        }
                     }
                     // States 1 and 2 stay SILENT here: the night desk speaks
                     // through its own announcements (sheet post below, or the
@@ -1151,20 +1252,25 @@ async function main(): Promise<void> {
                     dipPendingUsdcWhole = 0;
                 }
 
-                // ── 5: ratchet-floor decay — noon ET digest ─────────────
+                // ── 5: ratchet-floor decay — randomized noon digest ─────
                 // The floor never moves down except via calc_completed_offers
                 // decay (fills ratchet it up), so floor < last-announced floor
-                // = a decay happened. Held for the noon slot: decays land at
-                // the day-start transition (~9:30 ET on mainnet) and the
-                // digest posts them at the first poll at-or-after 12:00 ET,
-                // once per ET calendar day. Ratchets upward move the baseline
+                // = a decay happened. Held for a RANDOM minute inside the
+                // 12:00–13:00 ET band (re-rolled daily): decays land at the
+                // day-start transition (~9:30 ET on mainnet) and the digest
+                // batches them to lunch at a time that moves day to day, once
+                // per ET calendar day. Ratchets upward move the baseline
                 // silently so the next decay measures from the true peak.
+                if (decaySlotDate !== etDate()) {
+                    decaySlotDate = etDate();
+                    decaySlotMinute = rollDecaySlotMinute();
+                }
                 if (floorAnnouncedRaw === null) floorAnnouncedRaw = floorRaw;
                 if (floorRaw > floorAnnouncedRaw) floorAnnouncedRaw = floorRaw;
                 if (
                     floorRaw < floorAnnouncedRaw &&
-                    isNoonEtOrLater() &&
-                    decayAnnouncedDate !== etDate()
+                    decayAnnouncedDate !== etDate() &&
+                    etMinutesOfDay() >= decaySlotMinute
                 ) {
                     await announce(
                         floorDecayMessage(

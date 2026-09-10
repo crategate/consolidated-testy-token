@@ -49,3 +49,8 @@ pub use distribute_staker_rewards::*;
 // Raw Raydium CPMM adapter + TWAP oracle (not an instruction module).
 pub mod raydium;
 pub use raydium::*;
+
+// Alt desk: fixed-terms second sheet, state-3 only. Appended LAST so the
+// module's error enum extends (never shifts) the program's error codes.
+pub mod alt_offers;
+pub use alt_offers::*;

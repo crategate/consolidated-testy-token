@@ -63,6 +63,7 @@ export function useOfferClaim(
     accounts: ClaimAccounts | null,
     solAccounts: SolClaimAccounts | null,
     usdcDecimals: number,
+    altMode = false,
 ): UseOfferClaimReturn {
     const { connection } = useConnection();
     const { wallet } = useWallet();
@@ -160,15 +161,30 @@ export function useOfferClaim(
             // message instead of a raw simulation error.
             const statusInfo = await connection.getAccountInfo(accounts.marketStatus);
             const onChainState = statusInfo && statusInfo.data.length >= 9 ? statusInfo.data[8] : 99;
-            if (onChainState !== 1 && onChainState !== 2) {
+            if (altMode) {
+                // Alt desk: claimable ONLY in the suspended state (3) — the
+                // mirror of alt_offers::quote_alt_claim's NotActive gate.
+                if (onChainState !== 3) {
+                    throw new Error(
+                        'This offer window just closed — it only exists while the market is suspended. '
+                    );
+                }
+            } else if (onChainState !== 1 && onChainState !== 2) {
                 throw new Error(
                     `The desk just closed (market state ${onChainState}) — offers are claimable in ` +
                         'after-hours (1) and closed (2) sessions only. Try again once the state cycles back.'
                 );
             }
+            // Alt desk uses its own sheet account (same layout, separate PDA).
+            const sheetKey = altMode
+                ? PublicKey.findProgramAddressSync(
+                      [Buffer.from('alt_offer_list'), accounts.afhoMint.toBuffer()],
+                      program.programId,
+                  )[0]
+                : accounts.offerList;
             const freshSheet = (await (program.account as unknown as {
                 offerList: { fetch: (key: PublicKey) => Promise<unknown> };
-            }).offerList.fetch(accounts.offerList)) as unknown as Record<string, unknown>;
+            }).offerList.fetch(sheetKey)) as unknown as Record<string, unknown>;
             const tierNames = ['sml', 'med', 'big'] as const;
             for (const s of active) {
                 const name = tierNames[s.tier];
@@ -243,13 +259,18 @@ export function useOfferClaim(
                 );
                 if (currency === 'usdc') {
                     const buyerUsdc = getAssociatedTokenAddressSync(accounts.usdcMint, buyer, false, TOKEN_PROGRAM_ID);
+                    const claimMethod = altMode
+                        ? program.methods.altOfferClaim(tier, units, new BN(index.toString()))
+                        : program.methods.offerClaim(tier, units, new BN(index.toString()));
                     tx.add(
-                        await program.methods
-                            .offerClaim(tier, units, new BN(index.toString()))
+                        await claimMethod
                             .accounts({
                                 buyer,
                                 ammState: accounts.ammState,
-                                offerList: accounts.offerList,
+                                // Alt desk claims read the alt sheet account.
+                                ...(altMode
+                                    ? { altList: sheetKey }
+                                    : { offerList: accounts.offerList }),
                                 afhoMint: accounts.afhoMint,
                                 usdcMint: accounts.usdcMint,
                                 marketStatus: accounts.marketStatus,
@@ -277,12 +298,17 @@ export function useOfferClaim(
                     if (!sol) {
                         throw new Error('SOL payments need the SOL/USDC pool pinned — run anchor run set-sol-usdc-pool.');
                     }
-                    const solIx = await program.methods
-                        .offerClaimSol(tier, units, new BN(index.toString()))
+                    const solMethod = altMode
+                        ? program.methods.altOfferClaimSol(tier, units, new BN(index.toString()))
+                        : program.methods.offerClaimSol(tier, units, new BN(index.toString()));
+                    const solIx = await solMethod
                         .accounts({
                             buyer,
                             ammState: accounts.ammState,
-                            offerList: accounts.offerList,
+                            // Alt desk claims read the alt sheet account.
+                            ...(altMode
+                                ? { altList: sheetKey }
+                                : { offerList: accounts.offerList }),
                             afhoMint: accounts.afhoMint,
                             usdcMint: accounts.usdcMint,
                             marketStatus: accounts.marketStatus,

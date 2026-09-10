@@ -30,9 +30,13 @@ const PERCENT_STEPS = [25, 50, 75, 100] as const;
 const PRICE_STALE_MS = 90_000;
 const PRICE_AGE_TICK_MS = 5_000;
 
-function deskMessage(state: number | null, sheetStale: boolean, offersLive: boolean): string {
+function deskMessage(state: number | null, sheetStale: boolean, offersLive: boolean, altActive: boolean): string {
+    if (state === 3) {
+        // The alt window replaces the regular desk message while it's live.
+        if (altActive) return '';
+        return 'Offer desk is paused while the market is suspended.';
+    }
     if (state === 0) return 'Desk opens after market close — check back at the end of the trading day.';
-    if (state === 3) return 'Market halted — the offer desk is closed.';
     if (state === 1 || state === 2) {
         if (sheetStale) return "Tonight's offer sheet hasn't posted yet — check back shortly after close.";
         if (!offersLive) return "No offers on tonight's sheet — check back at the end of the next trading day.";
@@ -44,10 +48,14 @@ export default function OfferLists() {
     const data = useAmmData();
     const { connected, publicKey } = useWallet();
     const { connection } = useConnection();
+    // Alt mode rides the same claim machinery: when the alt window is live
+    // the hook routes to alt_offer_claim / alt_offer_claim_sol (alt sheet
+    // account, state-3 gate) instead of the night-desk instructions.
     const { claim, status, txSig, error: claimError, reset } = useOfferClaim(
         data.accounts,
         data.solAccounts,
         data.usdcDecimals,
+        data.altActive,
     );
     const { setVisible } = useWalletModal();
     const [quantities, setQuantities] = useState<Record<string, number>>({ big: 0, med: 0, sml: 0 });
@@ -317,14 +325,19 @@ export default function OfferLists() {
         setQuantities(best);
     };
 
-    const closedMessage = deskMessage(data.marketState, data.sheetStale, data.offersLive);
+    const closedMessage = deskMessage(data.marketState, data.sheetStale, data.offersLive, data.altActive);
 
-    // Tiles exist only inside the desk's night window with tonight's sheet
-    // posted. Market open / halted (or a stale sheet) = desk closed → tiles
-    // hidden. Sold out during the night = tiles stay up, greyed via each
-    // tier's sold-out state (remaining reads 0 / N).
-    const night = data.marketState === 1 || data.marketState === 2;
-    const showTiles = night && !data.sheetStale && data.tiers.length > 0;
+    // Tiles exist inside the desk's night window with tonight's sheet posted,
+    // OR while the alt window is live (state 3 + today's alt sheet — tiers
+    // then come from the alt sheet via useAmmData's display override).
+    // Market open / a stale sheet = desk closed → tiles hidden. Sold out
+    // during the night = tiles stay up, greyed via each tier's sold-out
+    // state (remaining reads 0 / N).
+    const night = data.marketState === 1 || data.marketState === 2 || data.altActive;
+    const showTiles =
+        night &&
+        (data.altActive || (data.marketState !== 3 && !data.sheetStale)) &&
+        data.tiers.length > 0;
 
     const displayCost = totalLots > 0 && priceKnown
         ? currency === 'usdc'

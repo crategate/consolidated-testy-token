@@ -86,6 +86,16 @@ export function deriveOfferListPda(mint: PublicKey, ammProgram = AMM_PROGRAM_ID)
     )[0];
 }
 
+/** Alt desk sheet (fixed-terms second sheet, suspended state only). Same
+ *  OfferList layout, separate deterministic PDA — derived directly, so the
+ *  client can reference it before the account exists on-chain. */
+export function deriveAltOfferListPda(mint: PublicKey, ammProgram = AMM_PROGRAM_ID) {
+    return PublicKey.findProgramAddressSync(
+        [Buffer.from('alt_offer_list'), mint.toBuffer()],
+        ammProgram,
+    )[0];
+}
+
 export function derivePoolPda(mint: PublicKey) {
     return PublicKey.findProgramAddressSync(
         [Buffer.from('pool'), mint.toBuffer()],

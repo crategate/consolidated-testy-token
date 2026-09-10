@@ -68,6 +68,9 @@ async function main() {
         )[0];
     const ammStatePda = ammPda("amm_state");
     const offerListPda = ammPda("offer_list");
+    // Alt desk sheet (state-3 second bond sheet). Created lazily on-chain;
+    // the PDA is deterministic so the keeper can pass it pre-creation.
+    const altListPda = ammPda("alt_offer_list");
     const metricsPda = ammPda("metrics");
     const acceptedOffersPda = ammPda("accepted_offers");
 
@@ -622,6 +625,48 @@ async function main() {
                     } catch (e) {
                         // Never let an offer-sheet failure kill the crank loop
                         console.error(`${evc(ANSI.red, "!! end-of-day AMM sequence failed")}${e}`);
+                    }
+                }
+
+                // The alt desk: a →3 transition (from ANY state) posts the
+                // second, fixed-terms sheet. One sheet per trading day is
+                // enforced on-chain (alt_list.day_index cooldown); the
+                // "already posted today" simulation failure is normal noise
+                // when a halt flaps. Never let it kill the loop.
+                const haltStarted = newStatus.currentState === 3 && prevState !== 3;
+                if (haltStarted) {
+                    console.log(`${ev(ANSI.brightYellow, "Alt sheet window")} (${prevState} → 3). Firing make_alt_offers...`);
+                    try {
+                        const altStateForSheet = await (ammProgram.account as any).ammState.fetch(ammStatePda);
+                        const altOffersIx = await ammProgram.methods
+                            .makeAltOffers()
+                            .accountsStrict({
+                                cranker: keypair.publicKey,
+                                ammState: ammStatePda,
+                                altList: altListPda,
+                                marketStatus: marketStatusPda,
+                                afhoMint: afhoMint,
+                                afhoVault: new PublicKey(deployment.ammAfhoVault),
+                                systemProgram: anchor.web3.SystemProgram.programId,
+                            })
+                            .instruction();
+                        const altTx = await sb.asV0Tx({
+                            connection,
+                            ixs: [altOffersIx],
+                            signers: [keypair],
+                            computeUnitPrice: 20_000,
+                        });
+                        const altSim = await connection.simulateTransaction(altTx);
+                        if (altSim.value.err) {
+                            console.error(`${evc(ANSI.red, "make_alt_offers simulation failed (already posted today?)")}${altSim.value.err}`);
+                        } else {
+                            const altSig = await connection.sendTransaction(altTx);
+                            await connection.confirmTransaction(altSig, "confirmed");
+                            console.log(`${ev(ANSI.cyan, "make_alt_offers fired!")} ${altSig}`);
+                        }
+                    } catch (e) {
+                        // Never let an alt-sheet failure kill the crank loop
+                        console.error(`${evc(ANSI.red, "!! alt sheet sequence failed")}${e}`);
                     }
                 }
 

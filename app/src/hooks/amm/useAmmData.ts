@@ -95,6 +95,11 @@ export interface OfferDeskData {
     deskOpen: boolean;
     sheetStale: boolean;
     offersLive: boolean;
+    /** Alt desk (suspended state only): the fixed-terms sheet, its day, and
+     *  whether the window is live right now (state 3 + today's sheet + lots
+     *  left). Mirrors alt_offers::quote_alt_claim's gate. */
+    altActive: boolean;
+    altSheetDay: number | null;
     accounts: ClaimAccounts | null;
     solAccounts: SolClaimAccounts | null;
     loading: boolean;
@@ -247,6 +252,7 @@ export function useAmmData(): OfferDeskData {
         deployment,
         ammState,
         offerList,
+        altList,
         marketStatus,
         livePrice,
         livePriceUpdatedAt,
@@ -312,6 +318,26 @@ export function useAmmData(): OfferDeskData {
     const sheetStale = sheetDay !== null && tradingDay !== null && sheetDay !== tradingDay;
     const deskOpen = nightGate && offersLive && !sheetStale;
 
+    // Alt desk (suspended state, 3): fixed-terms sheet — big −5% / med −4% /
+    // sml −3% off LIVE price at claim time, 7/4/3-day vesting (mirrors
+    // alt_offers::quote_alt_claim; NO ratchet floor, NO bonus, NO above-spot
+    // gate — every tier prices strictly below live by construction). The
+    // regular sheet is hidden while the alt window is live.
+    const { altTiers, altSheetDay, altOffersLive } = useMemo(() => {
+        if (!altList) return { altTiers: [], altSheetDay: null, altOffersLive: false };
+        const list = [
+            parseTier('big', 2, 'Bulk lot', field(altList, 'bigOffer', 'big_offer')),
+            parseTier('med', 1, 'Medium lot', field(altList, 'medOffer', 'med_offer')),
+            parseTier('sml', 0, 'Small lot', field(altList, 'smlOffer', 'sml_offer')),
+        ];
+        const day = Number(big(field(altList, 'dayIndex', 'day_index')));
+        const live = list.some((t) => t.remaining > 0);
+        return { altTiers: list, altSheetDay: day, altOffersLive: live };
+    }, [altList]);
+
+    const altWindowOpen = marketState === 3 && altSheetDay !== null && tradingDay !== null && altSheetDay === tradingDay;
+    const altActive = altWindowOpen && altOffersLive;
+
     const accounts = useMemo(() => {
         if (!ammState || !ammStatePda || !offerListPda || !marketStatusPda || !mint) return null;
         return deriveClaimAccounts(ammState, ammStatePda, offerListPda, marketStatusPda, mint);
@@ -350,11 +376,16 @@ export function useAmmData(): OfferDeskData {
     // to stay exact with the on-chain quote.
     const floorBasis = ammState ? big(field(ammState, 'highestBuybackBasis', 'highest_buyback_basis')) : 0n;
     const tiersDisplay = useMemo(() => {
+        // SUSPENDED-STATE OVERRIDE: while the alt window is live, the desk
+        // shows the alt sheet ONLY — the regular sheet is hidden (its
+        // on-chain claims are DeskClosed-gated in state 3 anyway). Alt tiers
+        // display their base discount as-is: no bonus exists on this desk.
+        if (altActive) return altTiers.map((t) => ({ ...t, bonusBps: 0 }));
         if (marketState === 2) {
             return tiers.map((t) => ({ ...t, bonusBps: Math.min(t.discountBps + 5, 255) - t.discountBps }));
         }
         return tiers;
-    }, [tiers, marketState]);
+    }, [tiers, altTiers, altActive, marketState]);
 
     return {
         tiers: tiersDisplay,
@@ -372,6 +403,8 @@ export function useAmmData(): OfferDeskData {
         deskOpen,
         sheetStale,
         offersLive,
+        altActive,
+        altSheetDay,
         accounts,
         solAccounts,
         loading,

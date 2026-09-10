@@ -17,6 +17,7 @@ import {
     decodeMarketStatus,
     decodeOfferList,
     decodePool,
+    deriveAltOfferListPda,
     deriveAmmStatePda,
     deriveMarketStatusPda,
     deriveOfferListPda,
@@ -164,6 +165,7 @@ export function ChainDataProvider({ children }: { children: ReactNode }) {
                 marketStatusPda: deriveMarketStatusPda(CRANK_PROGRAM_ID),
                 ammStatePda: null as PublicKey | null,
                 offerListPda: null as PublicKey | null,
+                altListPda: null as PublicKey | null,
                 poolPda: null as PublicKey | null,
             };
         }
@@ -177,11 +179,12 @@ export function ChainDataProvider({ children }: { children: ReactNode }) {
             marketStatusPda: deployment.marketStatusKey ?? deriveMarketStatusPda(crankProgram),
             ammStatePda: deriveAmmStatePda(deployment.mintKey, ammProgram),
             offerListPda: deriveOfferListPda(deployment.mintKey, ammProgram),
+            altListPda: deriveAltOfferListPda(deployment.mintKey, ammProgram),
             poolPda: derivePoolPda(deployment.mintKey),
         };
     }, [deployment]);
 
-    const { marketStatusPda, ammStatePda, offerListPda, poolPda } = derived;
+    const { marketStatusPda, ammStatePda, offerListPda, altListPda, poolPda } = derived;
 
     const enabled = !!connection && !!deployment && visible;
     // Subscriptions ride the chain data being known, not tab visibility:
@@ -202,9 +205,10 @@ export function ChainDataProvider({ children }: { children: ReactNode }) {
             poolPda?.toBase58() ?? '',
             ammStatePda?.toBase58() ?? '',
             offerListPda?.toBase58() ?? '',
+            altListPda?.toBase58() ?? '',
             mintKey,
         ],
-        [marketStatusPda, poolPda, ammStatePda, offerListPda, mintKey],
+        [marketStatusPda, poolPda, ammStatePda, offerListPda, altListPda, mintKey],
     );
 
     // Price accounts are derived from the PREVIOUS snapshot's AMM state
@@ -219,18 +223,19 @@ export function ChainDataProvider({ children }: { children: ReactNode }) {
             const mint = deployment.mintKey;
             const previousAmmState = lastAmmStateRef.current;
             const priceAccounts = previousAmmState ? derivePriceAccounts(previousAmmState, mint) : [];
-            const infos = await connection.getMultipleAccountsInfo(
+                const infos = await connection.getMultipleAccountsInfo(
                 [
                     marketStatusPda,
                     poolPda ?? PublicKey.default,
                     ammStatePda ?? PublicKey.default,
                     offerListPda ?? PublicKey.default,
+                    altListPda ?? PublicKey.default,
                     ...priceAccounts,
                 ],
                 'confirmed',
             );
 
-            const [marketStatusInfo, poolInfo, ammStateInfo, offerListInfo, ...priceInfos] = infos;
+            const [marketStatusInfo, poolInfo, ammStateInfo, offerListInfo, altListInfo, ...priceInfos] = infos;
 
             const ammState = ammStateInfo ? decodeAmmState(ammStateInfo.data) : null;
 
@@ -265,6 +270,7 @@ export function ChainDataProvider({ children }: { children: ReactNode }) {
                 pool: poolInfo ? decodePool(poolInfo.data) : null,
                 ammState,
                 offerList: offerListInfo ? decodeOfferList(offerListInfo.data) : null,
+                altList: altListInfo ? decodeOfferList(altListInfo.data) : null,
                 livePrice,
             };
         },
@@ -285,6 +291,7 @@ export function ChainDataProvider({ children }: { children: ReactNode }) {
     useAccountSubscription(poolPda, snapshotQueryKey, subscribe && !!poolPda);
     useAccountSubscription(ammStatePda, snapshotQueryKey, subscribe && !!ammStatePda);
     useAccountSubscription(offerListPda, snapshotQueryKey, subscribe && !!offerListPda);
+    useAccountSubscription(altListPda, snapshotQueryKey, subscribe && !!altListPda);
 
     /* Refresh — every domain key now lands on the single batched snapshot. */
     const refresh = useCallback(
@@ -332,6 +339,7 @@ export function ChainDataProvider({ children }: { children: ReactNode }) {
         ammStateLoading: snapshotQuery.isLoading,
         offerList: snapshot?.offerList ?? null,
         offerListLoading: snapshotQuery.isLoading,
+        altList: snapshot?.altList ?? null,
         livePrice: snapshot?.livePrice ?? { afhoUsdc: null, afhoPriceIsTwap: false, solUsdc: null, solPoolReserves: null },
         livePriceLoading: snapshotQuery.isLoading,
         livePriceUpdatedAt: snapshotQuery.dataUpdatedAt || null,

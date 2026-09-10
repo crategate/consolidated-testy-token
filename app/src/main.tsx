@@ -11,6 +11,7 @@ import './index.css';
 import App from './App';
 import { HomePageIndicator } from './components/amm/HomePageIndicator';
 import { StaleDataBanner } from './components/StaleDataBanner';
+import { SpotlightBanner } from './components/SpotlightBanner';
 import { ChainDataProvider } from './context/ChainDataProvider';
 
 // Route-level code splitting: each non-landing page (and its Solana-heavy
@@ -47,9 +48,14 @@ function Shell() {
         pathname.startsWith('/offer-desk/') ||
         pathname === '/records' ||
         pathname.startsWith('/records/');
+    // The spotlight bar rides every page EXCEPT the desk itself — the desk
+    // renders its own lit state while the same window is open.
+    const spotlight =
+        pathname !== '/offer-desk' && !pathname.startsWith('/offer-desk/');
     return (
         <>
             <StaleDataBanner />
+            {spotlight && <SpotlightBanner />}
             {!hideIndicator && <HomePageIndicator />}
             <Suspense
                 fallback={

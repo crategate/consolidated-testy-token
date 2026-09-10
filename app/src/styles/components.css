@@ -1390,3 +1390,96 @@ h3 {
     opacity: 0.5;
     cursor: default;
 }
+
+/* ── Full-width spotlight banner ──
+   Rendered by SpotlightBanner on every page except the offer desk while
+   the alt sheet window is live (market suspended + today's fixed-terms
+   sheet with lots left). Deliberately loud where the stall banner is
+   cautionary: violet/magenta, sparse flicker-out (never a constant pulse
+   — house rule), links to the desk. Copy ships obfuscated in the
+   component; nothing readable to grep here either. */
+.spotlight-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 140;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.9rem;
+    padding: 0.6rem 1.2rem;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    letter-spacing: 0.07em;
+    color: var(--neon-pink);
+    text-decoration: none;
+    background:
+        linear-gradient(90deg,
+            rgba(30, 0, 40, 0.94) 0%,
+            rgba(58, 0, 78, 0.94) 30%,
+            rgba(88, 0, 96, 0.94) 70%,
+            rgba(30, 0, 40, 0.94) 100%);
+    border-bottom: 1px solid rgba(255, 64, 200, 0.55);
+    box-shadow:
+        0 2px 22px rgba(255, 42, 109, 0.28),
+        0 0 42px rgba(170, 0, 255, 0.22);
+    backdrop-filter: blur(7px);
+    cursor: pointer;
+    animation: spotlightFlicker calc(var(--fx-border-cycle) * 7) infinite;
+}
+
+.spotlight-banner:hover {
+    color: #ffd6f5;
+    border-bottom-color: rgba(255, 64, 200, 0.85);
+}
+
+.spotlight-banner-copy em {
+    font-style: normal;
+    color: #ff9ce8;
+}
+
+.spotlight-banner-cta {
+    font-size: 0.9rem;
+    color: #ffb3f0;
+    text-shadow: 0 0 10px rgba(255, 64, 200, 0.7);
+}
+
+/* Intermittent flicker-OUT: mostly on, brief drops — the desk's lit
+   state uses the same grammar tuned gold (see AmmPage.css). */
+@keyframes spotlightFlicker {
+
+    0%,
+    38%,
+    41.5%,
+    82%,
+    100% {
+        opacity: 1;
+    }
+
+    39% {
+        opacity: 0.55;
+    }
+
+    39.8% {
+        opacity: 0.9;
+    }
+
+    40.4% {
+        opacity: 0.6;
+    }
+
+    84% {
+        opacity: 0.72;
+    }
+
+    84.6% {
+        opacity: 0.95;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .spotlight-banner {
+        animation: none;
+    }
+}

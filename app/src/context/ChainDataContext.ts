@@ -21,6 +21,10 @@ export interface ChainDataContextValue {
     ammStateLoading: boolean;
     offerList: OfferListData | null;
     offerListLoading: boolean;
+    /** Alt desk sheet — same layout as offerList, separate PDA. Null while
+     *  the account doesn't exist yet (created lazily by the first
+     *  make_alt_offers). */
+    altList: OfferListData | null;
     livePrice: LivePriceData;
     livePriceLoading: boolean;
     /** Last successful live-price fetch (ms epoch) — 0/null when never fetched. */

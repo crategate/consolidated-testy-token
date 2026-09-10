@@ -1276,3 +1276,127 @@
         padding: 20px 24px 40px;
     }
 }
+
+/* ═════════════════════════════════════════════════════════════════
+   Lit desk — the rare alt window (data-desk='lit').
+
+   Same effect grammar as the night desk, re-tuned to a gold / amber /
+   orange palette: the existing per-element shadows recolor via the
+   --card-glow-* and --shadow-* custom properties (no duplicate rules
+   to drift), a cornered backlit layer lands on MORE elements (market
+   badge, order bar, desk banner), and a dedicated sparse flicker-OUT
+   keyframe replaces the steady state — lit is intermittently brighter,
+   never a pulse, never a constant blink. reduced-motion strips it.
+   Names stay generic on purpose: nothing here says what triggers it.
+   ═════════════════════════════════════════════════════════════════ */
+
+.amm-page-shell[data-desk='lit'] {
+    /* gold-warm desk clock: brighter, slightly slower wander */
+    --desk-excitement: 1.8;
+    --desk-tempo: 1.7;
+    --lit-glow-a: #ffb300;
+    --lit-glow-b: #ff7a00;
+    --lit-glow-c: #ffd54f;
+    --lit-glow-soft: rgba(255, 179, 0, 0.45);
+    --lit-glow-deep: rgba(255, 122, 0, 0.28);
+}
+
+/* Recolor the per-tier card glows: every tier reads gold-family, only
+   the shade shifts per tier (deep amber → gold → bright yellow) so the
+   sheet still reads as three distinct tiers. */
+.amm-page-shell[data-desk='lit'] .offer-card[data-tier='0'] {
+    --card-glow-a: var(--lit-glow-a);
+    --card-glow-b: var(--lit-glow-b);
+    --card-glow-a-soft: var(--lit-glow-deep);
+}
+
+.amm-page-shell[data-desk='lit'] .offer-card[data-tier='1'] {
+    --card-glow-a: var(--lit-glow-c);
+    --card-glow-b: var(--lit-glow-a);
+    --card-glow-a-soft: var(--lit-glow-soft);
+}
+
+.amm-page-shell[data-desk='lit'] .offer-card[data-tier='2'] {
+    --card-glow-a: var(--lit-glow-c);
+    --card-glow-b: var(--lit-glow-b);
+    --card-glow-a-soft: rgba(255, 213, 79, 0.5);
+}
+
+/* Cornered backlit gold shadows on MORE elements — badge, order bar and
+   desk banner join the cards. Same maskless box-shadow grammar as
+   tierShadow* (edge-only, never through the glass). */
+.amm-page-shell[data-desk='lit'] .market-badge,
+.amm-page-shell[data-desk='lit'] .order-bar,
+.amm-page-shell[data-desk='lit'] .desk-banner {
+    position: relative;
+    animation: litCorneredShadow calc(var(--fx-desk-shadow-cycle) * 2.2) infinite;
+    animation-delay: var(--glitch-delay, 0.8s);
+}
+
+@keyframes litCorneredShadow {
+
+    0%,
+    30%,
+    33%,
+    72%,
+    100% {
+        box-shadow:
+            -6px -6px 12px -5px var(--lit-glow-soft),
+            6px 6px 12px -5px var(--lit-glow-deep),
+            0 0 10px rgba(255, 179, 0, 0.12);
+        opacity: 1;
+    }
+
+    31.4% {
+        box-shadow:
+            6px -6px 12px -5px var(--lit-glow-soft),
+            -6px 6px 12px -5px var(--lit-glow-deep),
+            0 0 14px rgba(255, 179, 0, 0.18);
+        opacity: 0.92;
+    }
+
+    32.2% {
+        box-shadow:
+            0 0 8px rgba(255, 179, 0, 0.1);
+        opacity: 0.6;
+    }
+
+    73% {
+        box-shadow:
+            -6px 6px 12px -5px var(--lit-glow-soft),
+            6px -6px 12px -5px var(--lit-glow-deep),
+            0 0 12px rgba(255, 179, 0, 0.16);
+        opacity: 0.95;
+    }
+
+    74% {
+        opacity: 0.7;
+    }
+}
+
+/* The shell's own ambient wash warms up while lit (background layer,
+   never flickers). */
+.amm-page-shell[data-desk='lit']::before {
+    background:
+        radial-gradient(ellipse at 50% 0%, rgba(255, 179, 0, 0.09) 0%, transparent 55%),
+        radial-gradient(ellipse at 50% 110%, rgba(255, 122, 0, 0.07) 0%, transparent 55%);
+}
+
+/* Title reads hot gold while lit. */
+.amm-page-shell[data-desk='lit'] .amm-title h1 {
+    text-shadow:
+        0 0 14px rgba(255, 179, 0, 0.55),
+        0 0 34px rgba(255, 122, 0, 0.3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    .amm-page-shell[data-desk='lit'] .market-badge,
+    .amm-page-shell[data-desk='lit'] .order-bar,
+    .amm-page-shell[data-desk='lit'] .desk-banner {
+        animation: none;
+        box-shadow:
+            -6px -6px 12px -5px var(--lit-glow-soft),
+            6px 6px 12px -5px var(--lit-glow-deep);
+    }
+}
