@@ -12,6 +12,7 @@ import {
     lamportsForCostExact,
     pricePerToken,
     quoteCostRaw,
+    quoteDiscounted,
     quoteSheetEffective,
     ratchetActive,
 } from '../../hooks/amm/offerMath.ts';
@@ -168,15 +169,24 @@ export default function OfferLists() {
     const totalTokens = data.tiers.reduce(
         (n, t) => n + (quantities[t.key] ?? 0) * t.lotTokens, 0
     );
-    // Sheet-aware effective prices — the exact mirror of quote_claim
+    // Sheet-aware effective prices. The regular desk mirrors quote_claim
     // (discount + state-2 boost + ratchet floor + the tier-scaling rule that
-    // keeps clamped tiers strictly ordered big>med>sml). Every display and
-    // gate below reads from this one quote.
-    const sheet = useMemo(
-        () => quoteSheetEffective(data.livePrice, data.floorBasis, data.marketState,
-            data.tiers.map((t) => ({ key: t.key, discountTenths: t.discountBps, bonusTenths: t.bonusBps }))),
-        [data.livePrice, data.floorBasis, data.marketState, data.tiers],
-    );
+    // keeps clamped tiers strictly ordered big>med>sml). The alt desk has
+    // none of that: it is a fixed-terms sheet priced strictly below live by
+    // construction (NO ratchet floor, NO bonus, NO above-spot gate), so its
+    // effective price is the raw discounted quote.
+    const sheet = useMemo(() => {
+        if (data.altActive) {
+            if (data.livePrice === null || data.livePrice <= 0n) return null;
+            const out: Record<string, bigint> = {};
+            for (const t of data.tiers) {
+                out[t.key] = quoteDiscounted(data.livePrice, t.discountBps, 0, 3);
+            }
+            return out;
+        }
+        return quoteSheetEffective(data.livePrice, data.floorBasis, data.marketState,
+            data.tiers.map((t) => ({ key: t.key, discountTenths: t.discountBps, bonusTenths: t.bonusBps })));
+    }, [data.livePrice, data.floorBasis, data.marketState, data.tiers, data.altActive]);
     const tierPrice = (t: OfferTierData): bigint | null => sheet?.[t.key] ?? null;
     const estCostRaw = data.tiers.reduce(
         (sum, t) => sum + quoteCostRaw(tierPrice(t) ?? 0n, t.lotTier, quantities[t.key] ?? 0, data.afhoDecimals),
@@ -196,7 +206,10 @@ export default function OfferLists() {
     const solPoolShort =
         currency === 'sol' && solPriceKnown && totalLots > 0 &&
         data.solPoolReserves !== null && solCharge(estCostRaw) === null;
-    const ratchet = priceKnown && data.tiers.some(
+    // Ratchet / at-or-above-spot / floor-blocks-all are regular-desk-only
+    // gates. The alt desk has no ratchet floor and every alt tier prices
+    // strictly below live, so none of these can ever apply to it.
+    const ratchet = !data.altActive && priceKnown && data.tiers.some(
         (t) => (quantities[t.key] ?? 0) > 0 &&
             tierPrice(t) !== null && ratchetActive(data.livePrice as bigint, t.discountBps, t.bonusBps, data.floorBasis, data.marketState)
     );
@@ -208,7 +221,7 @@ export default function OfferLists() {
     // strictly dominated by buying on the pool, and fills slow the floor's
     // decay (demand keep in calc_completed_offers), so gating these
     // accelerates the return to real discounts.
-    const atOrAboveSpot = priceKnown && data.tiers.some(
+    const atOrAboveSpot = !data.altActive && priceKnown && data.tiers.some(
         (t) => (quantities[t.key] ?? 0) > 0 &&
             (tierPrice(t) ?? 0n) >= (data.livePrice as bigint)
     );
@@ -216,10 +229,14 @@ export default function OfferLists() {
     // live, but EVERY tier prices at/above spot (the ratchet floor holds the
     // whole desk) — the claim would revert FloorHeldAtSpot on-chain. Surfaced
     // BEFORE the buyer tries to add anything to the cart.
-    const floorBlocksAll = priceKnown && data.tiers.length > 0 && data.tiers.every(
+    const floorBlocksAll = !data.altActive && priceKnown && data.tiers.length > 0 && data.tiers.every(
         (t) => (tierPrice(t) ?? 0n) >= (data.livePrice as bigint)
     );
-    const deskBlocked = !data.deskOpen || floorBlocksAll;
+    // The alt window is its own open desk: `data.deskOpen` is the regular
+    // night-sheet flag (false in state 3), so every buy/banner gate below
+    // treats a live alt window as an open desk too.
+    const deskOpen = data.deskOpen || data.altActive;
+    const deskBlocked = !deskOpen || floorBlocksAll;
 
     // Per-lot cost in the SELECTED currency. SOL uses the spot-ratio estimate
     // here (it only sizes the %-of-balance quick-fill); the exact charge
@@ -232,13 +249,13 @@ export default function OfferLists() {
 
     const solReady = data.solAccounts !== null && solPriceKnown;
 
-    const canBuy = connected && data.deskOpen && totalLots > 0 && priceKnown &&
+    const canBuy = connected && deskOpen && totalLots > 0 && priceKnown &&
         status !== 'pending' && !atOrAboveSpot && !priceStale &&
         (currency === 'usdc' ? data.accounts !== null : solReady && !solPoolShort);
 
     const buyLabel = !connected
         ? 'Connect wallet to buy'
-        : !data.deskOpen
+        : !deskOpen
             ? 'Desk closed'
             : floorBlocksAll
                 ? 'Desk closed — floor above spot'
@@ -373,22 +390,22 @@ export default function OfferLists() {
             {data.error && <div ref={rpcErrorRef} className="desk-banner error glass-pane">RPC error: {data.error} — showing last known state</div>}
             {data.loading && !data.tiers.length && <div className="desk-banner glass-pane">Loading offer sheet…</div>}
 
-            {!data.loading && !data.deskOpen && closedMessage && (
+            {!data.loading && !deskOpen && closedMessage && (
                 <div className="desk-banner closed glass-pane">{closedMessage}</div>
             )}
-            {!data.loading && data.deskOpen && floorBlocksAll && (
+            {!data.loading && deskOpen && floorBlocksAll && (
                 <div className="desk-banner paused glass-pane" role="alert">
                     Desk paused.. prices too low to offer bonds.
                     Every tier currently priced at or above the live DEX
                     price. Sales resume if market AFHO price raises
                 </div>
             )}
-            {data.deskOpen && !floorBlocksAll && priceStale && (
+            {deskOpen && !floorBlocksAll && priceStale && (
                 <div className="desk-banner paused glass-pane" role="status">
                     Desk paused..  live price is stale; buys resume on the next price refresh.
                 </div>
             )}
-            {data.deskOpen && !floorBlocksAll && !priceStale && (
+            {deskOpen && !floorBlocksAll && !priceStale && (
                 <div className="desk-banner open glass-pane">
                     Desk open.. purchased AFHO goes straight into a vesting stake position, not your wallet.
                 </div>
@@ -405,7 +422,7 @@ export default function OfferLists() {
                     solPoolReserves={data.solPoolReserves}
                     afhoDecimals={data.afhoDecimals}
                     sheet={sheet}
-                    disabled={!data.deskOpen || floorBlocksAll || status === 'pending'}
+                    disabled={!deskOpen || floorBlocksAll || status === 'pending'}
                     priceStale={priceStale}
                     onQtyChange={setQty}
                 />
@@ -420,7 +437,7 @@ export default function OfferLists() {
                 <div className="order-total">
                     {deskBlocked && (
                         <span className="order-desk-closed" role="status">
-                            {!data.deskOpen
+                            {!deskOpen
                                 ? 'Desk closed.. sales open after the next close→open roll'
                                 : 'Desk closed.. buyback floor at or above the live pool price; sales resume once it decays below spot'}
                         </span>

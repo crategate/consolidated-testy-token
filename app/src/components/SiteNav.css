@@ -51,7 +51,7 @@
 .site-nav-ticker {
     display: inline-flex;
     align-items: baseline;
-    gap: 0.45em;
+    flex-direction: column;
     font-family: var(--font-mono);
     font-size: 0.78rem;
     line-height: 1.2;

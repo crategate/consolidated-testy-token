@@ -49,7 +49,7 @@ pub struct CalcCompletedOffers<'info> {
 //   demand can SLOW it). Decay is the desk's only bear-recovery path, so it
 //   must not be gameable: untaken_days counts consecutive LOCKED days
 //   (live < floor) and fills no longer reset it.
-const FLOOR_LOCK_GRACE_DAYS: u16 = 3;
+const FLOOR_LOCK_GRACE_DAYS: u16 = 4;
 const FLOOR_DECAY_PCT: u64 = 2;
 // Depth scaling: multiplier = (NUM + depth_bps) / NUM capped at CAP — doubles
 // at a 10% gap (depth 1000 bps), 8× cap at ≥70%.
@@ -73,9 +73,8 @@ fn floor_decay_cut(gap: u64, live: u64, keep_pct: u64) -> u64 {
         let depth_bps = (gap as u128 * 10_000 / live as u128) as u64;
         (FLOOR_DEPTH_SCALE_NUM + depth_bps).min(FLOOR_DEPTH_SCALE_CAP)
     };
-    let cut =
-        (gap as u128 * FLOOR_DECAY_PCT as u128 * factor as u128 * keep_pct as u128
-            / (100u128 * FLOOR_DEPTH_SCALE_NUM as u128 * 100u128)) as u64;
+    let cut = (gap as u128 * FLOOR_DECAY_PCT as u128 * factor as u128 * keep_pct as u128
+        / (100u128 * FLOOR_DEPTH_SCALE_NUM as u128 * 100u128)) as u64;
     cut.max(1).min(gap)
 }
 
@@ -129,39 +128,69 @@ pub fn handler(ctx: Context<CalcCompletedOffers>) -> Result<()> {
         let pinned = amm_state.cpmm_pool_state != Pubkey::default();
         require!(pinned, ErrorCode::PoolNotPinned);
         let clock = Clock::get()?;
-            let pool_state = ctx.accounts.cpmm_pool_state.as_ref().ok_or(ErrorCode::InvalidPoolAccount)?;
-            let observation = ctx.accounts.cpmm_observation.as_ref().ok_or(ErrorCode::InvalidPoolAccount)?;
-            let base_vault = ctx.accounts.cpmm_output_vault.as_ref().ok_or(ErrorCode::InvalidPoolAccount)?;
-            let quote_vault = ctx.accounts.cpmm_input_vault.as_ref().ok_or(ErrorCode::InvalidPoolAccount)?;
-            require!(
-                pool_state.key() == amm_state.cpmm_pool_state,
-                ErrorCode::InvalidPoolAccount
-            );
-            require!(
-                observation.key()
-                    == crate::instructions::raydium::observation_pda(&amm_state.cpmm_program, amm_state.cpmm_pool_state).0,
-                ErrorCode::InvalidPoolAccount
-            );
-            require!(
-                quote_vault.key()
-                    == crate::instructions::raydium::pool_vault_pda(&amm_state.cpmm_program, amm_state.cpmm_pool_state, amm_state.usdc_mint).0,
-                ErrorCode::InvalidPoolAccount
-            );
-            require!(
-                base_vault.key()
-                    == crate::instructions::raydium::pool_vault_pda(&amm_state.cpmm_program, amm_state.cpmm_pool_state, amm_state.afho_mint).0,
-                ErrorCode::InvalidPoolAccount
-            );
-            super::raydium::read_cpmm_price_floor(
-                pool_state,
-                observation,
-                base_vault,
-                quote_vault,
-                &amm_state.afho_mint,
-                &amm_state.usdc_mint,
-                clock.unix_timestamp as u64,
-            )
-            .ok_or(ErrorCode::InvalidOracle)?
+        let pool_state = ctx
+            .accounts
+            .cpmm_pool_state
+            .as_ref()
+            .ok_or(ErrorCode::InvalidPoolAccount)?;
+        let observation = ctx
+            .accounts
+            .cpmm_observation
+            .as_ref()
+            .ok_or(ErrorCode::InvalidPoolAccount)?;
+        let base_vault = ctx
+            .accounts
+            .cpmm_output_vault
+            .as_ref()
+            .ok_or(ErrorCode::InvalidPoolAccount)?;
+        let quote_vault = ctx
+            .accounts
+            .cpmm_input_vault
+            .as_ref()
+            .ok_or(ErrorCode::InvalidPoolAccount)?;
+        require!(
+            pool_state.key() == amm_state.cpmm_pool_state,
+            ErrorCode::InvalidPoolAccount
+        );
+        require!(
+            observation.key()
+                == crate::instructions::raydium::observation_pda(
+                    &amm_state.cpmm_program,
+                    amm_state.cpmm_pool_state
+                )
+                .0,
+            ErrorCode::InvalidPoolAccount
+        );
+        require!(
+            quote_vault.key()
+                == crate::instructions::raydium::pool_vault_pda(
+                    &amm_state.cpmm_program,
+                    amm_state.cpmm_pool_state,
+                    amm_state.usdc_mint
+                )
+                .0,
+            ErrorCode::InvalidPoolAccount
+        );
+        require!(
+            base_vault.key()
+                == crate::instructions::raydium::pool_vault_pda(
+                    &amm_state.cpmm_program,
+                    amm_state.cpmm_pool_state,
+                    amm_state.afho_mint
+                )
+                .0,
+            ErrorCode::InvalidPoolAccount
+        );
+        super::raydium::read_cpmm_price_floor(
+            pool_state,
+            observation,
+            base_vault,
+            quote_vault,
+            &amm_state.afho_mint,
+            &amm_state.usdc_mint,
+            clock.unix_timestamp as u64,
+        )
+        .ok_or(ErrorCode::InvalidOracle)?
     };
     let amm_state = &mut ctx.accounts.amm_state;
     let floor = amm_state.highest_buyback_basis;
@@ -181,7 +210,8 @@ pub fn handler(ctx: Context<CalcCompletedOffers>) -> Result<()> {
             // Today's demand, tier-weighted like offer_accepted_aggression
             // (big×4, med×2, sml×1; weight sum 700): 0 = nothing taken,
             // 100 = the whole sheet cleared.
-            let demand = ((big_pct as u32 * 4 + med_pct as u32 * 2 + sml_pct as u32) * 100 / 700) as u64;
+            let demand =
+                ((big_pct as u32 * 4 + med_pct as u32 * 2 + sml_pct as u32) * 100 / 700) as u64;
             let cut = floor_decay_cut(gap, live_price, 100 - demand.min(100));
             if cut > 0 {
                 amm_state.highest_buyback_basis = floor - cut;
@@ -278,7 +308,8 @@ fn update_offer_sheet_records(
 }
 
 #[error_code]
-pub enum ErrorCode {    #[msg("Unauthorized caller")]
+pub enum ErrorCode {
+    #[msg("Unauthorized caller")]
     UnauthorizedCaller,
     #[msg("Invalid market status")]
     InvalidMarketStatus,
@@ -295,3 +326,4 @@ pub enum ErrorCode {    #[msg("Unauthorized caller")]
     #[msg("CPMM pool not pinned — run set_cpmm_pool")]
     PoolNotPinned,
 }
+

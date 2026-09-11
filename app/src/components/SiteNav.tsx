@@ -96,7 +96,7 @@ function HeaderTicker() {
                 <FlashNumber value={price !== null ? formatHeaderTickerPrice(price) : '—'} />
             </span>
             <span className="site-nav-ticker-meta" aria-hidden="true">
-                {livePrice.afhoPriceIsTwap ? 'twap' : 'spot'}·{ageSec === null ? '—' : `${ageSec}s`}
+                {livePrice.afhoPriceIsTwap ? 'twap' : 'spot'} {ageSec === null ? '—' : `${ageSec}s`}
             </span>
         </span>
     );

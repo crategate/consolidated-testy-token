@@ -20,100 +20,54 @@ function requireEnv(name: string): string {
     return value;
 }
 
-// Dual-source halt gate (2026-09-10):
-//
-// A single API claiming "halted" must be CONFIRMED by the second source
-// before the feed reports state 3 — the halt state now drives the alt
-// bond sheet (5% of the vault at 3–5% off) plus the highest exit
-// penalties, so an oracle glitch must not be able to fire them.
-//
-// Structure:
-//   comparisonTask #1  lhs = massive chain (nested job)  op = EQUAL  rhs = 3
-//     onFalse  → massive chain again (every non-3 value passes through
-//                untouched — routine states stay single-source, no change)
-//     onTrue   → comparisonTask #2  lhs = earnings chain  op = EQUAL  rhs = 3
-//                  onTrueValue  = "3"  both sources agree → confirmed halt
-//                  onFalse      → earnings chain job (disagreement → the
-//                                 SECOND source's real reading wins: never
-//                                 fabricate a state the second API didn't
-//                                 report; a massive-side glitch degrades to
-//                                 earnings' honest value)
-//                  onFailureValue = "3"  earnings DOWN while massive claims
-//                                 a halt → trust the primary (a simultaneous
-//                                 primary glitch + secondary outage is the
-//                                 only hole; flip to "0" to fail closed
-//                                 instead — tradeoff documented here)
-//     onFailure → earnings chain (existing failover, unchanged)
-//
-// NOTE: the job hash (feed id) changes with this definition → new canonical
-// quote account. Re-run feed-deploy to store + go live; the keeper derives
-// the quote from app/public/deployment.json each run, so no program change
-// is needed (the crank validates the quote against its own embedded feed
-// ids, not a pinned id).
-const massiveAttempt: OracleJob.ITask[] = [
-    {
-        httpTask: {
-            url: "https://api.massive.com/v1/marketstatus/now?apiKey=${MASSIVE_API_KEY}",
-        },
-    },
-    { jsonParseTask: { path: "$.exchanges.nyse" } },
-    {
-        stringMapTask: {
-            mappings: [
-                { key: '"open"', value: "0" },
-                { key: '"extended-hours"', value: "1" },
-                { key: '"closed"', value: "2" },
-                { key: '"halted"', value: "3" },
-            ],
-            defaultValue: "0",
-        },
-    },
-];
-
-const earningsFallback: OracleJob.ITask[] = [
-    {
-        httpTask: {
-            url: "https://api.earningsapi.com/v1/market-status?apikey=${EARNINGSAPI_KEY}",
-        },
-    },
-    { jsonParseTask: { path: "$.currentMarketStatus" } },
-    {
-        stringMapTask: {
-            mappings: [
-                { key: '"open"', value: "0" },
-                { key: '"pre-market"', value: "1" },
-                { key: '"after-hours"', value: "1" },
-                { key: '"closed"', value: "2" },
-                { key: '"halted"', value: "3" },
-            ],
-            defaultValue: "0",
-        },
-    },
-];
-
+// Single-source market status with a failover chain: the primary (massive)
+// API feeds the routine open/extended/closed/halted mapping, and the
+// earnings API is only consulted when the primary chain fails. No special
+// case for any single state — a halt (3) is reported the same way as every
+// other reading.
 const marketStatusJob = OracleJob.fromObject({
     tasks: [
         {
-            comparisonTask: {
-                op: OracleJob.ComparisonTask.Operation.OPERATION_EQ,
-                lhs: { tasks: massiveAttempt },
-                rhsValue: "3",
-                onTrue: {
-                    tasks: [
-                        {
-                            comparisonTask: {
-                                op: OracleJob.ComparisonTask.Operation.OPERATION_EQ,
-                                lhs: { tasks: earningsFallback },
-                                rhsValue: "3",
-                                onTrueValue: "3",
-                                onFalse: { tasks: earningsFallback },
-                                onFailureValue: "3",
-                            },
+            conditionalTask: {
+                attempt: [
+                    {
+                        httpTask: {
+                            url: "https://api.massive.com/v1/marketstatus/now?apiKey=${MASSIVE_API_KEY}",
                         },
-                    ],
-                },
-                onFalse: { tasks: massiveAttempt },
-                onFailure: { tasks: earningsFallback },
+                    },
+                    { jsonParseTask: { path: "$.exchanges.nyse" } },
+                    {
+                        stringMapTask: {
+                            mappings: [
+                                { key: '"open"', value: "0" },
+                                { key: '"extended-hours"', value: "1" },
+                                { key: '"closed"', value: "2" },
+                                { key: '"halted"', value: "3" },
+                            ],
+                            defaultValue: "0",
+                        },
+                    },
+                ],
+                onFailure: [
+                    {
+                        httpTask: {
+                            url: "https://api.earningsapi.com/v1/market-status?apikey=${EARNINGSAPI_KEY}",
+                        },
+                    },
+                    { jsonParseTask: { path: "$.currentMarketStatus" } },
+                    {
+                        stringMapTask: {
+                            mappings: [
+                                { key: '"open"', value: "0" },
+                                { key: '"pre-market"', value: "1" },
+                                { key: '"after-hours"', value: "1" },
+                                { key: '"closed"', value: "2" },
+                                { key: '"halted"', value: "3" },
+                            ],
+                            defaultValue: "0",
+                        },
+                    },
+                ],
             },
         },
     ],
