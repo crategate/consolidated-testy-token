@@ -98,7 +98,7 @@ async function main() {
     const raw = 10n ** BigInt(decimals);
     const vaultRaw = vaultWhole * raw;
     const lpRaw = lpWhole * raw;
-    console.log(` Split: ${(Number(vaultWhole) / 1e9).toLocaleString()} AFHO → vault | ${(Number(lpWhole) / 1e9).toLocaleString()} AFHO → pool seed`);
+    console.log(` Split: ${vaultWhole.toLocaleString("en-US")} AFHO → vault | ${lpWhole.toLocaleString("en-US")} AFHO → pool seed`);
 
     // ── 6. One tx: fund both destinations + revoke both authorities ──
     const seedAta = getAssociatedTokenAddressSync(AFHO_MINT, wallet.publicKey, false, TOKEN_2022_PROGRAM_ID);

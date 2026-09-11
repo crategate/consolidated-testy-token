@@ -143,8 +143,7 @@ pub fn handler_make(ctx: Context<MakeAltOffers>) -> Result<()> {
     // ── Sizing: exactly 5% of the bond vault, no scaling, no exceptions ──
     // Vault balance is read raw (Token-2022 ATA — same direct read as
     // make_offers; unreadable vault → 0 → empty sheet, fail dark).
-    let vault_raw =
-        super::raydium::token_account_amount(&ctx.accounts.afho_vault).unwrap_or(0);
+    let vault_raw = super::raydium::token_account_amount(&ctx.accounts.afho_vault).unwrap_or(0);
     let unit = 10u64
         .checked_pow(ctx.accounts.afho_mint.decimals as u32)
         .unwrap_or(1);
@@ -152,13 +151,17 @@ pub fn handler_make(ctx: Context<MakeAltOffers>) -> Result<()> {
     let total = vault_whole / 20; // 5% of the vault
     let big_alloc = total / 5; // 1% of the vault
     let med_alloc = total * 3 / 10; // 1.5% of the vault
-    // sml absorbs its own 2.5% PLUS every big/med rounding leftover — the
-    // "don't round out evenly → fill into additional bottom tiers" rule.
+                                    // sml absorbs its own 2.5% PLUS every big/med rounding leftover — the
+                                    // "don't round out evenly → fill into additional bottom tiers" rule.
 
     let sml_alloc = total.saturating_sub(big_alloc).saturating_sub(med_alloc);
     let sml_tier = {
         let t = pick_tier(sml_alloc / SML_LOT_TARGET);
-        if t == 0 { 1 } else { t }
+        if t == 0 {
+            1
+        } else {
+            t
+        }
     };
     // Tier ordering invariant: sml < med < big (≥1 apart), clamped to the
     // ladder top. The upper clamps only bind on unreachable vaults (≥20B
@@ -358,8 +361,6 @@ pub struct AltOfferClaim<'info> {
     #[account(address = amm_state.usdc_mint)]
     pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
 
-    // Raydium CPMM AFHO/USDC pool — the ONLY price source (same pinning +
-    // validation discipline as offer_claim; hard-errors when unset).
     /// CHECK: pool state, pinned to amm_state.cpmm_pool_state in the handler
     pub cpmm_pool_state: Option<AccountInfo<'info>>,
     /// CHECK: pool observation (TWAP ring)
@@ -369,8 +370,6 @@ pub struct AltOfferClaim<'info> {
     /// CHECK: pool AFHO vault (base leg)
     pub cpmm_output_vault: Option<AccountInfo<'info>>,
 
-    /// Market status PDA — gates the alt sheet to the suspended state and
-    /// provides the trading day for sheet freshness.
     /// CHECK: seeds-verified against the crank program stored at init
     #[account(
         seeds = [b"market_status"],
@@ -379,21 +378,16 @@ pub struct AltOfferClaim<'info> {
     )]
     pub market_status: UncheckedAccount<'info>,
 
-    /// Buyer's payment source (USDC)
     #[account(mut, token::mint = usdc_mint, token::authority = buyer)]
     pub buyer_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    /// 80% — buyback vault (dex_buyback spends from here)
     #[account(mut, address = amm_state.usdc_vault)]
     pub amm_usdc_vault: Box<InterfaceAccount<'info, TokenAccount>>,
-    /// 10% — dip reserve
     #[account(mut, address = amm_state.usdc_dip)]
     pub usdc_dip: Box<InterfaceAccount<'info, TokenAccount>>,
-    /// 10% — staker rewards holding vault
     #[account(mut, address = amm_state.usdc_rewards)]
     pub usdc_rewards: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    // --- staking CPI (position for the purchased, vesting AFHO) ---
     pub staking_program: Program<'info, staking::program::Staking>,
     #[account(mut, address = amm_state.staking_pool)]
     pub staking_pool: Box<Account<'info, staking::StakePool>>,
@@ -497,15 +491,10 @@ pub fn handler_claim(ctx: Context<AltOfferClaim>, tier: u8, units: u32, index: u
         )?;
     }
 
-    super::offer_claim::validate_user_index(
-        &ctx.accounts.user_index.to_account_info(),
-        index,
-    )?;
+    super::offer_claim::validate_user_index(&ctx.accounts.user_index.to_account_info(), index)?;
     super::offer_claim::settle_sheet(&mut ctx.accounts.alt_list, tier, units, q.total_tokens);
     let amm_state = &mut ctx.accounts.amm_state;
-    amm_state.total_usdc_proceeds = amm_state
-        .total_usdc_proceeds
-        .saturating_add(q.cost_usdc);
+    amm_state.total_usdc_proceeds = amm_state.total_usdc_proceeds.saturating_add(q.cost_usdc);
 
     // ── CPI into staking: purchased AFHO goes DIRECTLY from the AMM vault
     // into a locked StakePosition (vesting = the tier's fixed days) ──
@@ -757,14 +746,12 @@ pub fn handler_claim_sol(
     )
     .ok_or(ErrorCode::InvalidOracle)?;
     require!(sol_price > 0, ErrorCode::InvalidOracle);
-    let pool_wsol = super::raydium::token_account_amount(
-        &ctx.accounts.sol_usdc_input_vault.to_account_info(),
-    )
-    .ok_or(ErrorCode::InvalidOracle)?;
-    let pool_usdc = super::raydium::token_account_amount(
-        &ctx.accounts.sol_usdc_output_vault.to_account_info(),
-    )
-    .ok_or(ErrorCode::InvalidOracle)?;
+    let pool_wsol =
+        super::raydium::token_account_amount(&ctx.accounts.sol_usdc_input_vault.to_account_info())
+            .ok_or(ErrorCode::InvalidOracle)?;
+    let pool_usdc =
+        super::raydium::token_account_amount(&ctx.accounts.sol_usdc_output_vault.to_account_info())
+            .ok_or(ErrorCode::InvalidOracle)?;
     let lamports = super::raydium::cpmm_swap_input_for_out(
         pool_wsol,
         pool_usdc,
@@ -895,15 +882,10 @@ pub fn handler_claim_sol(
         )?;
     }
 
-    super::offer_claim::validate_user_index(
-        &ctx.accounts.user_index.to_account_info(),
-        index,
-    )?;
+    super::offer_claim::validate_user_index(&ctx.accounts.user_index.to_account_info(), index)?;
     super::offer_claim::settle_sheet(&mut ctx.accounts.alt_list, tier, units, q.total_tokens);
     let amm_state = &mut ctx.accounts.amm_state;
-    amm_state.total_usdc_proceeds = amm_state
-        .total_usdc_proceeds
-        .saturating_add(q.cost_usdc);
+    amm_state.total_usdc_proceeds = amm_state.total_usdc_proceeds.saturating_add(q.cost_usdc);
 
     // ── CPI into staking (identical to the USDC path) ──
     let mint_key = amm_state.afho_mint;

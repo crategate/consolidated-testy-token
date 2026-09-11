@@ -15,7 +15,7 @@ url = "https://api.apr.dev"
 
 [provider]
 cluster = "devnet"
-wallet = "~/.config/solana/id.json"
+wallet = "~/.config/solana/la.json"
 
 [scripts]
 # launch flow (2026-09-09 split of mint-launch.ts — see scripts/mint-create.ts header):

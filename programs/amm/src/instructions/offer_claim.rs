@@ -33,11 +33,11 @@
 
 use crate::state::offersState::{lot_sizer, AmmState, OfferList};
 use anchor_lang::prelude::*;
+use anchor_spl::associated_token::{create_idempotent, AssociatedToken, Create};
+use anchor_spl::token::{sync_native, SyncNative};
 use anchor_spl::token_interface::{
     transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked,
 };
-use anchor_spl::associated_token::{create_idempotent, AssociatedToken, Create};
-use anchor_spl::token::{sync_native, SyncNative};
 
 /// The pinned SOL/USDC amm_config's input-leg trade fee (0.25%) — the same
 /// assumption the historical `10_025` sizing buffers made. pub(crate): the
@@ -460,7 +460,7 @@ pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u32, index: u64
     let sol_price = super::raydium::read_cpmm_price_floor(
         &ctx.accounts.sol_usdc_pool_state.to_account_info(),
         &ctx.accounts.sol_usdc_observation.to_account_info(),
-        &ctx.accounts.sol_usdc_input_vault.to_account_info(),  // wSOL (base)
+        &ctx.accounts.sol_usdc_input_vault.to_account_info(), // wSOL (base)
         &ctx.accounts.sol_usdc_output_vault.to_account_info(), // USDC (quote)
         &ctx.accounts.wrapped_sol_mint.key(),
         &ctx.accounts.usdc_mint.key(),
@@ -479,14 +479,12 @@ pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u32, index: u64
     //   out = R_out × net/(R_in + net) ≥ cost ⇒ net = cost × R_in/(R_out − cost)
     // The sol_price read stays as a fail-closed validation that the pinned
     // pool still prices the wSOL/USDC pair (mints + TWAP ring sanity).
-    let pool_wsol = super::raydium::token_account_amount(
-        &ctx.accounts.sol_usdc_input_vault.to_account_info(),
-    )
-    .ok_or(ErrorCode::InvalidOracle)?;
-    let pool_usdc = super::raydium::token_account_amount(
-        &ctx.accounts.sol_usdc_output_vault.to_account_info(),
-    )
-    .ok_or(ErrorCode::InvalidOracle)?;
+    let pool_wsol =
+        super::raydium::token_account_amount(&ctx.accounts.sol_usdc_input_vault.to_account_info())
+            .ok_or(ErrorCode::InvalidOracle)?;
+    let pool_usdc =
+        super::raydium::token_account_amount(&ctx.accounts.sol_usdc_output_vault.to_account_info())
+            .ok_or(ErrorCode::InvalidOracle)?;
     let lamports = super::raydium::cpmm_swap_input_for_out(
         pool_wsol,
         pool_usdc,
@@ -717,7 +715,10 @@ fn quote_claim(
         2 => offer_list.big_offer,
         _ => return err!(ErrorCode::InvalidTier),
     };
-    require!(offer.remaining as u32 >= units, ErrorCode::InsufficientOffer);
+    require!(
+        offer.remaining as u32 >= units,
+        ErrorCode::InsufficientOffer
+    );
     let (lot_tier, vesting_days, discount_stored) =
         (offer.lot_size, offer.vesting_days, offer.discount_bps);
 
@@ -784,7 +785,8 @@ fn quote_claim(
     };
     let tier_bound = |d: u8| -> u64 {
         let boosted = d.saturating_add(if current_state == 2 { 5 } else { 0 });
-        let tier_allowance = live_price.saturating_mul(boosted.saturating_sub(d) as u64 * 10) / 10_000;
+        let tier_allowance =
+            live_price.saturating_mul(boosted.saturating_sub(d) as u64 * 10) / 10_000;
         floor.saturating_sub(tier_allowance)
     };
     let q_sml = tier_quote(offer_list.sml_offer.discount_bps);
@@ -834,10 +836,7 @@ fn quote_claim(
     // floor sitting within 0.5% of spot; a floor further above spot still
     // refuses the tier. In state 1 the floor is the hard bound — a floor
     // at/above spot always refuses.
-    require!(
-        effective_price < live_price,
-        ErrorCode::FloorHeldAtSpot
-    );
+    require!(effective_price < live_price, ErrorCode::FloorHeldAtSpot);
 
     // lot_size is a TIER INDEX — translate via lot_sizer to whole tokens,
     // then to raw units. Price units: (usdc_raw × 1e12) / afho_raw
@@ -871,7 +870,10 @@ fn quote_claim(
 /// with the alt desk's claim paths.
 pub(crate) fn validate_user_index(user_index: &AccountInfo, index: u64) -> Result<()> {
     if !user_index.data_is_empty() {
-        require!(user_index.owner == &staking::ID, ErrorCode::InvalidUserIndex);
+        require!(
+            user_index.owner == &staking::ID,
+            ErrorCode::InvalidUserIndex
+        );
         let data = user_index.try_borrow_data()?;
         require!(data.len() >= 16, ErrorCode::InvalidUserIndex);
         let next = u64::from_le_bytes(data[8..16].try_into().unwrap());
@@ -882,7 +884,12 @@ pub(crate) fn validate_user_index(user_index: &AccountInfo, index: u64) -> Resul
 
 /// Sheet accounting: decrement the tier's remaining lots; total_complete is
 /// in WHOLE TOKENS, not lots. pub(crate): shared with the alt desk's claims.
-pub(crate) fn settle_sheet(offer_list: &mut Account<OfferList>, tier: u8, units: u32, total_tokens: u64) {
+pub(crate) fn settle_sheet(
+    offer_list: &mut Account<OfferList>,
+    tier: u8,
+    units: u32,
+    total_tokens: u64,
+) {
     match tier {
         0 => offer_list.sml_offer.remaining -= units as u32,
         1 => offer_list.med_offer.remaining -= units as u32,
@@ -969,12 +976,22 @@ pub(crate) fn require_pinned_pricing_accounts(
     );
     require!(
         quote_vault.key()
-            == crate::instructions::raydium::pool_vault_pda(&cpmm_program, expected_pool_state, *usdc_mint).0,
+            == crate::instructions::raydium::pool_vault_pda(
+                &cpmm_program,
+                expected_pool_state,
+                *usdc_mint
+            )
+            .0,
         ErrorCode::InvalidPoolAccount
     );
     require!(
         base_vault.key()
-            == crate::instructions::raydium::pool_vault_pda(&cpmm_program, expected_pool_state, *afho_mint).0,
+            == crate::instructions::raydium::pool_vault_pda(
+                &cpmm_program,
+                expected_pool_state,
+                *afho_mint
+            )
+            .0,
         ErrorCode::InvalidPoolAccount
     );
     Ok(())
