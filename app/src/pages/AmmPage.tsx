@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { Helmet } from 'react-helmet-async';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import OfferLists from '../components/amm/OfferLists.tsx';
@@ -15,7 +16,6 @@ export default function AmmPage() {
     const { connected } = useWallet();
     const shellRef = useRef<HTMLDivElement>(null);
     useGlitchBurst(shellRef);
-    document.title = 'Bond Offer Desk | AFHO';
 
     // Desk excitement: open = alive & rhythmic, waiting = dim, sold out =
     // faded, lit = the rare alt window (state 3 + fixed-terms sheet live),
@@ -37,6 +37,13 @@ export default function AmmPage() {
             data-market-state={marketState ?? 99}
             data-desk={deskState}
         >
+            <Helmet>
+                <title>Bond Offer Desk | AFHO</title>
+                <meta
+                    name="description"
+                    content="Buy discounted, vesting AFHO bonds after the market closes. Lot sizes, discounts and vesting are set on-chain from staking health and price momentum."
+                />
+            </Helmet>
             <div className="fx-backdrop" aria-hidden="true">
                 <div className="fx-blob fx-blob--2" />
                 <div className="fx-blob fx-blob--3" />

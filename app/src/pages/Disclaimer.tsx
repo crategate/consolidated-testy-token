@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import { SiteNav } from '../components/SiteNav';
 import './Litepaper.css';
 
@@ -11,11 +12,17 @@ export default function Disclaimer() {
     const [mounted, setMounted] = useState(false);
     useEffect(() => {
         setMounted(true);
-        document.title = 'AFHO — Disclaimer';
     }, []);
 
     return (
         <div className={`litepaper-shell${mounted ? ' mounted' : ''}`}>
+            <Helmet>
+                <title>Disclaimer | AFHO</title>
+                <meta
+                    name="description"
+                    content="AFHO interface and protocol disclaimer — terms, risks and legal notices for the After Hours protocol."
+                />
+            </Helmet>
             <SiteNav />
             <div className="fx-backdrop" aria-hidden="true">
                 <div className="fx-blob fx-blob--1" />

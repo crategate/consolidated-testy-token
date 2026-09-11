@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import { SiteNav } from '../components/SiteNav';
 import './Litepaper.css';
 
@@ -202,11 +203,17 @@ export default function Litepaper() {
     const [mounted, setMounted] = useState(false);
     useEffect(() => {
         setMounted(true);
-        document.title = 'AFHO — Litepaper';
     }, []);
 
     return (
         <div className={`litepaper-shell${mounted ? ' mounted' : ''}`}>
+            <Helmet>
+                <title>Litepaper | AFHO</title>
+                <meta
+                    name="description"
+                    content="AFHO litepaper — a token tuned to market hours. Buybacks while Wall St trades, an after-hours bond desk, and staking incentives driven by the NYSE clock."
+                />
+            </Helmet>
             <SiteNav />
             <div className="fx-backdrop" aria-hidden="true">
                 <div className="fx-blob fx-blob--1" />

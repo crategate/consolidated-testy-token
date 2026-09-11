@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import { GlitchText } from '../components/GlitchText';
 import './Records.css';
 
@@ -303,6 +304,13 @@ export default function Records() {
 
     return (
         <div className={`records-shell${showRotate ? ' with-banner' : ''}`}>
+            <Helmet>
+                <title>Trading Day Ledger | AFHO</title>
+                <meta
+                    name="description"
+                    content="One row per NYSE trading day: AFHO offer desk terms, fill scores and market metrics recorded at the open."
+                />
+            </Helmet>
             {showRotate && (
                 <div className="records-rotate-banner" role="status">
                     <span>Rotate your phone — the ledger is built for wide screens.</span>

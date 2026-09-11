@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import { useDashData, type DashSection } from '../hooks/useDashData';
 import './Dash.css';
 
@@ -40,6 +41,13 @@ export default function Dash() {
 
     return (
         <div className="dash-shell">
+            <Helmet>
+                <title>Dashboard | AFHO</title>
+                <meta
+                    name="description"
+                    content="Live AFHO protocol dashboard: market status, offer desk, vault balances and on-chain state on Solana."
+                />
+            </Helmet>
             <header className="dash-topbar">
                 <h1>AFHO dev dashboard</h1>
                 <div className="dash-controls">
