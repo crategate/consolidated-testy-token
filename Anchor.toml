@@ -54,6 +54,7 @@ rebalance-sol-pool = "npx ts-node ./scripts/rebalance-sol-pool.ts" # devnet: dry
 create-claim-alt = "npx ts-node ./scripts/create-claim-alt.ts" # one-time: create/extend the claim lookup table (v0 SOL claim txs); re-run after set-cpmm-pool / set-sol-usdc-pool
 
 set-oracle = "npx ts-node ./scripts/oracle/set-oracle-state.ts"
+reset-devnet = "npx ts-node ./scripts/reset-devnet.ts" # DEVNET/LOCALNET ONLY: wipe market-status clock (state 99/day 0/ts 0) + records ledger/archives; dry-run by default, EXECUTE=1 to write
 record = "npx ts-node ./scripts/record-day.ts" # devnet: snapshot day-start metrics into app/public/records.json for /records
 
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"

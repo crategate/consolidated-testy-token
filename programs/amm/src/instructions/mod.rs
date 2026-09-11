@@ -54,3 +54,7 @@ pub use raydium::*;
 // module's error enum extends (never shifts) the program's error codes.
 pub mod alt_offers;
 pub use alt_offers::*;
+
+// DEVNET/TEST ONLY — full runtime-state wipe (append last, same reason).
+pub mod reset_devnet_state;
+pub use reset_devnet_state::*;

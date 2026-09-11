@@ -5,7 +5,7 @@ Everything required to go from the current devnet build to a mainnet launch, in 
 ## 2. Remove devnet-only code — §3/§4 landed; removal blocked only on migrating localnet tests off the mock fallback
 
 - [ ] `programs/mock-dex-pool` (permissionless AFHO faucet — **fatal if shipped**).
-- [ ] `load_test_data` + `load_offers` (amm, incl. `scripts/amm-offers.ts`), `test_set_state` (crank-oracle), `update_amm_program` (staking).
+- [ ] `load_test_data` + `load_offers` + `reset_devnet_state` (amm, incl. `scripts/amm-offers.ts` and `scripts/reset-devnet.ts`), `test_set_state` (crank-oracle), `update_amm_program` (staking).
 - [ ] Permissionless `set_price` mock oracle PDAs.
 - [ ] `test_set_state` has **no on-chain gate at all** (no signer, no state bound) — delete all test set states and dev toolste.
 - [ ] **Devnet-only keeper modes & scripts.** Run the keeper for mainnet from `scripts/oracle/mev-keeper-mainnet.ts` (production-only copy: no `--test-state`/`test_set_state`/`test_collect_bounty`, no devnet genesis gate). These never ship to a mainnet run — delete or ignore them at launch:
@@ -13,6 +13,7 @@ Everything required to go from the current devnet build to a mainnet launch, in 
     - `scripts/oracle/set-oracle-state.ts` and the keeper's `--test-state` flag (drives `test_set_state`).
     - `scripts/rebalance-sol-pool.ts` (`anchor run rebalance-sol-pool`) — devnet-only arb stand-in; **never** point it at the mainnet canonical pool.
     - `scripts/amm-test-data.ts` / `amm-offers.ts` (drive the devnet-only `load_test_data` / `load_offers` instructions) and `migrate_offer_list` (devnet resize tool).
+    - `scripts/reset-devnet.ts` (`anchor run reset-devnet`) — devnet/localnet full reset of the market-status clock (state 99 / day 0 / ts 0), the AMM runtime history (via `reset_devnet_state`: metrics/accepted_offers/offer_list/bookkeeping), and the `app/public/records.json` ledger + `records/` archives. Remove it, its `reset-devnet` Anchor label, and the `reset_devnet_state` instruction.
 - Note: the mock fallback in `execute_swap` + the vestigial `sol_*` accounts (§4) are what localnet tests still depend on — delete them together in one pass.
 
 ## 3. Real price oracles — TWAP wired (devnet-verifiable), mock kept as localnet-only fallback

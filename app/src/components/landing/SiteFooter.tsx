@@ -1,4 +1,6 @@
 import { Link } from 'react-router-dom';
+import { PublicKey } from '@solana/web3.js';
+import { CopyAddress } from '../CopyAddress';
 
 // Social links — update the Telegram URL to the channel's public username
 // (https://t.me/<username>) once one is set in Telegram channel settings.
@@ -30,7 +32,7 @@ const SOCIALS = [
     },
 ];
 
-export function SiteFooter() {
+export function SiteFooter({ mint }: { mint: PublicKey }) {
     return (
         <footer className="site-footer">
             <div className="social-links">
@@ -48,6 +50,14 @@ export function SiteFooter() {
                 ))}
             </div>
             <img className="logo" src="/Logo/color-on-trans-logo.png" />
+
+            <div className="site-footer-address">
+                <CopyAddress
+                    value={mint.toBase58()}
+                    className="footer-address"
+                    title="Copy AFHO token address"
+                />
+            </div>
 
             <p className="site-footer-note">
                 AFHO is experimental token protocol. Nothing here is financial advice.{' '}

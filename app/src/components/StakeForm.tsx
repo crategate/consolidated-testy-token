@@ -7,6 +7,7 @@ import { PublicKey } from '@solana/web3.js';
 import { useTokenBalance } from '../hooks/useTokenBalance';
 import { useChainData } from '../context/useChainData';
 import { GlitchText } from './GlitchText.tsx';
+import { CopyAddress } from './CopyAddress.tsx';
 
 const TOKEN_DECIMALS = 9;
 const PERCENT_STEPS = [25, 50, 75] as const;
@@ -38,6 +39,10 @@ export function StakeForm({ mint, marketStatusPda, onStakeSuccess }: StakeFormPr
 
     const handleStake = async () => {
         if (!amount) return;
+        if (!(Number(amount) > 0)) {
+            alert('Stake amount must be greater than zero.');
+            return;
+        }
         setLoading(true);
         try {
             const tx = await stake(amount);
@@ -88,11 +93,16 @@ export function StakeForm({ mint, marketStatusPda, onStakeSuccess }: StakeFormPr
         return balance !== null && Number(amount) > balance;
     })();
 
+    /* Positive-only gate: the stake amount is a token quantity, so zero and
+       negatives are invalid (the on-chain arg is u64 and the UI must not
+       hand it a wrapped negative). */
+    const amountIsNonPositive = amount !== '' && !(Number(amount) > 0);
+
     /* Step ladder: the form's effects grow slightly more excited as the
        staking process completes — empty (idle) → typing → ready. */
     const step = !amount
         ? 'idle'
-        : amountExceedsBalance
+        : amountExceedsBalance || amountIsNonPositive
             ? 'typing'
             : 'ready';
 
@@ -104,7 +114,17 @@ export function StakeForm({ mint, marketStatusPda, onStakeSuccess }: StakeFormPr
         >
             <h3>Lock & Earn AFHO</h3>
             <div className="mint-display">
-                Mint: <br /><code>{mint.toBase58().slice(0, 8)}…{mint.toBase58().slice(-8)}</code>
+                Mint: <br />
+                <CopyAddress
+                    value={mint.toBase58()}
+                    className="mint-copy"
+                    title="Copy AFHO token address"
+                    display={
+                        <code>
+                            {mint.toBase58().slice(0, 8)}…{mint.toBase58().slice(-8)}
+                        </code>
+                    }
+                />
             </div>
             <div className="balance-line">
                 {balance !== null ? balance.toFixed(4) : '—'} <span>AFHO</span>
@@ -123,6 +143,7 @@ export function StakeForm({ mint, marketStatusPda, onStakeSuccess }: StakeFormPr
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="Amount to stake"
                 disabled={loading}
+                min={0}
                 max={balance || undefined}
                 className="neon-glitch"
             />
@@ -148,6 +169,13 @@ export function StakeForm({ mint, marketStatusPda, onStakeSuccess }: StakeFormPr
                 </button>
             </div>
             {
+                amountIsNonPositive && (
+                    <p className="stake-penalty-note" role="alert">
+                        <span>Stake amount must be greater than zero.</span>
+                    </p>
+                )
+            }
+            {
                 Number(amount) >= 9006000 && (
                     <p className='stake-penalty-note' role="alert">
                         <span>Max position size 9,006,000</span></p>
@@ -168,7 +196,7 @@ export function StakeForm({ mint, marketStatusPda, onStakeSuccess }: StakeFormPr
                     </p >
                 )
             }
-            <button onClick={handleStake} disabled={loading || !amount || amountExceedsBalance}>
+            <button onClick={handleStake} disabled={loading || !amount || amountIsNonPositive || amountExceedsBalance}>
                 {loading ? 'Staking…' : 'Stake'}
             </button>
         </div >

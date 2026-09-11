@@ -301,6 +301,49 @@
     color: var(--text-secondary);
 }
 
+/* Click-to-copy address affordance — icon appears on hover/focus, and the
+   check state stays visible briefly after a successful copy. */
+.copy-address {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    background: none;
+    border: none;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    text-align: inherit;
+}
+
+.copy-address-icon {
+    display: inline-flex;
+    align-items: center;
+    color: var(--neon-cyan);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.copy-address:hover .copy-address-icon,
+.copy-address:focus-visible .copy-address-icon,
+.copy-address.copied .copy-address-icon {
+    opacity: 1;
+}
+
+.copy-address:focus-visible {
+    outline: 1px dashed var(--border-neon);
+    outline-offset: 2px;
+}
+
+/* Staking tile mint: keep the compact code look, reveal the copy icon. */
+.mint-copy {
+    color: var(--text-secondary);
+}
+
+.mint-copy:hover {
+    color: var(--text-primary);
+}
+
 /* ─── Positions ─── */
 .positions-shell {
     background: var(--bg-card);
@@ -1340,6 +1383,35 @@ h3 {
 }
 
 .site-footer-note .site-footer-disclaimer:hover {
+    color: var(--text-primary);
+}
+
+/* Full token address in the footer — same click-to-copy affordance as the
+   staking tile, but the whole address is shown so it can be verified. */
+.site-footer-address {
+    display: flex;
+    justify-content: center;
+    max-width: 100%;
+    padding: 0 1rem;
+    box-sizing: border-box;
+}
+
+.site-footer-address .copy-address {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+    max-width: 100%;
+}
+
+.site-footer-address .copy-address-value {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-all;
+}
+
+.site-footer-address .copy-address:hover,
+.site-footer-address .copy-address:focus-visible {
     color: var(--text-primary);
 }
 

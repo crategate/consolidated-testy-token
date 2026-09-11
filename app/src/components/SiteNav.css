@@ -137,6 +137,21 @@
     filter: drop-shadow(0 0 6px rgba(0, 240, 255, 0.6));
 }
 
+/* Raydium swap link uses the brand mark rather than a text label; keep the
+   little R mark compact and aligned with the adjacent social icons. */
+.site-nav-icon .raydium-swap-logo {
+    display: block;
+    width: 18px;
+    height: 20px;
+    object-fit: contain;
+    text-decoration: none;
+}
+
+a.site-nav-icon.raydium-swap-link {
+    text-decoration: none;
+    font-size: .8em;
+}
+
 /* ─── Hamburger (hidden on wide screens) ─── */
 .site-nav-toggle {
     display: none;

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { PublicKey } from '@solana/web3.js';
 import { useChainData } from '../context/useChainData';
 import { formatHeaderTickerPrice } from '../hooks/amm/offerMath';
 import FlashNumber from './FlashNumber.tsx';
@@ -24,6 +25,12 @@ const NAV_ITEMS: NavItem[] = [
     { label: 'Records', to: '/records' },
     { label: 'Litepaper', to: '/litepaper' },
 ];
+
+/* Deep link to Raydium's swap page with AFHO preselected as the output mint —
+ * the mint in the URL is the disambiguator against same-named copycats. */
+function raydiumSwapUrl(mint: PublicKey): string {
+    return `https://raydium.io/swap/?inputMint=sol&outputMint=${mint.toBase58()}`;
+}
 
 function TwitterIcon() {
     return (
@@ -98,6 +105,8 @@ function HeaderTicker() {
 export function SiteNav(_: SiteNavProps) {
     const [open, setOpen] = useState(false);
     const { pathname } = useLocation();
+    const { deployment } = useChainData();
+    const raydiumHref = deployment?.mintKey ? raydiumSwapUrl(deployment.mintKey) : null;
 
     // Close the drawer whenever the route changes.
     useEffect(() => {
@@ -130,6 +139,23 @@ export function SiteNav(_: SiteNavProps) {
                             {item.label}
                         </Link>
                     ))}
+                    {raydiumHref && (
+                        <a
+                            className="site-nav-icon raydium-swap-link"
+                            href={raydiumHref}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label="Trade AFHO on Raydium"
+                            title="Trade AFHO on Raydium"
+                        >
+                            <img
+                                className="raydium-swap-logo"
+                                src="/raydium-r.png"
+                                alt="Raydium logo"
+                            />
+                            Swap AFHO on Raydium
+                        </a>
+                    )}
                     <a
                         className="site-nav-icon neon-glitch"
                         href={SOCIAL_LINKS.twitter}

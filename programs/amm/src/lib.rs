@@ -164,6 +164,13 @@ pub mod amm {
     ) -> Result<()> {
         alt_offers::handler_claim_sol(ctx, tier, units, index)
     }
+
+    // DEVNET/TEST ONLY — remove before mainnet. Zeroes the runtime
+    // counters/history (metrics rings, accepted fills, offer sheet, budget
+    // bookkeeping) while preserving pinned config + vault balances.
+    pub fn reset_devnet_state(ctx: Context<ResetDevnetState>) -> Result<()> {
+        reset_devnet_state::handler(ctx)
+    }
 }
 #[derive(Accounts)]
 pub struct CompletedOffers<'info> {

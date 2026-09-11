@@ -29,7 +29,7 @@ export default function LandingPage({ deployment }: LandingPageProps) {
             <StatsSection mint={deployment.mintKey} />
             <ExplainerSection />
             <BuiltWithSection />
-            <SiteFooter />
+            <SiteFooter mint={deployment.mintKey} />
         </div>
     );
 }

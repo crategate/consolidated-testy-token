@@ -17,6 +17,25 @@ const STATE_SUBTITLES: Record<number, string> = {
     3: 'Trading halted due to volatility. Severe penalties active.',
 };
 
+/* Current hour in US Eastern time — state 1 is premarket before open (morning)
+   and after-hours after close (afternoon/evening). */
+function nyHour(d = new Date()): number {
+    return Number(
+        new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/New_York',
+            hour: 'numeric',
+            hourCycle: 'h23',
+        }).format(d),
+    );
+}
+
+function stateTitle(state: number): string {
+    if (state === 1) {
+        return nyHour() < 12 ? 'Premarket Trading' : 'After Hours Trading';
+    }
+    return STATE_LABELS[state] ?? 'Unknown';
+}
+
 interface MarketStatusProps {
     marketStatusPda?: PublicKey;
     variant?: 'full' | 'hero' | 'compact';
@@ -26,7 +45,7 @@ export function MarketStatus({ marketStatusPda, variant = 'full' }: MarketStatus
     const { data, loading, error, stale } = useMarketStatus(marketStatusPda);
 
     const state = data?.state ?? 99;
-    const label = STATE_LABELS[state] ?? 'Unknown';
+    const label = stateTitle(state);
     const subtitle = STATE_SUBTITLES[state] ?? 'Waiting for oracle…';
 
     return (
