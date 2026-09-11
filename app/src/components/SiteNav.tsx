@@ -12,7 +12,7 @@ import './SiteNav.css';
 
 // TODO(mainnet): point these at the real accounts before launch.
 export const SOCIAL_LINKS = {
-    twitter: 'https://x.com/',
+    twitter: 'https://x.com/afhoio',
     telegram: 'https://t.me/',
 };
 

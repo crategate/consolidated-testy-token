@@ -78,6 +78,13 @@ export const DEVNET_PREFIX = "devnet testing: ";
 // opens (and only if it is still open at post time).
 const ALT_ANNOUNCE_DELAY_MS = 5 * 60 * 1000;
 
+// Night-desk announcement gate: only post once the BEST remaining tier's
+// exact claim discount reaches this bar (hundredths of a percent; 200 = 2%).
+// Matches the combinator's MIN_LIST_STORED listing floor — a shallower
+// effective discount is the ratchet floor eating the listed deal, not a real
+// bond sale.
+const DESK_ANNOUNCE_MIN_DISCOUNT_BP100 = 200;
+
 // crank-oracle market-status mapping (0=open, 1=after-hours, 2=closed, 3=halted).
 const MARKET_NAMES: Record<number, string> = {
     0: "OPEN",
@@ -208,7 +215,7 @@ type TierLine = { size: number; discountPct: number; vestingDays: number };
 function tierLine(name: string, tier: TierLine): string {
     return `${name}: ${formatWhole(tier.size)} AFHO @ ${tier.discountPct.toFixed(
         1
-    )}% {discount|off} · ${tier.vestingDays}d {vest|vesting}`;
+    )}% {discount|off} ${tier.vestingDays}d {vest|vesting}`;
 }
 
 // 1. Bond offer sheet posted for the night desk.
@@ -287,22 +294,22 @@ export function dipDigestMessage(
         // No measurable AFHO across the whole window (claims or buyback
         // slices shared every poll window) — report spend and vault only.
         return pick([
-            `Dip {digest|recap}: ${n} dip ${slices === 1 ? "buy" : "buys"} · ${u} USDC deployed · ${r} {still in|left in} the dip vault`,
-            `Buy-the-dip {update|report}: ${n} slice${slices === 1 ? "" : "s"} fired for ${u} USDC · ${r} USDC left in the vault`,
+            `Dip {digest|recap}: ${n} dip ${slices === 1 ? "buy" : "buys"} ${u} USDC deployed ${r} {still in|left in} the dip vault`,
+            `Buy-the-dip {update|report}: ${n} slice${slices === 1 ? "" : "s"} fired for ${u} USDC ${r} USDC left in the vault`,
         ]);
     }
     const p = formatPrice(price);
     if (slices === 1) {
         return pick([
-            `Dip {buy|scoop} today: ${a} AFHO @ ${p} · ${u} USDC deployed · ${r} {still in|left in} the dip vault`,
-            `One dip {executed|fired} since the last update: ${a} AFHO @ ${p} · ${r} USDC {remains|left} in the dip vault`,
-            `{Bought|Picked up} ${a} AFHO @ ${p} on the dip · ${u} USDC in · ${r} USDC left in the vault`,
+            `Dip {buy|scoop} today: ${a} AFHO @ ${p} ${u} USDC deployed ${r} {still in|left in} the dip vault`,
+            `One dip {executed|fired} since the last update: ${a} AFHO @ ${p} ${r} USDC {remains|left} in the dip vault`,
+            `{Bought|Picked up} ${a} AFHO @ ${p} on the dip ${u} USDC in ${r} USDC left in the vault`,
         ]);
     }
     return pick([
-        `Dip {digest|recap|report}: ${n} dip buys — ${a} AFHO @ ${p} avg · ${u} USDC deployed · ${r} {still in|left in} the dip vault`,
-        `Buy-the-dip {update|report}: ${n} slices fired · ${a} AFHO {scooped|picked up} @ ${p} avg · ${u} USDC spent · ${r} USDC left`,
-        `${n} dip buys since the last update — ${a} AFHO @ ${p} avg, ${u} USDC in · dip vault at ${r}`,
+        `Dip {digest|recap|report}: ${n} dip buys — ${a} AFHO @ ${p} avg ${u} USDC deployed ${r} {still in|left in} the dip vault`,
+        `Buy-the-dip {update|report}: ${n} slices fired ${a} AFHO {scooped|picked up} @ ${p} avg ${u} USDC spent ${r} USDC left`,
+        `${n} dip buys since the last update — ${a} AFHO @ ${p} avg, ${u} USDC in dip vault at ${r}`,
     ]);
 }
 
@@ -310,9 +317,9 @@ export function dipDigestMessage(
 export function marketStateMessage(state: number, feeLabel: string): string {
     const name = MARKET_NAMES[state] ?? state;
     return pick([
-        `Market ${name} · ${feeLabel}`,
-        `{Status|State} update: market ${name} · ${feeLabel}`,
-        `Market {is now|switched to} ${name} · ${feeLabel}`,
+        `Market ${name} ${feeLabel}`,
+        `{Status|State} update: market ${name} ${feeLabel}`,
+        `Market {is now|switched to} ${name} ${feeLabel}`,
     ]);
 }
 
@@ -328,7 +335,7 @@ export function closedSaleMessage(tiers: {
     const line = (name: string, t: TierLine & { left: number; total: number }) =>
         `${name}: ${t.left} of ${t.total} × ${formatWhole(t.size)} AFHO @ ${(t.discountPct + 0.5).toFixed(
             1
-        )}% {discount|off} · ${t.vestingDays}d {vest|vesting}`;
+        )}% {discount|off} ${t.vestingDays}d {vest|vesting}`;
     const lines: string[] = [
         pick([
             `Market CLOSED — {bonus discount|night owl special}: every {bond|offer} drops another {0.5%|50 pts|50bps|half percent}`,
@@ -351,9 +358,9 @@ export function mondayOpenMessage(
     const s = stakePct.toFixed(1);
     const v = formatWhole(bondVaultWhole);
     return pick([
-        `Monday open · ${feeLabel} · ${s}% of supply staked · ${v} AFHO in bond vault`,
-        `The week {starts|opens} · ${feeLabel} · ${s}% of supply staked · ${v} AFHO {in the|sitting in the} bond vault`,
-        `Monday {bell|open}: ${feeLabel} · ${s}% staked · ${v} AFHO in the bond vault`,
+        `Monday open ${feeLabel} ${s}% of supply staked ${v} AFHO in bond vault`,
+        `The week {starts|opens} ${feeLabel} ${s}% of supply staked ${v} AFHO {in the|sitting in the} bond vault`,
+        `Monday {bell|open}: ${feeLabel} ${s}% staked ${v} AFHO in the bond vault`,
     ]);
 }
 
@@ -390,7 +397,7 @@ export function altSheetMessage(tiers: {
         name: string,
         t: TierLine & { left: number; total: number }
     ) =>
-        `${name}: ${t.left} of ${t.total} × ${formatWhole(t.size)} AFHO @ ${t.discountPct.toFixed(1)}% {under market|off live price} · ${t.vestingDays}d {unlock|vest}`;
+        `${name}: ${t.left} of ${t.total} × ${formatWhole(t.size)} AFHO @ ${t.discountPct.toFixed(1)}% {under market|off live price} ${t.vestingDays}d {unlock|vest}`;
     const lines: string[] = [
         pick([
             `Something {rare|unusual} just {hit|landed on} the bond desk 👀 — a {limited|one-off} sheet is live, {3–5%|3 to 5 percent} {under market|off live price}, {short|quick} {unlock|vesting}. When it's gone, it's gone.`,
@@ -779,9 +786,10 @@ async function tokenBalanceRaw(
 
 // Best real discount currently available on the night desk, in hundredths of
 // a percent (100 = 1.00%) — 0 when nothing is effectively discounted. Mirrors
-// quote_claim exactly: per tier with remaining lots, the discounted quote
-// (incl. the state-2 bonus) clamped by the ratchet floor with the bonus-depth
-// allowance, measured against the live pool price (vault-ratio spot).
+// quote_claim's TIER-SCALED pricing exactly (offer_claim.rs): the ratchet
+// floor lifts clamped tiers in strict big>med>sml order, so this gate never
+// over-reports a deal the on-chain claim would refuse with FloorHeldAtSpot.
+// `connection` is unused here but kept to match the call-site shape.
 async function bestDeskDiscountBp100(
     connection: Connection,
     ammState: any,
@@ -791,19 +799,52 @@ async function bestDeskDiscountBp100(
 ): Promise<number> {
     if (liveFloor <= 0n) return 0;
     const floor = BigInt(ammState.highestBuybackBasis.toString());
-    const bonusTenths = state === 2 ? 5 : 0;
-    let best = 0;
-    for (const key of ["bigOffer", "medOffer", "smlOffer"]) {
+    const satSub = (a: bigint, b: bigint): bigint => (a > b ? a - b : 0n);
+
+    const discount = (key: string): number => {
         const o = (offerList as any)[key];
-        if (!o || num(o.remaining) <= 0) continue;
-        const d = num(o.discountBps);
-        const bps = BigInt(Math.min(255, d + bonusTenths)) * 10n;
-        const discounted = liveFloor - (liveFloor * bps) / 10_000n;
-        const allowance = (liveFloor * BigInt(bonusTenths) * 10n) / 10_000n;
-        const bound = floor > allowance ? floor - allowance : 0n;
-        const eff = discounted > bound ? discounted : bound;
-        if (eff >= liveFloor) continue; // at/above spot — no discount
-        const bp100 = Number((liveFloor - eff) * 10_000n / liveFloor);
+        return o ? num(o.discountBps) : 0;
+    };
+    // Stored discounts are tenths of a percent (115 = 11.5%); the state-2
+    // closed-session boost adds 5 tenths to every tier.
+    const tierQuote = (d: number): bigint => {
+        const boosted = state === 2 ? Math.min(255, d + 5) : d;
+        return liveFloor - (liveFloor * BigInt(boosted) * 10n) / 10_000n;
+    };
+    const tierBound = (d: number): bigint => {
+        const boosted = state === 2 ? Math.min(255, d + 5) : d;
+        const allowance = (liveFloor * BigInt(boosted - d) * 10n) / 10_000n;
+        return floor > allowance ? floor - allowance : 0n;
+    };
+
+    const dSml = discount("smlOffer");
+    const dMed = discount("medOffer");
+    const dBig = discount("bigOffer");
+    const qSml = tierQuote(dSml);
+    const qMed = tierQuote(dMed);
+    const qBig = tierQuote(dBig);
+    const bSml = tierBound(dSml);
+    const bMed = tierBound(dMed);
+    const bBig = tierBound(dBig);
+
+    // Exact quote_claim tier-scaling (unrolled eff_sml/eff_med/eff_big block).
+    const effSml = qSml >= bSml ? qSml : bSml + satSub(qSml, qBig);
+    const liftedMed = bMed + satSub(qMed, qBig);
+    const cappedMed = liftedMed < satSub(effSml, 1n) ? liftedMed : satSub(effSml, 1n);
+    const effMed = qMed >= bMed ? qMed : (cappedMed > bMed ? cappedMed : bMed);
+    const effBig = qBig > bBig ? qBig : bBig;
+
+    let best = 0;
+    const tiers = [
+        ["smlOffer", effSml],
+        ["medOffer", effMed],
+        ["bigOffer", effBig],
+    ] as const;
+    for (const [key, eff] of tiers) {
+        const o = (offerList as any)[key];
+        if (!o || num(o.remaining) <= 0 || num(o.lotSize) <= 0) continue;
+        if (eff >= liveFloor) continue; // at/above spot — no real discount
+        const bp100 = Number(((liveFloor - eff) * 10_000n) / liveFloor);
         if (bp100 > best) best = bp100;
     }
     return best;
@@ -1122,20 +1163,21 @@ async function main(): Promise<void> {
                 // ── 2: night desk opens (discount-gated, latched) ───────────────────
                 // The desk announces only when a REAL discount is actually
                 // buyable: fresh sheet, lots left, market in a night state,
-                // and the best tier's effective discount (post-ratchet, with
-                // the state-2 bonus allowance) reaches 1%. If the ratchet
-                // holds the desk at/above spot when after-hours starts, the
-                // announcement waits until the decay (or a price move) makes
-                // the bonds worth the click. One announcement per calendar
-                // day (ET): re-opens/flaps the same day stay silent; a new
-                // calendar day announces again. Message matches the session:
-                // sheet post in after-hours, flash sale in closed.
+                // and the best tier's exact tier-scaled claim discount (post-
+                // ratchet, with the state-2 bonus allowance) reaches the
+                // 2% listing bar. If the ratchet holds the desk at/above
+                // spot when after-hours starts, the announcement waits until
+                // the decay (or a price move) makes the bonds worth the
+                // click. One announcement per calendar day (ET): re-opens/
+                // flaps the same day stay silent; a new calendar day
+                // announces again. Message matches the session: sheet post
+                // in after-hours, flash sale in closed.
                 if (
                     (state === 1 || state === 2) &&
                     offerDay === marketDay &&
                     !offerListEmpty(offerList) &&
                     deskAnnouncedDate !== etDate() &&
-                    deskDiscount >= 100
+                    deskDiscount >= DESK_ANNOUNCE_MIN_DISCOUNT_BP100
                 ) {
                     const sheet = buildSheet(offerList);
                     if (state === 2) {
@@ -1292,13 +1334,13 @@ async function main(): Promise<void> {
                 // Restart seed: treat the desk as already-announced ONLY if it
                 // is live AND currently passing the discount gate — a mid-
                 // session restart must not re-tweet, but a desk sitting below
-                // the 1% bar must stay eligible for the delayed announcement
+                // the 2% bar must stay eligible for the delayed announcement
                 // once the decay or a price move carries it through.
                 if (
                     (state === 1 || state === 2) &&
                     offerDay === marketDay &&
                     !offerListEmpty(offerList) &&
-                    deskDiscount >= 100
+                    deskDiscount >= DESK_ANNOUNCE_MIN_DISCOUNT_BP100
                 ) {
                     deskAnnouncedDate = etDate();
                 }
