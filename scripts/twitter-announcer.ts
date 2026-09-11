@@ -5,9 +5,26 @@
 //
 //   1. Daily bond offer sheet goes up for sale (bond sizes / discounts / vesting days)
 //   2. Daily buyback completes (AFHO purchased, average price, USDC spent)
-//   3. Buy-the-dip trigger (AFHO bought, price, remaining dip vault)
+//   3. Buy-the-dip digest — ONE post per ET calendar day at a random
+//       minute inside the 10–11am or 1–3pm ET band (re-rolled daily, so
+//       the slot changes), only when at least one dip slice fired since
+//       the previous digest (slices, AFHO bought, avg price, USDC
+//       deployed, dip vault left)
 //   4. Market-state changes (with the associated unstake fee)
+//   4b. Closed-session flash sale: AFTER-HOURS → CLOSED with bonds still on
+//       the sheet — every remaining tier is 0.5% deeper for the closed window
 //   5. Monday market open (open + fee + % supply staked + bond vault remaining)
+//   6. Ratchet-floor decay digest — the bond offer floor decayed (old → new
+//       floor + % change). NOT posted when the cut lands: decays fire at the
+//       day-start transition, and the digest holds for a RANDOM minute inside
+//       the 12:00–13:00 ET window (re-rolled daily), once per ET calendar
+//       day. Ratchets (floor moving up on buyback fills) shift the baseline
+//       silently.
+//   7. Alt-sheet window — the second, fixed-terms sheet the keeper posts in
+//       the suspended market state. Announced ONCE per trading day, 5 minutes
+//       AFTER the window opens (and only if it is still open at post time —
+//       an early close posts nothing, by design). Copy is deliberately
+//       oblique: no state names, no sale jargon.
 //
 // All post copy lives in the MESSAGE DEFINITIONS block at the top of this
 // file. Copy supports SEO-style "text spinning": {a|b|c} groups pick one
@@ -25,18 +42,13 @@
 //   token pair (X_ACCESS_TOKEN + X_ACCESS_TOKEN_SECRET) in addition to the app
 //   consumer key/secret. Generate them from the same portal page.
 //
-// Telegram credentials — MTProto userbot via gramjs (the "telegram" package):
-//   TG_API_ID        numeric api_id from https://my.telegram.org → API
-//                    development tools (this is NOT the api_hash)
-//   TG_API_HASH      api_hash from the same page
-//   TG_PHONE         account phone number (only needed for the first login)
-//   TG_SESSION       string session; auto-saved to .env after the first login
-//   TG_CHANNEL       channel/group to post into: @username or -100… numeric id
-//   TG_TEST_SERVER   "true" = Telegram test DCs instead of production
+// Telegram credentials — Bot API (no SDK, no login flow):
+//   TELEGRAM_BOT_TOKEN     token from @BotFather (/newbot → copy the token)
+//   TELEGRAM_CHANNEL_ID    channel to post into: @username or -100… numeric id
 //
-//   The logged-in account must be an admin of TG_CHANNEL with post rights.
-//   DC IPs/ports are resolved by the client automatically — you never
-//   configure them.
+//   The bot must be an ADMIN of that channel with "Post messages" enabled.
+//   Setup takes ~2 minutes: @BotFather → /newbot → name it → copy the token,
+//   create the channel, add the bot as an admin, set the two env vars.
 //
 // Flags:
 //   X_ENABLED / TG_ENABLED  channel switches (X on by default, TG off by default)
@@ -44,7 +56,7 @@
 //   DRY_RUN      "true" logs the post text instead of hitting X / Telegram
 //   POLL_INTERVAL_MS  poll cadence (default 60000)
 //
-// Run: yarn add telegram && npx ts-node scripts/twitter-announcer.ts
+// Run: npx ts-node scripts/twitter-announcer.ts
 //
 // This is a read-only observer. It does NOT hold a signer and does NOT move
 // any funds — it only watches account state and posts announcements.
@@ -56,16 +68,15 @@ import * as https from "https";
 import * as dotenv from "dotenv";
 import * as fs from "fs";
 import * as path from "path";
-import * as readline from "readline";
 
 dotenv.config();
 
-// ════════════════════════════════════════════════════════════════════════════
-// MESSAGE DEFINITIONS — all post copy lives here. Edit this block only.
-// ════════════════════════════════════════════════════════════════════════════
 
-// Prepended to every announcement when devnet mode is enabled.
 export const DEVNET_PREFIX = "devnet testing: ";
+
+// Alt-sheet announcement delay: the window is announced 5 minutes AFTER it
+// opens (and only if it is still open at post time).
+const ALT_ANNOUNCE_DELAY_MS = 5 * 60 * 1000;
 
 // crank-oracle market-status mapping (0=open, 1=after-hours, 2=closed, 3=halted).
 const MARKET_NAMES: Record<number, string> = {
@@ -79,6 +90,7 @@ const MARKET_NAMES: Record<number, string> = {
 const LOT_SIZER: number[] = [
     0, 10, 25, 50, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000, 15000,
     20000, 50000, 100000, 250000, 500000, 1000000, 2500000, 5000000,
+    10000000,
 ];
 
 // ── number formatting (copy-facing) ──────────────────────────────────────────
@@ -105,10 +117,8 @@ export function formatPrice(p: number): string {
     return `$${p.toFixed(decimals)}`;
 }
 
-// Unstake fee label for a market state. Open = no fee; otherwise the staking
-// pool's penalty tier (bps) for that state, shown as a whole/tenth percent.
 export function unstakeFeeLabel(pool: any, state: number): string {
-    if (state === 0) return "no unstake fee";
+    if (state === 0) return "no unlock fees";
     const bpsByState: Record<number, number> = {
         1: pool.afterHoursPenaltyBps as number,
         2: pool.closedPenaltyBps as number,
@@ -117,16 +127,13 @@ export function unstakeFeeLabel(pool: any, state: number): string {
     const bps = bpsByState[state] ?? 0;
     const pct = bps / 100;
     const label = Number.isInteger(pct) ? String(pct) : pct.toFixed(1);
-    return `${label}% unstake fee`;
+    return `${label}% penalty to principle for unlock`;
 }
 
 // ── text spinning ────────────────────────────────────────────────────────────
-// SEO-style "spinning": every `{a|b|c}` group picks one option at random
+// every `{a|b|c}` group picks one option at random
 // (nesting works), and each event also has several full-template variants,
-// so repeated announcements read differently. Builders return the template
-// with spin groups INTACT — announce() spins once per channel, so X and
-// Telegram get their own wording.
-
+// so repeated announcements read differently. 
 export function spin(template: string): string {
     const out: string[] = [];
     let i = 0;
@@ -212,10 +219,10 @@ export function bondsMessage(sheet: {
 }): string {
     const lines: string[] = [
         pick([
-            "AFHO bonds are up for sale",
-            "The night desk just {posted|dropped} {today's|the daily} bond sheet",
+            "{discounted|Vesting|AFHO|Bulk token} bond{s| offers} {are now available|have posted|now trading}",
+            "The {OTC|after hours desk} {just|has|} {posted|dropped|published} {tonights's|the daily} {bond|offer} {sheet|deals}",
             "{Fresh|New} AFHO bonds just {hit the desk|went on sale}",
-            "Bond desk {is open|opened} — AFHO bonds {now available|on sale now}",
+            "{Bond desk|Offer desk|OTC office} {is open|opened|now open|trading now}..  AFHO {bonds|vesting bulk bonds} {now available|on sale now}",
         ]),
     ];
     if (sheet.big.size > 0) lines.push(tierLine("Big", sheet.big));
@@ -234,25 +241,68 @@ export function buybackCompleteMessage(
     const p = formatPrice(avgPrice);
     const u = formatUsdc(usdc);
     return pick([
-        `Daily buyback complete: ${a} AFHO @ ${p} avg for ${u} USDC`,
-        `Buyback {done|finished|wrapped up}: ${a} AFHO at ${p} {average|avg} · ${u} USDC {spent|used}`,
-        `{Today's|The day's} buyback {closed|ended}: ${a} AFHO @ ${p} · ${u} USDC`,
+        `{Daily buyback|Buyback vault drain|Bond buyback spend} {complete|finished|ended}: ${a} AFHO token at ${p} avg for ${u} USDC`,
+        `Buyback {done|finished|concluded|terminated}: ${a} AFHO at ${p} {average|avg}.. ${u} USDC {spent|used}`,
+        `{Today's|The day's} buyback {closed|ended} after spending ${u} USDC on ${a} AFHO @ ${p} average `,
     ]);
 }
 
-// 3. Buy-the-dip slice fired.
-export function dipBuyMessage(
+// Daily dip-digest window: the digest lands at a random minute inside one
+// of these ET bands (50/50 band pick, re-rolled every ET calendar day so
+// the slot changes). Minutes are ET minutes-of-day (10:00 = 600).
+export const DIP_SLOT_BANDS: Array<[number, number]> = [
+    [10 * 60, 11 * 60], // mid-morning 10:00–10:59 ET
+    [13 * 60, 15 * 60], // mid-afternoon 13:00–14:59 ET
+];
+
+// Random digest slot: uniform minute inside a random band.
+export function rollDipSlotMinute(): number {
+    const [lo, hi] =
+        DIP_SLOT_BANDS[Math.floor(Math.random() * DIP_SLOT_BANDS.length)];
+    return lo + Math.floor(Math.random() * (hi - lo));
+}
+
+// Re-roll inside the band that contains `nowMin` — used when a dip fires
+// after today's slot already passed: uniform minute in [nowMin, hi).
+export function rollDipSlotMinuteFrom(nowMin: number, hi: number): number {
+    return nowMin + Math.floor(Math.random() * (hi - nowMin));
+}
+
+// 3. Daily buy-the-dip digest. Per-slice posts are gone: slices accumulate
+// in the poll loop and ONE digest posts per ET calendar day, at a random
+// minute inside the 10–11am or 1–3pm ET band, only when at least one slice
+// fired since the last digest.
+export function dipDigestMessage(
+    slices: number,
     afho: number,
+    usdc: number,
     price: number,
     dipUsdcRemaining: number
 ): string {
     const a = formatAfho(afho);
-    const p = formatPrice(price);
+    const u = formatUsdc(usdc);
     const r = formatUsdc(dipUsdcRemaining);
+    const n = formatWhole(slices);
+    if (afho <= 0) {
+        // No measurable AFHO across the whole window (claims or buyback
+        // slices shared every poll window) — report spend and vault only.
+        return pick([
+            `Dip {digest|recap}: ${n} dip ${slices === 1 ? "buy" : "buys"} · ${u} USDC deployed · ${r} {still in|left in} the dip vault`,
+            `Buy-the-dip {update|report}: ${n} slice${slices === 1 ? "" : "s"} fired for ${u} USDC · ${r} USDC left in the vault`,
+        ]);
+    }
+    const p = formatPrice(price);
+    if (slices === 1) {
+        return pick([
+            `Dip {buy|scoop} today: ${a} AFHO @ ${p} · ${u} USDC deployed · ${r} {still in|left in} the dip vault`,
+            `One dip {executed|fired} since the last update: ${a} AFHO @ ${p} · ${r} USDC {remains|left} in the dip vault`,
+            `{Bought|Picked up} ${a} AFHO @ ${p} on the dip · ${u} USDC in · ${r} USDC left in the vault`,
+        ]);
+    }
     return pick([
-        `Buy the dip: bought ${a} AFHO @ ${p} · ${r} USDC left in dip vault`,
-        `Dip buy {executed|fired}: ${a} AFHO @ ${p} · ${r} USDC {remains|left} in the dip vault`,
-        `{Bought|Picked up} ${a} AFHO @ ${p} on the dip · ${r} USDC {still in|left in} the dip vault`,
+        `Dip {digest|recap|report}: ${n} dip buys — ${a} AFHO @ ${p} avg · ${u} USDC deployed · ${r} {still in|left in} the dip vault`,
+        `Buy-the-dip {update|report}: ${n} slices fired · ${a} AFHO {scooped|picked up} @ ${p} avg · ${u} USDC spent · ${r} USDC left`,
+        `${n} dip buys since the last update — ${a} AFHO @ ${p} avg, ${u} USDC in · dip vault at ${r}`,
     ]);
 }
 
@@ -264,6 +314,32 @@ export function marketStateMessage(state: number, feeLabel: string): string {
         `{Status|State} update: market ${name} · ${feeLabel}`,
         `Market {is now|switched to} ${name} · ${feeLabel}`,
     ]);
+}
+
+// 4b. Closed-session flash sale: the market went AFTER-HOURS → CLOSED and the
+// sheet still has bonds left. Every remaining tier prices +0.5% deeper for
+// the closed window (programs/amm offer_claim::quote_claim). Copy shows the
+// BOOSTED discount (base + 0.5) and what remains per tier.
+export function closedSaleMessage(tiers: {
+    big: TierLine & { left: number; total: number };
+    med: TierLine & { left: number; total: number };
+    sml: TierLine & { left: number; total: number };
+}): string {
+    const line = (name: string, t: TierLine & { left: number; total: number }) =>
+        `${name}: ${t.left} of ${t.total} × ${formatWhole(t.size)} AFHO @ ${(t.discountPct + 0.5).toFixed(
+            1
+        )}% {discount|off} · ${t.vestingDays}d {vest|vesting}`;
+    const lines: string[] = [
+        pick([
+            `Market CLOSED — {bonus discount|night owl special}: every {bond|offer} drops another {0.5%|50 pts|50bps|half percent}`,
+            `{extended hours|after hours} {finished|ended|done}. Market {now CLOSED|just closed} — the {closed-session|50pts|late-night} discount just kicked in: −0.5% more on every bond left`,
+            `CLOSED-session prices are live — {all|any|the} remaining bonds {drop|discount|move down|priced better by} {an extra|another|an additional|a bonus} {0.5%|50 points|50bps|half percent}.`,
+        ]),
+    ];
+    if (tiers.big.left > 0) lines.push(line("Big", tiers.big));
+    if (tiers.med.left > 0) lines.push(line("Med", tiers.med));
+    if (tiers.sml.left > 0) lines.push(line("Sml", tiers.sml));
+    return lines.join("\n");
 }
 
 // 5. Monday market open (richer variant of the market-open message).
@@ -281,7 +357,62 @@ export function mondayOpenMessage(
     ]);
 }
 
+// 6. Ratchet-floor decay digest. Floor units are nano-USD (price per whole
+// token × 1e9), the same convention the /dash "Ratchet floor (USDC)" row
+// shows, so 4792 → "$0.000004792". The floor only ever moves DOWN via
+// calc_completed_offers decay (fills ratchet it up), so the message is the
+// desk easing its no-discount boundary toward the live market after days
+// with no bond sales. Posted at the noon ET slot, not when the cut lands.
+export function floorDecayMessage(oldFloorUsd: number, newFloorUsd: number): string {
+    const fmt = (v: number) => `$${v.toFixed(9)}`;
+    const pct = oldFloorUsd > 0 ? ((newFloorUsd - oldFloorUsd) / oldFloorUsd) * 100 : 0;
+    const pctLabel = `${pct > 0 ? "+" : "-"}${Math.abs(pct).toFixed(1)}%`;
+    const o = fmt(oldFloorUsd);
+    const n = fmt(newFloorUsd);
+    return pick([
+        `Bond floor {update|adjustment}: ratcheted bond offer floor ${o} → ${n} (${pctLabel}) — {the desk re-prices toward market|bond pricing eases toward the tape|the floor steps down to meet demand}`,
+        `{Floor digest|Floor check}: ratcheted bond offer floor now ${n}, down from ${o} (${pctLabel}) — {unsold|unfilled} bond pricing {eases|moves closer to the live market}`,
+        `The ratcheted bond offer floor {stepped down|eased|slid} ${o} → ${n} (${pctLabel}) — {no takers at the old floor|the desk meets the market where it is|pricing re-anchors to live trade}`,
+    ]);
+}
+
 // ════════════════════════════════════════════════════════════════════════════
+// 7. Alt-sheet window (suspended state only). Announced once per trading
+// day, 5 minutes after the window opens, and only while the window is
+// still open at post time. Copy is deliberately oblique — no state names,
+// no sale jargon; the tier lines carry the concrete terms.
+export function altSheetMessage(tiers: {
+    big: TierLine & { left: number; total: number };
+    med: TierLine & { left: number; total: number };
+    sml: TierLine & { left: number; total: number };
+}): string {
+    const altLine = (
+        name: string,
+        t: TierLine & { left: number; total: number }
+    ) =>
+        `${name}: ${t.left} of ${t.total} × ${formatWhole(t.size)} AFHO @ ${t.discountPct.toFixed(1)}% {under market|off live price} · ${t.vestingDays}d {unlock|vest}`;
+    const lines: string[] = [
+        pick([
+            `Something {rare|unusual} just {hit|landed on} the bond desk 👀 — a {limited|one-off} sheet is live, {3–5%|3 to 5 percent} {under market|off live price}, {short|quick} {unlock|vesting}. When it's gone, it's gone.`,
+            `{Rare drop|Special window}: the desk just listed a {one-time|limited} bond sheet at {3–5%|3 to 5 percent} {under market|off the live price} — {no schedule|no warning}, {no reruns today|gone when the window closes}.`,
+            `The desk just opened a {side window|second shelf}: bonds at {3–5%|3 to 5 percent} {under market|off live}, {3–7|3 to 7} day {unlock|vesting}. {First come|Fastest hands} win.`,
+        ]),
+    ];
+    if (tiers.big.total > 0) lines.push(altLine("Big", tiers.big));
+    if (tiers.med.total > 0) lines.push(altLine("Med", tiers.med));
+    if (tiers.sml.total > 0) lines.push(altLine("Sml", tiers.sml));
+    return lines.join("\n");
+}
+
+// Decay digest window: the digest lands at a random minute inside
+// 12:00–13:00 ET ("around noon", re-rolled daily so the exact time moves).
+const DECAY_SLOT_BAND: [number, number] = [12 * 60, 13 * 60];
+
+export function rollDecaySlotMinute(): number {
+    const [lo, hi] = DECAY_SLOT_BAND;
+    return lo + Math.floor(Math.random() * (hi - lo));
+}
+
 // CONFIG & CREDENTIALS
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -300,20 +431,9 @@ const X_ACCESS_TOKEN = process.env.X_ACCESS_TOKEN ?? "";
 const X_ACCESS_TOKEN_SECRET = process.env.X_ACCESS_TOKEN_SECRET ?? "";
 const X_API_BASE = process.env.X_API_BASE ?? "https://api.twitter.com";
 
-// Telegram MTProto (userbot) config. TG_API_ID is the INTEGER id from
-// my.telegram.org (not the api_hash). TG_SESSION is auto-saved to .env
-// after the first interactive login.
-const TG_API_ID = Number(process.env.TG_API_ID ?? 0);
-const TG_API_HASH = process.env.TG_API_HASH ?? "";
-const TG_SESSION = process.env.TG_SESSION ?? "";
-const TG_PHONE = process.env.TG_PHONE ?? "";
-const TG_CHANNEL = process.env.TG_CHANNEL ?? "";
-const TG_TEST_SERVER = ["true", "1", "yes"].includes(
-    (process.env.TG_TEST_SERVER ?? "").toLowerCase()
-);
-const TG_DEVICE_MODEL = process.env.TG_DEVICE_MODEL ?? "AFHO Announcer";
-const TG_APP_VERSION = process.env.TG_APP_VERSION ?? "1.0.0";
-const TG_SYSTEM_VERSION = process.env.TG_SYSTEM_VERSION ?? process.platform;
+// Telegram Bot API config.
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? "";
+const TELEGRAM_CHANNEL_ID = process.env.TELEGRAM_CHANNEL_ID ?? "";
 
 const DEVNET_MODE = ["true", "1", "yes"].includes(
     (process.env.DEVNET_MODE ?? "").toLowerCase()
@@ -333,6 +453,22 @@ export function isMondayEt(now: Date = new Date()): boolean {
         weekday: "short",
     }).format(now);
     return parts === "Mon";
+}
+
+// (retired: the decay digest now uses a randomized daily slot — see
+// rollDecaySlotMinute / etMinutesOfDay)
+
+// ET minutes-of-day (10:30 ET = 630). Host-TZ-independent like the helpers
+// above — the dip digest compares this against its daily random slot.
+export function etMinutesOfDay(now: Date = new Date()): number {
+    const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/New_York",
+        hour: "numeric",
+        minute: "2-digit",
+        hourCycle: "h23",
+    }).format(now); // "9:05" / "13:45"
+    const [h, m] = parts.split(":").map(Number);
+    return h * 60 + m;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -425,139 +561,142 @@ function postTweet(text: string): Promise<void> {
     });
 }
 
-// Post to every enabled channel. Spinning runs once per channel, so X and
-// Telegram each get their own variation of the same announcement.
-async function announce(text: string): Promise<void> {
-    const template = DEVNET_MODE ? DEVNET_PREFIX + text : text;
+// Post to every enabled channel with the SAME text — the template is spun
+// once per event, so X and Telegram always mirror each other. `silent` opts
+// the post out of Telegram push notifications (X has no equivalent): routine
+// state changes post silently so the notable events actually ping phones.
+async function announce(text: string, opts?: { silent?: boolean }): Promise<void> {
+    const silent = opts?.silent ?? false;
+    const body = spin(DEVNET_MODE ? DEVNET_PREFIX + text : text);
 
+    // Channels are independent: a failure on one (rate limit, revoked
+    // token, API outage) logs and moves on — it must never block the
+    // others, and never marks the whole poll as failed.
     if (X_ENABLED) {
-        const body = spin(template);
         if (body.length > 280) {
             console.warn(`!! tweet exceeds 280 chars (${body.length}):\n${body}`);
         }
         if (DRY_RUN) {
             console.log(`[dry-run][x] would tweet:\n${body}\n`);
         } else {
-            await postTweet(body);
-            console.log(`[x] ${body.replace(/\n/g, " ")}`);
+            try {
+                await postTweet(body);
+                console.log(`[x] ${body.replace(/\n/g, " ")}`);
+            } catch (e) {
+                console.error(`!! [x] post failed: ${(e as Error).message}`);
+            }
         }
     }
 
     if (TG_ENABLED) {
-        const body = spin(template);
         if (DRY_RUN) {
             console.log(`[dry-run][tg] would post:\n${body}\n`);
         } else {
-            await sendTelegram(body);
-            console.log(`[tg] ${body.replace(/\n/g, " ")}`);
+            try {
+                await sendTelegram(body, silent);
+                console.log(`[tg]${silent ? " (silent)" : ""} ${body.replace(/\n/g, " ")}`);
+            } catch (e) {
+                console.error(`!! [tg] post failed: ${(e as Error).message}`);
+            }
         }
     }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// TELEGRAM CLIENT (MTProto userbot via gramjs). Lazily required so the
-// 'telegram' package is only needed when TG_ENABLED=true. DC IPs/ports are
-// resolved by the client — TG_TEST_SERVER switches to the test DCs.
+// TELEGRAM SENDER (Bot API) — no SDK, no login flow, one HTTPS call per post.
+//
+// One-time setup (do this once, then it just works):
+//   1. In Telegram, message @BotFather: /newbot → pick a name → copy the
+//      token (looks like 123456789:AA…).
+//   2. Create the announcement channel, add the bot as an ADMIN with
+//      "Post messages" enabled.
+//   3. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL_ID (@username or -100…)
+//      in .env, then TG_ENABLED=true.
+//
+// Posts go out as HTML — the copy carries no markup, so & < > are escaped
+// and newlines survive. Bots may only post to channels/groups where they
+// are admins; they can never message a user who hasn't opened the bot.
 // ════════════════════════════════════════════════════════════════════════════
 
-let tgClient: any = null;
-
-function loadTelegram(): any {
-    try {
-        return require("telegram");
-    } catch {
-        throw new Error(
-            "TG_ENABLED=true but the 'telegram' (gramjs) package is not " +
-                "installed. Run: yarn add telegram"
-        );
-    }
+function escapeHtml(s: string): string {
+    return s
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
 }
 
-function promptLine(question: string): Promise<string> {
-    return new Promise((resolve) => {
-        const rl = readline.createInterface({
-            input: process.stdin,
-            output: process.stdout,
-        });
-        rl.question(question, (answer) => {
-            rl.close();
-            resolve(answer.trim());
-        });
+function telegramApi(
+    method: string,
+    params: Record<string, unknown>
+): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const payload = JSON.stringify(params);
+        const req = https.request(
+            {
+                method: "POST",
+                host: "api.telegram.org",
+                port: 443,
+                path: `/bot${TELEGRAM_BOT_TOKEN}/${method}`,
+                headers: {
+                    "Content-Type": "application/json",
+                    "Content-Length": Buffer.byteLength(payload),
+                    "User-Agent": "afho-announcer",
+                },
+            },
+            (res) => {
+                let data = "";
+                res.on("data", (chunk) => (data += chunk));
+                res.on("end", () => {
+                    if (
+                        res.statusCode &&
+                        res.statusCode >= 200 &&
+                        res.statusCode < 300
+                    ) {
+                        resolve();
+                    } else {
+                        reject(
+                            new Error(
+                                `Telegram API ${res.statusCode}: ${data.slice(0, 300)}`
+                            )
+                        );
+                    }
+                });
+            }
+        );
+        req.on("error", reject);
+        req.write(payload);
+        req.end();
     });
 }
 
-// Persist the string session into .env so later runs skip the login flow.
-function upsertEnv(key: string, value: string): void {
-    const envPath = path.join(process.cwd(), ".env");
-    const content = fs.existsSync(envPath)
-        ? fs.readFileSync(envPath, "utf-8")
-        : "";
-    const line = `${key}="${value.replace(/"/g, '\\"')}"`;
-    const re = new RegExp(`^${key}=.*$`, "m");
-    const next = re.test(content)
-        ? content.replace(re, () => line)
-        : content.replace(/\s*$/, "") + "\n" + line + "\n";
-    fs.writeFileSync(envPath, next);
-}
-
-// Connect once at startup; on a fresh session run the interactive phone
-// login (code + optional 2FA) and save the resulting session to .env.
+// Validate the token once at startup — getMe fails fast with a readable
+// error ("Unauthorized" = bad token) before the poll loop starts.
 async function initTelegram(): Promise<void> {
     if (!TG_ENABLED || DRY_RUN) return; // dry run never touches Telegram
-
-    if (TG_API_ID === 0 || TG_API_HASH === "") {
+    if (TELEGRAM_BOT_TOKEN === "" || TELEGRAM_CHANNEL_ID === "") {
         throw new Error(
-            "TG_ENABLED=true but TG_API_ID / TG_API_HASH are missing. Get " +
-                "the numeric api_id and the api_hash from https://my.telegram.org " +
-                "→ API development tools, then set both in .env."
+            "TG_ENABLED=true but TELEGRAM_BOT_TOKEN / TELEGRAM_CHANNEL_ID " +
+            "are missing. Create a bot with @BotFather and add it as an " +
+            "admin of your channel, then set both in .env."
         );
     }
-    if (TG_CHANNEL === "") {
+    try {
+        await telegramApi("getMe", {});
+    } catch (e) {
         throw new Error(
-            "TG_ENABLED=true but TG_CHANNEL is not set. Use the channel " +
-                "username (@your_channel) or numeric id (-100…)."
+            `Telegram startup check failed: ${(e as Error).message}`
         );
-    }
-
-    const telegram = loadTelegram();
-    const { StringSession } = require("telegram/sessions");
-    tgClient = new telegram.TelegramClient(
-        new StringSession(TG_SESSION),
-        TG_API_ID,
-        TG_API_HASH,
-        {
-            connectionRetries: 5,
-            deviceModel: TG_DEVICE_MODEL,
-            appVersion: TG_APP_VERSION,
-            systemVersion: TG_SYSTEM_VERSION,
-            testServers: TG_TEST_SERVER,
-        }
-    );
-    await tgClient.connect();
-    if (!(await tgClient.checkAuthorization())) {
-        console.log(" Telegram first login — a code will arrive in Telegram.");
-        await tgClient.start({
-            phoneNumber: async () =>
-                TG_PHONE ||
-                (await promptLine("Telegram phone (e.g. +15551234567): ")),
-            password: async () =>
-                await promptLine("Telegram 2FA password (blank if none): "),
-            phoneCode: async () => await promptLine("Telegram login code: "),
-            onError: (err: any) =>
-                console.error(" telegram login error:", err),
-        });
-        const saved = tgClient.session.save();
-        if (typeof saved === "string" && saved.length > 0) {
-            upsertEnv("TG_SESSION", saved);
-            console.log(
-                " telegram session saved to .env (TG_SESSION) — future runs skip login."
-            );
-        }
     }
 }
 
-async function sendTelegram(text: string): Promise<void> {
-    await tgClient.sendMessage(TG_CHANNEL, { message: text });
+async function sendTelegram(text: string, silent = false): Promise<void> {
+    await telegramApi("sendMessage", {
+        chat_id: TELEGRAM_CHANNEL_ID,
+        text: escapeHtml(text),
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+        disable_notification: silent,
+    });
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -578,11 +717,20 @@ function loadIdl(name: string): anchor.Idl {
     return JSON.parse(fs.readFileSync(p, "utf-8"));
 }
 
-function programFor(name: string, provider: anchor.Provider): anchor.Program {
-    return new anchor.Program(loadIdl(name), provider);
+function programFor(
+    name: string,
+    programId: PublicKey,
+    provider: anchor.Provider
+): anchor.Program {
+    const idl = loadIdl(name);
+    // Pin the program id from deployment.json — deployed programs can be
+    // rotated to new ids without an IDL regen. anchor 0.31 reads `idl.address`
+    (idl as any).address = programId.toBase58();
+    return new anchor.Program(idl, provider);
 }
-
-const num = (x: any): number => (x as anchor.BN).toNumber();
+function num(x: any): number {
+    return anchor.BN.isBN(x) ? Number(x.toString()) : Number(x);
+}
 
 function lotSize(tier: number): number {
     return LOT_SIZER[tier] ?? 0;
@@ -627,6 +775,38 @@ async function tokenBalanceRaw(
 ): Promise<number> {
     const info = await connection.getTokenAccountBalance(account);
     return Number(info.value.amount);
+}
+
+// Best real discount currently available on the night desk, in hundredths of
+// a percent (100 = 1.00%) — 0 when nothing is effectively discounted. Mirrors
+// quote_claim exactly: per tier with remaining lots, the discounted quote
+// (incl. the state-2 bonus) clamped by the ratchet floor with the bonus-depth
+// allowance, measured against the live pool price (vault-ratio spot).
+async function bestDeskDiscountBp100(
+    connection: Connection,
+    ammState: any,
+    offerList: any,
+    state: number,
+    liveFloor: bigint
+): Promise<number> {
+    if (liveFloor <= 0n) return 0;
+    const floor = BigInt(ammState.highestBuybackBasis.toString());
+    const bonusTenths = state === 2 ? 5 : 0;
+    let best = 0;
+    for (const key of ["bigOffer", "medOffer", "smlOffer"]) {
+        const o = (offerList as any)[key];
+        if (!o || num(o.remaining) <= 0) continue;
+        const d = num(o.discountBps);
+        const bps = BigInt(Math.min(255, d + bonusTenths)) * 10n;
+        const discounted = liveFloor - (liveFloor * bps) / 10_000n;
+        const allowance = (liveFloor * BigInt(bonusTenths) * 10n) / 10_000n;
+        const bound = floor > allowance ? floor - allowance : 0n;
+        const eff = discounted > bound ? discounted : bound;
+        if (eff >= liveFloor) continue; // at/above spot — no discount
+        const bp100 = Number((liveFloor - eff) * 10_000n / liveFloor);
+        if (bp100 > best) best = bp100;
+    }
+    return best;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -674,14 +854,9 @@ async function main(): Promise<void> {
     const crankProgramId = new PublicKey(deployment.crankProgram);
     const stakingProgramId = new PublicKey(deployment.stakingProgram);
 
-    const ammProgram = programFor("amm", provider);
-    const crankProgram = programFor("crank_oracle", provider);
-    const stakingProgram = programFor("staking", provider);
-    // Override program ids — IDL files carry the correct declared ids already,
-    // but pin them from deployment.json to match the deployed programs.
-    (ammProgram as any).programId = ammProgramId;
-    (crankProgram as any).programId = crankProgramId;
-    (stakingProgram as any).programId = stakingProgramId;
+    const ammProgram = programFor("amm", ammProgramId, provider);
+    const crankProgram = programFor("crank_oracle", crankProgramId, provider);
+    const stakingProgram = programFor("staking", stakingProgramId, provider);
 
     const [ammStatePda] = PublicKey.findProgramAddressSync(
         [Buffer.from("amm_state"), afhoMint.toBuffer()],
@@ -690,6 +865,12 @@ async function main(): Promise<void> {
     const [marketStatusPda] = PublicKey.findProgramAddressSync(
         [Buffer.from("market_status")],
         crankProgramId
+    );
+    // Alt desk sheet (same OfferList layout, separate PDA) — read lazily at
+    // post time; the fetch throws while the account doesn't exist yet.
+    const [altListPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("alt_offer_list"), afhoMint.toBuffer()],
+        ammProgramId
     );
 
     // Token decimals are immutable; resolve once.
@@ -703,7 +884,7 @@ async function main(): Promise<void> {
     );
     const usdcDecimals = usdcMintInfo.value.decimals;
 
-    console.log(" AFHO announcer started");
+    console.log("AFHO announcer started");
     console.log("  cluster:", RPC_URL);
     console.log("  ammState:", ammStatePda.toBase58());
     console.log("  marketStatus:", marketStatusPda.toBase58());
@@ -713,12 +894,12 @@ async function main(): Promise<void> {
             .filter(Boolean)
             .join(" + ")
     );
-    if (TG_ENABLED && !DRY_RUN) console.log("  telegram target:", TG_CHANNEL);
+    if (TG_ENABLED && !DRY_RUN) console.log("  telegram target:", TELEGRAM_CHANNEL_ID);
     console.log("  devnet mode:", DEVNET_MODE);
     console.log("  dry run:", DRY_RUN);
     console.log("  poll interval (ms):", POLL_INTERVAL_MS);
 
-    // ── cross-poll event memory ────────────────────────────────────────────────
+    // ── cross-poll event memory ────────────────────────────────────────────
     let initialized = false;
     let prevState = -1;
     let prevOfferDayIndex = -1;
@@ -728,6 +909,49 @@ async function main(): Promise<void> {
     // Snapshot of the AFHO bond vault at the start of today's buyback window.
     let buybackSnapshot: { day: number; afhoRaw: number } | null = null;
     let lastReportedBuybackDay = -1;
+    // Desk-open latch: one desk announcement per CALENDAR day (ET — the
+    // night session spans midnight UTC, so UTC days would split it). The
+    // sheet post and the 1→2 flash sale share the latch: whichever fires
+    // first announces the desk; later opens/closes the same calendar day
+    // stay silent (price-flap reopenings are noise, not events).
+    let deskAnnouncedDate: string | null = null;
+    // Ratchet-floor decay digest (section 6): the floor only ever moves DOWN
+    // via decay — buyback/dip fills ratchet it UP — so current floor < last
+    // announced floor = a decay happened. Held for the noon ET slot (decays
+    // land at the day-start transition, ~9:30 ET on mainnet; the digest
+    // batches them to lunch), once per ET calendar day. Ratchets upward move
+    // the baseline silently. Seeded from live state on restart so a mid-day
+    // restart never re-announces an old decay; the NEXT decay re-arms it.
+    let floorAnnouncedRaw: number | null = null;
+    let decayAnnouncedDate: string | null = null;
+    // Buy-the-dip digest (loop section 4): slices accumulate into a pending
+    // window; ONE digest per ET calendar day at a random minute inside the
+    // 10–11am / 1–3pm ET bands (re-rolled daily so the slot changes), only
+    // when ≥1 slice fired since the previous digest. A dip landing after
+    // today's slot but still inside a band re-rolls a fresh slot later
+    // today (the once-per-day cap stands). In-memory like the decay
+    // baseline: a mid-day restart forgets the pending window and re-rolls
+    // today's slot.
+    let dipPendingSlices = 0;
+    let dipPendingAfhoWhole = 0;
+    let dipPendingUsdcWhole = 0;
+    let dipAnnouncedDate: string | null = null;
+    let dipSlotDate = "";
+    let dipSlotMinute = -1;
+    // Decay digest slot: randomized daily inside 12:00–13:00 ET (replaces
+    // the old "first poll at-or-after noon" — same batching, moving time).
+    let decaySlotDate = "";
+    let decaySlotMinute = -1;
+    // Alt-sheet window: one announcement per trading day, scheduled 5
+    // minutes after the window opens (see section 7 in the poll loop).
+    let haltAnnouncedDay = -1;
+    const etDate = (): string =>
+        new Intl.DateTimeFormat("en-CA", {
+            timeZone: "America/New_York",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+        }).format(new Date());
 
     while (true) {
         try {
@@ -760,15 +984,41 @@ async function main(): Promise<void> {
                 new PublicKey(ammState.usdcDip)
             );
 
+            // Live AFHO price (floor units, vault-ratio spot over the pinned
+            // CPMM pool) — feeds the desk-open discount gate below.
+            let liveFloor = 0n;
+            try {
+                const cpmmPool = new PublicKey(ammState.cpmmPoolState);
+                const vaultOf = (m: PublicKey) => PublicKey.findProgramAddressSync(
+                    [Buffer.from("pool_vault"), cpmmPool.toBuffer(), m.toBuffer()],
+                    new PublicKey(ammState.cpmmProgram)
+                )[0];
+                const [afhoPoolRaw, usdcPoolRaw] = await Promise.all([
+                    tokenBalanceRaw(connection, vaultOf(afhoMint)),
+                    tokenBalanceRaw(connection, vaultOf(new PublicKey(ammState.usdcMint))),
+                ]);
+                if (afhoPoolRaw > 0) liveFloor = BigInt(Math.floor(usdcPoolRaw * 1e12 / afhoPoolRaw));
+            } catch {
+                liveFloor = 0n; // unreadable pool → discount gate stays shut
+            }
+            const deskDiscount = await bestDeskDiscountBp100(
+                connection, ammState, offerList, state, liveFloor
+            );
+
             const bbDay = num(ammState.bbDayIndex);
             const bbSpentUsdc = num(ammState.bbSpentUsdc);
             const dipSpentUsdc = num(ammState.dipSpentUsdc);
             const dipSliceCount = ammState.dipSliceCount as number;
             const offerDay = num(offerList.dayIndex);
+            const floorRaw = num(ammState.highestBuybackBasis);
 
             // Buyback baseline: prefer the freshest pre-open afho_vault read when we
-            // first see market open; fall back to a mid-buyback startup snapshot.
-            if (initialized && prevState !== 0 && state === 0) {
+            // first see a day-start open (1→0 or 2→0 — the same pair the crank
+            // rolls trading_day_index on; a 3→0 halt lift is not a new day);
+            // fall back to a mid-buyback startup snapshot.
+            const dayStartedOpen =
+                initialized && (prevState === 1 || prevState === 2) && state === 0;
+            if (dayStartedOpen) {
                 buybackSnapshot = { day: marketDay, afhoRaw: prevAfhoVaultRaw };
             }
             if (
@@ -780,10 +1030,19 @@ async function main(): Promise<void> {
             }
 
             if (initialized) {
-                // ── 1/5: market-state change (Monday open gets the richer message) ──
+                // States 1 and 2 stay SILENT in the state-change block: the
+                // night desk speaks through its own discount-gated
+                // announcement below (sheet post in after-hours, flash sale
+                // in closed) — never a bare "desk open/closed" tweet, and no
+                // end-of-day post when the desk never opened.
                 if (state !== prevState) {
                     const feeLabel = unstakeFeeLabel(stakingPool, state);
-                    if (state === 0 && isMondayEt()) {
+                    // Morning-open announcements fire ONLY on the canonical
+                    // day-start pair (1→0 or 2→0) — the normal path is
+                    // 2→1→0 (extended hours between closed and open), so a
+                    // 3→0 halt lift (or any other →0) stays silent here; the
+                    // halt itself was announced when it landed.
+                    if (dayStartedOpen && isMondayEt()) {
                         const totalSupplyRaw = Number(
                             (await connection.getTokenSupply(afhoMint)).value.amount
                         );
@@ -796,16 +1055,101 @@ async function main(): Promise<void> {
                                 feeLabel,
                                 stakePct,
                                 toWhole(afhoVaultRaw, afhoDecimals)
-                            )
+                            ),
+                            { silent: true }
                         );
-                    } else {
-                        await announce(marketStateMessage(state, feeLabel));
+                    } else if (dayStartedOpen) {
+                        // Morning open is a real daily event — announce it.
+                        await announce(marketStateMessage(state, feeLabel), {
+                            silent: true,
+                        });
+                    } else if (state === 3) {
+                        // Halts are safety-relevant — announce the change.
+                        await announce(marketStateMessage(state, feeLabel), {
+                            silent: true,
+                        });
+                        // ── 7: alt-sheet window — 5-minute delayed post ──
+                        // Scheduled the moment the window opens; the post
+                        // itself re-reads the market state and only fires if
+                        // the window is STILL open (an early close posts
+                        // nothing — no end-of-window announcement, by
+                        // design). Latched once per trading day at schedule
+                        // time, so window flaps never double-post. A
+                        // mid-window restart seeds silently (never
+                        // re-announces), same rule as every other latch.
+                        if (haltAnnouncedDay !== marketDay) {
+                            haltAnnouncedDay = marketDay;
+                            setTimeout(async () => {
+                                try {
+                                    const status = await (
+                                        crankProgram.account as any
+                                    ).marketStatus.fetch(marketStatusPda);
+                                    if ((status.currentState as number) !== 3)
+                                        return;
+                                    const day = num(status.tradingDayIndex);
+                                    const alt = await (
+                                        ammProgram.account as any
+                                    ).offerList.fetch(altListPda);
+                                    if (num(alt.dayIndex) !== day) return;
+                                    const empty =
+                                        num(alt.bigOffer.totalOffered) === 0 &&
+                                        num(alt.medOffer.totalOffered) === 0 &&
+                                        num(alt.smlOffer.totalOffered) === 0;
+                                    if (empty) return;
+                                    const sheet = buildSheet(alt);
+                                    await announce(
+                                        altSheetMessage({
+                                            big: { ...sheet.big, left: num(alt.bigOffer.remaining), total: num(alt.bigOffer.totalOffered) },
+                                            med: { ...sheet.med, left: num(alt.medOffer.remaining), total: num(alt.medOffer.totalOffered) },
+                                            sml: { ...sheet.sml, left: num(alt.smlOffer.remaining), total: num(alt.smlOffer.totalOffered) },
+                                        })
+                                    );
+                                } catch (e) {
+                                    // No sheet account yet / transient RPC —
+                                    // the window stays unannounced rather
+                                    // than late.
+                                    console.error(`!! alt-sheet post failed: ${(e as Error).message}`);
+                                }
+                            }, ALT_ANNOUNCE_DELAY_MS);
+                        }
                     }
+                    // States 1 and 2 stay SILENT here: the night desk speaks
+                    // through its own announcements (sheet post below, or the
+                    // flash sale above) — never a bare "desk open/closed"
+                    // tweet. No desk opening that day = no end-of-day post.
                 }
 
-                // ── 2: bond sheet posted for the night desk ─────────────────────────
-                if (offerDay !== prevOfferDayIndex && !offerListEmpty(offerList)) {
-                    await announce(bondsMessage(buildSheet(offerList)));
+                // ── 2: night desk opens (discount-gated, latched) ───────────────────
+                // The desk announces only when a REAL discount is actually
+                // buyable: fresh sheet, lots left, market in a night state,
+                // and the best tier's effective discount (post-ratchet, with
+                // the state-2 bonus allowance) reaches 1%. If the ratchet
+                // holds the desk at/above spot when after-hours starts, the
+                // announcement waits until the decay (or a price move) makes
+                // the bonds worth the click. One announcement per calendar
+                // day (ET): re-opens/flaps the same day stay silent; a new
+                // calendar day announces again. Message matches the session:
+                // sheet post in after-hours, flash sale in closed.
+                if (
+                    (state === 1 || state === 2) &&
+                    offerDay === marketDay &&
+                    !offerListEmpty(offerList) &&
+                    deskAnnouncedDate !== etDate() &&
+                    deskDiscount >= 100
+                ) {
+                    const sheet = buildSheet(offerList);
+                    if (state === 2) {
+                        await announce(
+                            closedSaleMessage({
+                                big: { ...sheet.big, left: num(offerList.bigOffer.remaining), total: num(offerList.bigOffer.totalOffered) },
+                                med: { ...sheet.med, left: num(offerList.medOffer.remaining), total: num(offerList.medOffer.totalOffered) },
+                                sml: { ...sheet.sml, left: num(offerList.smlOffer.remaining), total: num(offerList.smlOffer.totalOffered) },
+                            })
+                        );
+                    } else {
+                        await announce(bondsMessage(sheet));
+                    }
+                    deskAnnouncedDate = etDate();
                 }
 
                 // ── 3: daily buyback drained the buyback vault ──────────────────────
@@ -834,26 +1178,131 @@ async function main(): Promise<void> {
                     buybackSnapshot = null;
                 }
 
-                // ── 4: buy-the-dip slice fired ──────────────────────────────────────
+                // ── 4: buy-the-dip — randomized-slot daily digest ────────────────────
+                // Per-slice posts are gone: slices accumulate into a pending
+                // window and ONE digest fires per ET day, at a random minute
+                // inside the 10–11am / 1–3pm band, ONLY when at least one
+                // slice fired since the previous digest. AFHO bought is
+                // measured per-slice from the afho_vault delta (a claim or
+                // buyback slice in the same 60s poll window skews that
+                // slice's figure) — the same convention the old per-slice
+                // post used. dip_slice_count/dip_spent_usdc reset to 0 on
+                // day rollover, so a shrinking counter = day reset.
+                if (dipSlotDate !== etDate()) {
+                    dipSlotDate = etDate();
+                    dipSlotMinute = rollDipSlotMinute();
+                }
+                const sliceDelta =
+                    dipSliceCount >= prevDipSliceCount
+                        ? dipSliceCount - prevDipSliceCount
+                        : dipSliceCount;
+                const spentDelta =
+                    dipSpentUsdc >= prevDipSpentUsdc
+                        ? dipSpentUsdc - prevDipSpentUsdc
+                        : dipSpentUsdc;
+                if (sliceDelta > 0 || spentDelta > 0) {
+                    dipPendingSlices += Math.max(
+                        sliceDelta,
+                        spentDelta > 0 ? 1 : 0
+                    );
+                    dipPendingUsdcWhole += toWhole(spentDelta, usdcDecimals);
+                    const afhoDelta = afhoVaultRaw - prevAfhoVaultRaw;
+                    if (afhoDelta > 0) {
+                        dipPendingAfhoWhole += toWhole(
+                            afhoDelta,
+                            afhoDecimals
+                        );
+                    }
+                    // Dip fired after today's slot but still inside a band →
+                    // fresh random slot later today. Outside the bands the
+                    // pending window simply waits for tomorrow's slot.
+                    const etNow = etMinutesOfDay();
+                    const band = DIP_SLOT_BANDS.find(
+                        ([lo, hi]) => etNow >= lo && etNow < hi
+                    );
+                    if (
+                        dipAnnouncedDate !== etDate() &&
+                        band &&
+                        dipSlotMinute <= etNow
+                    ) {
+                        dipSlotMinute = rollDipSlotMinuteFrom(etNow, band[1]);
+                    }
+                }
                 if (
-                    dipSliceCount > prevDipSliceCount ||
-                    dipSpentUsdc > prevDipSpentUsdc
+                    (dipPendingSlices > 0 || dipPendingUsdcWhole > 0) &&
+                    dipAnnouncedDate !== etDate() &&
+                    etMinutesOfDay() >= dipSlotMinute
                 ) {
-                    const afhoBought = toWhole(
-                        afhoVaultRaw - prevAfhoVaultRaw,
-                        afhoDecimals
+                    const price =
+                        dipPendingAfhoWhole > 0
+                            ? dipPendingUsdcWhole / dipPendingAfhoWhole
+                            : 0;
+                    await announce(
+                        dipDigestMessage(
+                            dipPendingSlices,
+                            dipPendingAfhoWhole,
+                            dipPendingUsdcWhole,
+                            price,
+                            toWhole(usdcDipRaw, usdcDecimals)
+                        )
                     );
-                    const usdcSpent = toWhole(
-                        dipSpentUsdc - prevDipSpentUsdc,
-                        usdcDecimals
+                    dipAnnouncedDate = etDate();
+                    dipPendingSlices = 0;
+                    dipPendingAfhoWhole = 0;
+                    dipPendingUsdcWhole = 0;
+                }
+
+                // ── 5: ratchet-floor decay — randomized noon digest ─────
+                // The floor never moves down except via calc_completed_offers
+                // decay (fills ratchet it up), so floor < last-announced floor
+                // = a decay happened. Held for a RANDOM minute inside the
+                // 12:00–13:00 ET band (re-rolled daily): decays land at the
+                // day-start transition (~9:30 ET on mainnet) and the digest
+                // batches them to lunch at a time that moves day to day, once
+                // per ET calendar day. Ratchets upward move the baseline
+                // silently so the next decay measures from the true peak.
+                if (decaySlotDate !== etDate()) {
+                    decaySlotDate = etDate();
+                    decaySlotMinute = rollDecaySlotMinute();
+                }
+                if (floorAnnouncedRaw === null) floorAnnouncedRaw = floorRaw;
+                if (floorRaw > floorAnnouncedRaw) floorAnnouncedRaw = floorRaw;
+                if (
+                    floorRaw < floorAnnouncedRaw &&
+                    decayAnnouncedDate !== etDate() &&
+                    etMinutesOfDay() >= decaySlotMinute
+                ) {
+                    await announce(
+                        floorDecayMessage(
+                            Number(floorAnnouncedRaw) / 1e9,
+                            Number(floorRaw) / 1e9
+                        )
                     );
-                    const price = afhoBought > 0 ? usdcSpent / afhoBought : 0;
-                    const dipRemaining = toWhole(usdcDipRaw, usdcDecimals);
-                    await announce(dipBuyMessage(afhoBought, price, dipRemaining));
+                    decayAnnouncedDate = etDate();
+                    floorAnnouncedRaw = floorRaw;
                 }
             }
 
             // ── advance cross-poll memory ──────────────────────────────────────────
+            if (!initialized) {
+                // Decay digest seed: baseline = the live floor at startup, so
+                // a mid-session restart never re-announces an old decay; the
+                // NEXT decay (floor dropping below this baseline) re-arms it.
+                floorAnnouncedRaw = floorRaw;
+                // Restart seed: treat the desk as already-announced ONLY if it
+                // is live AND currently passing the discount gate — a mid-
+                // session restart must not re-tweet, but a desk sitting below
+                // the 1% bar must stay eligible for the delayed announcement
+                // once the decay or a price move carries it through.
+                if (
+                    (state === 1 || state === 2) &&
+                    offerDay === marketDay &&
+                    !offerListEmpty(offerList) &&
+                    deskDiscount >= 100
+                ) {
+                    deskAnnouncedDate = etDate();
+                }
+            }
             prevState = state;
             prevOfferDayIndex = offerDay;
             prevAfhoVaultRaw = afhoVaultRaw;

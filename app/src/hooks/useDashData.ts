@@ -11,6 +11,7 @@ import {
     CRANK_PROGRAM_ID,
     field,
     type AmmStateData,
+    type LivePriceData,
     type MarketStatusData,
     type OfferListData,
     type StakePoolData,
@@ -60,6 +61,57 @@ function fmtTs(unix: unknown): string {
     const n = Number(String(unix ?? 0));
     if (!n) return 'never';
     return new Date(n * 1000).toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+}
+
+/* Momentum score — TS port of programs/amm/src/instructions/helpers_make_offers.rs
+ * ::calculate_momentum_score. Recency-weighted mean of the 20-day price_changes
+ * ring (centi-percent, each sample clamped to ±10%/day, 0 = no sample) plus
+ * half the recent-5 vs older trend delta, scaled around 5000 → 0-10000.
+ * Cold start: fewer than 5 nonzero samples → score 0. */
+const MOMENTUM_MIN_SAMPLES = 5;
+const MOMENTUM_CP_FULL_SCALE = 500; // 5.00% in centi-percent pins the scale
+const MOMENTUM_SAMPLE_CAP_CP = 1000; // ±10%/day effective per sample
+
+function momentumScore(priceChanges: number[], sampleHead: number): { score: number; samples: number } {
+    const n = priceChanges.length;
+    if (n === 0) return { score: 0, samples: 0 };
+    const head = ((sampleHead % n) + n) % n;
+    let count = 0, wSum = 0, wTotal = 0, recentSum = 0, recentN = 0, olderSum = 0, olderN = 0;
+    for (let age = 0; age < n; age++) {
+        const raw = priceChanges[(head + age) % n];
+        if (raw === 0) continue;
+        const v = Math.max(-MOMENTUM_SAMPLE_CAP_CP, Math.min(MOMENTUM_SAMPLE_CAP_CP, raw));
+        count += 1;
+        const w = age + 1; // newer days weigh more
+        wSum += v * w;
+        wTotal += w;
+        if (age >= n - 5) {
+            recentSum += v;
+            recentN += 1;
+        } else {
+            olderSum += v;
+            olderN += 1;
+        }
+    }
+    if (count < MOMENTUM_MIN_SAMPLES) return { score: 0, samples: count };
+    const weightedAvg = Math.trunc(wSum / wTotal);
+    const trend = recentN > 0 && olderN > 0 ? Math.trunc(recentSum / recentN) - Math.trunc(olderSum / olderN) : 0;
+    const blended = weightedAvg + Math.trunc(trend / 2);
+    const score = 5000 + Math.trunc((blended * 5000) / MOMENTUM_CP_FULL_SCALE);
+    return { score: Math.min(10000, Math.max(0, score)), samples: count };
+}
+
+/* Daily close→close price-change ring in chronological order (sample_head =
+ * next write = oldest slot), newest last, 0 entries (no sample) skipped. */
+function priceChangeRing(priceChanges: number[], sampleHead: number, take = 10): string {
+    const n = priceChanges.length;
+    if (n === 0) return '—';
+    const head = ((sampleHead % n) + n) % n;
+    const chrono: number[] = [];
+    for (let age = 0; age < n; age++) chrono.push(priceChanges[(head + age) % n]);
+    const samples = chrono.filter((v) => v !== 0).slice(-take);
+    if (samples.length === 0) return '—';
+    return samples.map((v) => `${v > 0 ? '+' : ''}${(v / 100).toFixed(2)}%`).join(' → ');
 }
 
 function pk(value?: string): PublicKey | null {
@@ -176,6 +228,88 @@ async function fetchRemainingAccounts(
     };
 }
 
+/* ── Ratchet (buyback floor) history ──
+ *
+ * highest_buyback_basis only stores its CURRENT value, so "last % change"
+ * comes from tx logs: calc_completed_offers logs every decay cut
+ * ("floor decay locked day N: OLD -> NEW (live L, demand D%)"). Buyback/dip
+ * fills can also ratchet the floor UP (to the fill's exec price, unlogged)
+ * — the gap between the last decay's end value and the live floor exposes
+ * those. Scanned from recent amm_state txs; devnet-grade RPC cost, so this
+ * query refetches only on the dash's manual refresh.
+ */
+export interface RatchetDecayEvent {
+    slot: number;
+    time: number | null;
+    day: number;
+    from: bigint;
+    to: bigint;
+    live: bigint;
+    demand: number;
+}
+
+export interface RatchetHistory {
+    events: RatchetDecayEvent[]; // chronological, oldest first
+    scanned: number; // txs scanned
+}
+
+const DECAY_LOG_RE = /floor decay locked day (\d+): (\d+) -> (\d+) \(live (\d+), demand (\d+)%/;
+
+async function rpcRetry<T>(fn: () => Promise<T>): Promise<T> {
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    for (let i = 0; ; i++) {
+        try {
+            return await fn();
+        } catch (e) {
+            if (!/429|Too Many|rate/i.test(String(e)) || i > 5) throw e;
+            await sleep(1500 * (i + 1));
+        }
+    }
+}
+
+async function fetchRatchetHistory(
+    connection: Connection,
+    ammStatePda: PublicKey,
+): Promise<RatchetHistory> {
+    const sigs = await rpcRetry(() =>
+        connection.getSignaturesForAddress(ammStatePda, { limit: 30 }, 'confirmed')
+    );
+    const events: RatchetDecayEvent[] = [];
+    let scanned = 0;
+    for (const s of sigs.slice().reverse()) {
+        // v1 claims (SIMD-0385) share this PDA's history with legacy/v0
+        // keeper txs. Ask for v1 and skip signatures the 1.x SDK can't
+        // decode — the scanner only reads logMessages (decay logs come from
+        // the keeper's legacy/v0 txs), so skipping a v1 sig loses nothing.
+        scanned += 1;
+        let t: Awaited<ReturnType<Connection['getTransaction']>> = null;
+        try {
+            t = await rpcRetry(() =>
+                connection.getTransaction(s.signature, { maxSupportedTransactionVersion: 1 })
+            );
+        } catch {
+            continue;
+        }
+        if (!t || t.meta?.err) continue;
+        for (const line of t.meta?.logMessages ?? []) {
+            const m = line.match(DECAY_LOG_RE);
+            if (m) {
+                events.push({
+                    slot: t.slot,
+                    time: t.blockTime ?? null,
+                    day: Number(m[1]),
+                    from: BigInt(m[2]),
+                    to: BigInt(m[3]),
+                    live: BigInt(m[4]),
+                    demand: Number(m[5]),
+                });
+            }
+        }
+        await new Promise((r) => setTimeout(r, 900)); // devnet rate limits
+    }
+    return { events, scanned };
+}
+
 function buildDashData(
     deployment: ResolvedDeployment,
     marketStatus: MarketStatusData | null,
@@ -185,6 +319,8 @@ function buildDashData(
     remaining: RemainingAccounts,
     ammProgram: PublicKey,
     crankProgram: PublicKey,
+    livePrice: LivePriceData | null,
+    ratchet: RatchetHistory | null,
 ): DashData {
     const missing: string[] = [];
 
@@ -239,6 +375,16 @@ function buildDashData(
             },
             { label: 'Stake trend (5d)', value: trail.join(' → ') || '—' },
         );
+        const changes = field<number[]>(metrics, 'priceChanges', 'price_changes') ?? [];
+        const sampleHead = Number(field(metrics, 'sampleHead', 'sample_head') ?? 0);
+        const mom = momentumScore(changes, sampleHead);
+        offerFields.push(
+            {
+                label: 'Momentum (0-10000)',
+                value: mom.samples < MOMENTUM_MIN_SAMPLES ? `— cold (${mom.samples}/${MOMENTUM_MIN_SAMPLES} samples)` : `${mom.score} / 10000 (5000 = flat)`,
+            },
+            { label: 'Price 24h change ring', value: priceChangeRing(changes, sampleHead) },
+        );
     }
 
     const acceptedInfo = remaining.acceptedOffers;
@@ -260,16 +406,59 @@ function buildDashData(
     // ---- AMM ----
     const ammFields: DashField[] = [];
     if (ammState) {
+        const floor = BigInt(field(ammState, 'highestBuybackBasis', 'highest_buyback_basis') ?? 0n);
+        const untaken = Number(field(ammState, 'untakenDays', 'untaken_days') ?? 0);
+        const spot = livePrice?.afhoUsdc ?? null;
+        const solSpot = livePrice?.solUsdc ?? null;
+        const pct = (a: bigint, b: bigint): string => `${((Number(a) - Number(b)) / Number(b) * 100).toFixed(2)}%`;
+        const usd = (f: bigint): string => `$${(Number(f) / 1e9).toFixed(9)}`;
         ammFields.push(
             {
                 label: 'SOL / USDC proceeds',
                 value: `${fmtSol(field(ammState, 'totalSolProceeds', 'total_sol_proceeds'))} / ${fmtToken(field(ammState, 'totalUsdcProceeds', 'total_usdc_proceeds'), 6)} USDC`,
             },
             {
-                label: 'Highest buyback basis',
-                value: `${field(ammState, 'highestBuybackBasis', 'highest_buyback_basis')}`,
+                label: 'Ratchet floor (USDC)',
+                // Stored in floor units (price × 1e9 nano-USD per token):
+                // 4505 = $0.000004505/AFHO.
+                value: usd(floor),
             },
+            {
+                label: 'Ratchet floor (SOL)',
+                // Same floor-unit convention on both legs → a plain ratio
+                // gives the whole-token AFHO price in SOL.
+                value: solSpot && solSpot > 0n ? `${(Number(floor) / Number(solSpot)).toFixed(12)} SOL` : '—',
+            },
+            {
+                label: 'Floor vs spot',
+                value: spot && spot > 0n
+                    ? `${pct(floor, spot)} ${floor >= spot ? 'above — decay territory' : 'below — desk trades over the floor'}`
+                    : '—',
+            },
+            { label: 'Untaken days', value: `${untaken} (decay starts on the 4th straight locked day)` },
         );
+        const last = ratchet?.events[ratchet.events.length - 1] ?? null;
+        if (last) {
+            const decayPct = ((Number(last.to) - Number(last.from)) / Number(last.from) * 100).toFixed(2);
+            const since = ((Number(floor) - Number(last.to)) / Number(last.to) * 100).toFixed(2);
+            const ago = last.time
+                ? `${Math.max(1, Math.round((Date.now() / 1000 - last.time) / 3600))}h ago`
+                : '';
+            ammFields.push(
+                {
+                    label: 'Last floor decay',
+                    value: `${decayPct}% (${last.from} → ${last.to}) · day ${last.day} · demand ${last.demand}%${ago ? ` · ${ago}` : ''}`,
+                },
+                {
+                    label: 'Floor Δ since last decay',
+                    // Positive = buyback/dip fills ratcheted the floor back
+                    // up after that cut; ~0% = it has only decayed since.
+                    value: `${since.startsWith('-') || since === '0.00' ? '' : '+'}${since}%`,
+                },
+            );
+        } else {
+            ammFields.push({ label: 'Last floor decay', value: ratchet ? 'none in recent history' : '—' });
+        }
     }
     const ammAfho = token(remaining.ammAfhoVault);
     const ammUsdc = token(remaining.ammUsdcVault);
@@ -428,7 +617,7 @@ function buildDashData(
 
 export function useDashData() {
     const { connection } = useConnection();
-    const { deployment, marketStatus, pool, ammState, offerList, refresh } = useChainData();
+    const { deployment, marketStatus, pool, ammState, offerList, livePrice, refresh } = useChainData();
 
     const programs = useMemo(() => {
         return {
@@ -460,11 +649,35 @@ export function useDashData() {
         retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
     });
 
+    // Floor-change history: tx-log scan (~30 RPC calls, ~27s with the
+    // rate-limit sleeps), so manual-refresh only. refetchOnWindowFocus is
+    // explicitly disabled: with react-query's default (true) every return to
+    // the tab after 60s of staleness re-ran the whole scan, monopolizing the
+    // rate-limited devnet endpoint for ~half a minute and starving the shared
+    // snapshot + remaining queries into 429 backoff — the dash then sat on
+    // stale data while every other request fought the scan.
+    const ratchetQuery = useQuery({
+        queryKey: ['dashRatchet', deployment?.ammState ?? ''],
+        queryFn: async () => {
+            if (!deployment?.ammState) throw new Error('Deployment not loaded');
+            return fetchRatchetHistory(connection, new PublicKey(deployment.ammState));
+        },
+        enabled: !!deployment?.ammState,
+        staleTime: 60_000,
+        refetchOnWindowFocus: false,
+        retry: (failureCount, error) => {
+            const msg = error instanceof Error ? error.message : String(error);
+            return /429|rate/i.test(msg) ? failureCount < 2 : failureCount < 1;
+        },
+        retryDelay: (attemptIndex) => Math.min(2000 * 2 ** attemptIndex, 30000),
+    });
+
     const doRefresh = useCallback(() => {
         void refresh('amm');
         void refresh('marketStatus');
         void refresh('pool');
-    }, [refresh]);
+        void ratchetQuery.refetch();
+    }, [refresh, ratchetQuery]);
 
     const data = useMemo(() => {
         if (!deployment || !remainingQuery.data) return null;
@@ -477,8 +690,10 @@ export function useDashData() {
             remainingQuery.data,
             ammProgram,
             crankProgram,
+            livePrice ?? null,
+            ratchetQuery.data ?? null,
         );
-    }, [deployment, marketStatus, pool, ammState, offerList, remainingQuery.data, ammProgram, crankProgram]);
+    }, [deployment, marketStatus, pool, ammState, offerList, remainingQuery.data, ammProgram, crankProgram, livePrice, ratchetQuery.data]);
 
     const error = remainingQuery.error instanceof Error ? remainingQuery.error.message : null;
 

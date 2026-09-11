@@ -5,6 +5,30 @@ import { PublicKey, SystemProgram } from '@solana/web3.js';
 import BN from 'bn.js';
 import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';
 
+/** Exact decimal string → raw base units as BN (e.g. "12.345678912", 9 dp).
+    Replaces the old float path (`Number(amount) * 1e9`), which rounded above
+    the wallet's raw balance for large amounts and failed the transfer.
+    Exported for StakeForm's exact amount-vs-balance comparisons.
+    Rejects negative amounts — token quantities are positive-only (zero is
+    rejected by the stake caller).
+    Throws on invalid input — callers guard. */
+export function parseAmountToRawBN(amount: string, decimals: number): BN {
+    let s = amount.trim();
+    if (s === '' || s.startsWith('-')) {
+        throw new Error('Amount must be positive');
+    }
+    s = s.replace(/^\+/, '');
+    if (/e/i.test(s)) s = Number(s).toString(); // exponent notation → plain decimal
+    if (s === '' || s.startsWith('-')) {
+        throw new Error('Amount must be positive');
+    }
+    const [whole, frac = ''] = s.split('.');
+    const fracPadded = (frac + '0'.repeat(decimals)).slice(0, decimals);
+    return new BN(whole || '0', 10)
+        .mul(new BN(10).pow(new BN(decimals)))
+        .add(new BN(fracPadded || '0', 10));
+}
+
 export function useStake(mint: PublicKey | null, marketStatusPda?: PublicKey) {
     const { publicKey } = useWallet();
     const { connection } = useConnection();
@@ -59,7 +83,10 @@ export function useStake(mint: PublicKey | null, marketStatusPda?: PublicKey) {
         ], STAKING_PROGRAM_ID);
 
         const ownerToken = getAssociatedTokenAddressSync(mint, publicKey, false, TOKEN_2022_PROGRAM_ID);
-        const stakeAmount = new BN(Number(amount) * 1e9);
+        const stakeAmount = parseAmountToRawBN(amount, 9);
+        if (stakeAmount.lten(0)) {
+            throw new Error('Stake amount must be greater than zero');
+        }
 
         // ─── DEBUG LOGS ───
         console.group('STAKE DEBUG');

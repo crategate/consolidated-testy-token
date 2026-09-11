@@ -1,0 +1,26 @@
+# AFHO frontend — SPA routing + caching for Apache/cPanel
+#
+# 1) BrowserRouter deep links (/dash, /offer-desk, …) 404 without a rewrite
+#    back to index.html. This file is copied into dist/ by `vite build`.
+#    NOTE: cPanel File Manager hides dotfiles — enable "Show hidden files"
+#    when uploading, or upload via FTP.
+#
+# 2) index.html is served no-cache so a new deploy is picked up immediately;
+#    hashed /assets/* files are immutable and cached long-term.
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    # Serve existing files and directories as-is (assets, logos, deployment.json)
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule . index.html [L]
+</IfModule>
+
+<IfModule mod_headers.c>
+    <FilesMatch "^index\.html$">
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+    </FilesMatch>
+    <FilesMatch "^assets/.*\.(js|css|png|jpg|svg|woff2?)$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
+</IfModule>

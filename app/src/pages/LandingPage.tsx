@@ -4,6 +4,7 @@ import { StakingSection } from '../components/landing/StakingSection';
 import { StatsSection } from '../components/landing/StatsSection';
 import { ExplainerSection } from '../components/landing/ExplainerSection';
 import { BuiltWithSection } from '../components/landing/BuiltWithSection';
+import { SiteFooter } from '../components/landing/SiteFooter';
 import type { ResolvedDeployment } from '../config';
 
 interface LandingPageProps {
@@ -22,12 +23,13 @@ export default function LandingPage({ deployment }: LandingPageProps) {
                 <div className="fx-blob fx-blob--4" />
             </div>
             <HeroSection deployment={deployment} />
-            <StatsSection mint={deployment.mintKey} />
             {connected && (
                 <StakingSection mint={deployment.mintKey} marketStatusPda={deployment.marketStatusKey} />
             )}
+            <StatsSection mint={deployment.mintKey} />
             <ExplainerSection />
             <BuiltWithSection />
+            <SiteFooter mint={deployment.mintKey} />
         </div>
     );
 }

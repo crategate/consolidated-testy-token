@@ -56,18 +56,34 @@ async function main() {
         // u64::MAX = leave the sheet's day_index alone (only calc_completed_offers
         // cares, and only for yesterday's sheet)
         offerDayIndex: new anchor.BN("18446744073709551615"),
-        // Plausible tonight's sheet (lot tiers via lot_sizer: 15 = 50k AFHO,
-        // 10 = 5k, 5 = 250; discount_bps in tenths of a percent):
-        //   big 3 offered / 2 remaining, tier 15, 11.5% off, 30-day vest
-        //   med 5 / 4, tier 10, 9% off, 20-day vest
-        //   sml 10 / 8, tier 5, 7.5% off, 10-day vest
+        // Plausible tonight's sheet (lot tiers via lot_sizer: 19 = 1M AFHO,
+        // 16 = 100k, 13 = 15k — the vault-scaled ladder for a ~750M-token
+        // vault; discount_bps in tenths of a percent):
+        //   big 3 offered / 2 remaining, tier 19, 11.5% off, 30-day vest
+        //   med 5 / 4, tier 16, 9% off, 20-day vest
+        //   sml 10 / 8, tier 13, 7.5% off, 10-day vest
         bigOffered: 3, bigRemaining: 2,
         medOffered: 5, medRemaining: 4,
         smlOffered: 10, smlRemaining: 8,
-        bigLotTier: 15, bigDiscountBps: 115, bigVestingDays: 30,
-        medLotTier: 10, medDiscountBps: 90, medVestingDays: 20,
-        smlLotTier: 5, smlDiscountBps: 75, smlVestingDays: 10,
+        bigLotTier: 19, bigDiscountBps: 115, bigVestingDays: 30,
+        medLotTier: 16, medDiscountBps: 90, medVestingDays: 20,
+        smlLotTier: 13, smlDiscountBps: 75, smlVestingDays: 10,
     };
+
+    // One-time offer_list resize (devnet-big u8→u32 count widening): the
+    // zero-copy account grew 80 → 104 bytes, and every typed load fails on a
+    // pre-widening account — so resize in place first (idempotent no-op once
+    // current).
+    await ammProgram.methods
+        .migrateOfferList()
+        .accountsStrict({
+            authority: provider.wallet.publicKey,
+            ammState: pda("amm_state"),
+            offerList: pda("offer_list"),
+            systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .rpc();
+    console.log(" offer_list migrated/resized if needed");
 
     const sig = await ammProgram.methods
         .loadTestData(scenario)
@@ -84,7 +100,11 @@ async function main() {
     console.log("   price_changes: +0.30% -> +2.20% daily over 20 days");
     console.log("   accepted offers rising (big 10→50, med 20→70, sml 30→75)");
     console.log("   stake health steady at 40%");
-    console.log("   offer sheet: big 3/2 @50k 11.5% 30d · med 5/4 @5k 9% 20d · sml 10/8 @250 7.5% 10d");
+    console.log("   offer sheet: big 3/2 @1M 11.5% 30d · med 5/4 @100k 9% 20d · sml 10/8 @15k 7.5% 10d");
+
+    // NOTE: the mock-dex-pool program is DELETED — every swap/pricing path
+    // requires the pinned Raydium CPMM pool. Run 'anchor run set-cpmm-pool'
+    // (and 'set-sol-usdc-pool' for the SOL leg) after every fresh amm-init.
 }
 
 main().catch((e) => {

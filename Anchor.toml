@@ -8,29 +8,35 @@ skip-lint = false
 [programs.devnet]
 amm = "AU19M8ELLh7h4GMpmj9ZKjF4NNXmYK6aiVoLs9yvnuRi"
 crank_oracle = "HkA18DxZU3RSg2cJfC1vZEkkRmDnSWuXjHim2NXbao7U"
-mock_dex_pool = "CAmYEL8zb8rtV2F9r68P7NLeYNdB3cXXCrahDCBRL27S"
 staking = "AR1Wyj3CLhcxB5jAiqFn5xHFamcjdNiiYv9gQLCVvTZp"
-
-[programs.localnet]
-mock_dex_pool = "CAmYEL8zb8rtV2F9r68P7NLeYNdB3cXXCrahDCBRL27S"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
 cluster = "devnet"
-wallet = "~/.config/solana/id.json"
+wallet = "~/.config/solana/la.json"
 
 [scripts]
-# current flow after feed is set:
-# anchor run mint → anchor run amm-init → anchor run set-cpmm-pool → anchor run set-sol-usdc-pool -> anchor run init → anchor run bount
+# launch flow (2026-09-09 split of mint-launch.ts — see scripts/mint-create.ts header):
+# anchor run mint-create → init → feed-deploy → amm-init → fund-launch → create-pool
+#   → set-pools → burn-lp (REAL LAUNCH ONLY, EXECUTE=1; skip in the Phase-0 rehearsal) → bount
+
+# or anchor run bount-test-watch with anchor run set-oracle -- 1 to update
+# zip -r … . in app/dist 
 
 feed-deploy = "npx ts-node ./scripts/oracle/feed-deploy.ts"
-mint = "npx ts-node scripts/mint-launch.ts"
+mint-create = "npx ts-node scripts/mint-create.ts" # phase 1: mint + metadata, 0 supply
+fund-launch = "npx ts-node scripts/fund-launch.ts" # phase 2: THE supply tx (75% vault + 25% seed + revoke both authorities, one tx)
+create-pool = "npx ts-node scripts/create-pool.ts" # phase 3: Raydium CPMM from the seed ATA (AFHO_TO_LP/USDC_TO_LP/USDC_MINT env)
+burn-lp = "npx ts-node scripts/burn-lp.ts"         # final: burn 100% of LP — dry-run by default, EXECUTE=1; SKIP in Phase-0 rehearsal
 amm-init = "npx ts-node ./scripts/amm-init.ts"
 amm-offers = "npx ts-node ./scripts/amm-offers.ts" # devnet only feature    
 amm-test-data = "npx ts-node ./scripts/amm-test-data.ts" #devnet only 
-bount = "npx ts-node ./scripts/oracle/mev-keeper.ts"
+bount = "npx ts-node ./scripts/oracle/mev-keeper.ts" # devnet (has --test-state machinery; for MAINNET use bount-mainnet)
+bount-test = "npx ts-node ./scripts/oracle/mev-keeper.ts --test-state" # devnet only: scripted market-state cycle (0→1→2→1→0; day rolls on the 1→0 open) instead of the real Switchboard crank
+bount-test-watch = "npx ts-node ./scripts/oracle/mev-keeper.ts --test-state watch" # devnet only: idle + react to set-oracle-state.ts transitions
+bount-mainnet = "npx ts-node ./scripts/oracle/mev-keeper-mainnet.ts" # MAINNET: production-only keeper (no test modes; see file header for config)
 crank = "npx ts-node ./scripts/oracle/managedUpdate.ts --feedId 0xaf3a39b12f5c052d81eb8c62bb86f4691fce2c2e0c88b39f83801978b6f203c3"
 fund-bount = "npx ts-node ./scripts/fund-bounty.ts"
 init = "npx ts-node ./scripts/initialize.ts && npx ts-node ./scripts/init-bounty.ts"
@@ -39,8 +45,17 @@ pool = "npx ts-node ./scripts/pool-init.ts"
 pool-status = "npx ts-node ./scripts/raydium-pool-status.ts"
 set-cpmm-pool = "npx ts-node ./scripts/set-cpmm-pool.ts"
 set-sol-usdc-pool = "npx ts-node ./scripts/set-sol-usdc-pool.ts"
+set-pools = "npx ts-node ./scripts/setup-pools.ts" # one-shot: pin AFHO/USDC + SOL/USDC pools, then create/extend the claim lookup table
+
+set-bounty-usd = "npx ts-node ./scripts/set-bounty-usd.ts" # authority-gated live bounty update (USDC raw, 6 dp): set-bounty-usd -- 750000 = $0.75
+
+rebalance-sol-pool = "npx ts-node ./scripts/rebalance-sol-pool.ts" # devnet: dry-run by default, EXECUTE=1 to send (re-anchor the SOL/USDC pool's drifted price)
+
+create-claim-alt = "npx ts-node ./scripts/create-claim-alt.ts" # one-time: create/extend the claim lookup table (v0 SOL claim txs); re-run after set-cpmm-pool / set-sol-usdc-pool
 
 set-oracle = "npx ts-node ./scripts/oracle/set-oracle-state.ts"
+reset-devnet = "npx ts-node ./scripts/reset-devnet.ts" # DEVNET/LOCALNET ONLY: wipe market-status clock (state 99/day 0/ts 0) + records ledger/archives; dry-run by default, EXECUTE=1 to write
+record = "npx ts-node ./scripts/record-day.ts" # devnet: snapshot day-start metrics into app/public/records.json for /records
 
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
 test-staking = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/staking.test.ts"

@@ -5,21 +5,29 @@ import OfferLists from '../components/amm/OfferLists.tsx';
 import { useAmmData } from '../hooks/amm/useAmmData.ts';
 import { useGlitchBurst } from '../hooks/useGlitchBurst.ts';
 import { GlitchText } from '../components/GlitchText.tsx';
+import FlashNumber from '../components/FlashNumber.tsx';
 import './AmmPage.css';
 
 const MARKET_LABELS = ['Market open', 'After-hours', 'Market closed', 'Market halted'];
 
 export default function AmmPage() {
-    const { marketState, offersLive, deskOpen, updatedAt } = useAmmData();
+    const { marketState, offersLive, deskOpen, altActive, updatedAt } = useAmmData();
     const { connected } = useWallet();
     const shellRef = useRef<HTMLDivElement>(null);
     useGlitchBurst(shellRef);
     document.title = 'Bond Offer Desk | AFHO';
 
     // Desk excitement: open = alive & rhythmic, waiting = dim, sold out =
-    // faded, everything else (desk closed / market open) = nearly dead.
+    // faded, lit = the rare alt window (state 3 + fixed-terms sheet live),
+    // everything else (desk closed / market open) = nearly dead.
     const night = marketState === 1 || marketState === 2;
-    const deskState = deskOpen ? 'open' : night ? (offersLive ? 'waiting' : 'soldout') : 'dead';
+    const deskState = altActive
+        ? 'lit'
+        : deskOpen
+            ? 'open'
+            : night
+                ? (offersLive ? 'waiting' : 'soldout')
+                : 'dead';
 
     return (
         <div
@@ -35,17 +43,19 @@ export default function AmmPage() {
                 <div className="fx-blob fx-blob--4" />
             </div>
             <header className="amm-topbar">
+                <img src="/Logo/color-on-trans-logo.png" className="logo" />
                 <div className="amm-title">
-                    <h1><GlitchText text="Bond Offer Desk" variant="bluepink" step={0.14} /></h1>
-                    <span className={`market-badge ${deskOpen ? 'open' : ''}`}>
+                    <h1><GlitchText text="Bond Desk" variant="bluepink" step={0.14} /></h1>
+                    <span className={`market-badge ${deskOpen || altActive ? 'open' : ''}`}>
                         {marketState !== null ? MARKET_LABELS[marketState] ?? 'Unknown' : 'Market status unknown'}
-                        {deskOpen ? ' · desk open' : ''}
-                        {!deskOpen && marketState !== null && !offersLive ? ' · no live offers' : ''}
+                        {altActive ? ' · special sheet live' : ''}
+                        {!altActive && deskOpen ? ' · desk open' : ''}
+                        {!altActive && !deskOpen && marketState !== null && !offersLive ? ' · no live offers' : ''}
                     </span>
                 </div>
                 <div className="amm-controls">
                     {updatedAt && (
-                        <span className="amm-updated">updated {new Date(updatedAt).toLocaleTimeString()}</span>
+                        <span className="amm-updated">updated <FlashNumber value={new Date(updatedAt).toLocaleTimeString()} /></span>
                     )}
                     <div className="wallet-button-wrapper">
                         <WalletMultiButton />

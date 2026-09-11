@@ -63,7 +63,7 @@ export function StakingSection({ mint, marketStatusPda }: StakingSectionProps) {
                                     {!claimsOpen ? 'Claim after open' : claimLoading ? 'Collecting…' : 'Claim All Rewards'}
                                 </button>
                                 <button
-                                    className="exit-all-button"
+                                    className="exit-all-button neon-glitch"
                                     onClick={handleExitAll}
                                     disabled={positions.length === 0}
                                 >

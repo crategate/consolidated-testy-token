@@ -1,5 +1,5 @@
 import 'virtual:buffer-polyfill';
-import { StrictMode } from 'react';
+import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
@@ -9,10 +9,19 @@ import { BrowserRouter, Route, Routes, Outlet, useLocation } from 'react-router-
 import '@solana/wallet-adapter-react-ui/styles.css';
 import './index.css';
 import App from './App';
-import Dash from './pages/Dash';
-import AmmPage from './pages/AmmPage';
 import { HomePageIndicator } from './components/amm/HomePageIndicator';
+import { StaleDataBanner } from './components/StaleDataBanner';
+import { SpotlightBanner } from './components/SpotlightBanner';
 import { ChainDataProvider } from './context/ChainDataProvider';
+
+// Route-level code splitting: each non-landing page (and its Solana-heavy
+// hooks) loads on navigation instead of up front. Vendor libs are split by
+// the build.rolldownOptions codeSplitting groups in vite.config.ts.
+const Dash = lazy(() => import('./pages/Dash'));
+const Records = lazy(() => import('./pages/Records'));
+const Litepaper = lazy(() => import('./pages/Litepaper'));
+const Disclaimer = lazy(() => import('./pages/Disclaimer'));
+const AmmPage = lazy(() => import('./pages/AmmPage'));
 
 const queryClient = new QueryClient({
     defaultOptions: {
@@ -32,11 +41,31 @@ const connectionConfig = { disableRetryOnRateLimit: true };
 
 function Shell() {
     const { pathname } = useLocation();
-    const onOfferDesk = pathname === '/offer-desk' || pathname.startsWith('/offer-desk/');
+    // Hide the yellow "offers available" indicator on the offer desk itself
+    // (it links there) and on the Records ledger (kept dry for marketing).
+    const hideIndicator =
+        pathname === '/offer-desk' ||
+        pathname.startsWith('/offer-desk/') ||
+        pathname === '/records' ||
+        pathname.startsWith('/records/');
+    // The spotlight bar rides every page EXCEPT the desk itself — the desk
+    // renders its own lit state while the same window is open.
+    const spotlight =
+        pathname !== '/offer-desk' && !pathname.startsWith('/offer-desk/');
     return (
         <>
-            {!onOfferDesk && <HomePageIndicator />}
-            <Outlet />
+            <StaleDataBanner />
+            {spotlight && <SpotlightBanner />}
+            {!hideIndicator && <HomePageIndicator />}
+            <Suspense
+                fallback={
+                    <div className="app-shell" style={{ padding: '2rem' }}>
+                        Loading…
+                    </div>
+                }
+            >
+                <Outlet />
+            </Suspense>
         </>
     );
 }
@@ -53,6 +82,9 @@ createRoot(document.getElementById('root')!).render(
                                     <Route element={<Shell />}>
                                         <Route path="/" element={<App />} />
                                         <Route path="/dash" element={<Dash />} />
+                                        <Route path="/records" element={<Records />} />
+                                        <Route path="/litepaper" element={<Litepaper />} />
+                                        <Route path="/disclaimer" element={<Disclaimer />} />
                                         <Route path="/offer-desk" element={<AmmPage />} />
                                     </Route>
                                 </Routes>

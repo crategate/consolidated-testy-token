@@ -25,7 +25,15 @@ export interface OfferTierData {
     lotTier: number;
     lotTokens: number;
     vestingDays: number;
+    /** Sheet (base) discount, stored tenths of a percent (115 = 11.5%). */
     discountBps: number;
+    /** Bonus depth in the same units (5 = +0.5%) while the market is
+     *  CLOSED (state 2) — the late-nite bonus. 0 in every other state:
+     *  the bonus never shows, prices, or applies in extended hours
+     *  (state 1). Mirrors offer_claim::quote_claim — the on-chain claim
+     *  price uses discountBps + bonusBps. Kept SEPARATE from the base so
+     *  the UI can show the base pill plus a distinct bonus pill. */
+    bonusBps: number;
     remaining: number;
     totalOffered: number;
 }
@@ -35,7 +43,6 @@ export interface ClaimAccounts {
     offerList: PublicKey;
     afhoMint: PublicKey;
     usdcMint: PublicKey;
-    spotOracle: PublicKey;
     marketStatus: PublicKey;
     stakingPool: PublicKey;
     stakingVault: PublicKey;
@@ -54,7 +61,6 @@ export interface SolClaimAccounts {
     // and the runtime requires the callee program id to be among the caller
     // instruction's accounts — the client passes it as a remaining account.
     cpmmProgram: PublicKey;
-    solOracle: PublicKey;
     wsolVault: PublicKey;
     wrappedSolMint: PublicKey;
     solUsdcPoolState: PublicKey;
@@ -68,7 +74,18 @@ export interface SolClaimAccounts {
 export interface OfferDeskData {
     tiers: OfferTierData[];
     livePrice: bigint | null;
+    /** True when livePrice is the pinned pool's observation-ring TWAP — the
+     *  same quantity the on-chain claim gates against — and false when the
+     *  ring was stale/sparse and the raw vault ratio is shown instead. */
+    afhoPriceIsTwap: boolean;
     solPrice: bigint | null;
+    // Raw vault reserves of the pinned SOL/USDC pool — lets the UI mirror
+    // the exact offer_claim_sol charge solve instead of the spot ratio.
+    solPoolReserves: { wsolRaw: bigint; usdcRaw: bigint } | null;
+    // Address lookup table for v0 SOL claim transactions (nullable: the app
+    // falls back to the legacy transaction before scripts/create-claim-alt
+    // has run).
+    claimLookupTable: string | null;
     floorBasis: bigint;
     afhoDecimals: number;
     usdcDecimals: number;
@@ -78,6 +95,11 @@ export interface OfferDeskData {
     deskOpen: boolean;
     sheetStale: boolean;
     offersLive: boolean;
+    /** Alt desk (suspended state only): the fixed-terms sheet, its day, and
+     *  whether the window is live right now (state 3 + today's sheet + lots
+     *  left). Mirrors alt_offers::quote_alt_claim's gate. */
+    altActive: boolean;
+    altSheetDay: number | null;
     accounts: ClaimAccounts | null;
     solAccounts: SolClaimAccounts | null;
     loading: boolean;
@@ -101,6 +123,7 @@ function parseTier(key: 'sml' | 'med' | 'big', tier: number, label: string, raw:
         lotTokens: lotTokens(lotTier),
         vestingDays: Number(field(o, 'vestingDays', 'vesting_days') ?? 0),
         discountBps: Number(field(o, 'discountBps', 'discount_bps') ?? 0),
+        bonusBps: 0, // set per-tick below (state 2 closed-session boost)
         remaining: Number(field(o, 'remaining') ?? 0),
         totalOffered: Number(field(o, 'totalOffered', 'total_offered') ?? 0),
     };
@@ -118,7 +141,6 @@ function deriveClaimAccounts(
     const usdcDip = pub(ammState, 'usdcDip', 'usdc_dip');
     const usdcRewards = pub(ammState, 'usdcRewards', 'usdc_rewards');
     const afhoVault = pub(ammState, 'afhoVault', 'afho_vault');
-    const spotOracle = pub(ammState, 'spotOracle', 'spot_oracle');
     const stakingPool = pub(ammState, 'stakingPool', 'staking_pool');
     const cpmmPoolState = pub(ammState, 'cpmmPoolState', 'cpmm_pool_state');
     const cpmmProgram = pub(ammState, 'cpmmProgram', 'cpmm_program');
@@ -129,7 +151,6 @@ function deriveClaimAccounts(
         !usdcDip ||
         !usdcRewards ||
         !afhoVault ||
-        !spotOracle ||
         !stakingPool ||
         !cpmmPoolState ||
         !cpmmProgram
@@ -159,7 +180,6 @@ function deriveClaimAccounts(
         offerList: offerListPda,
         afhoMint: mint,
         usdcMint,
-        spotOracle,
         marketStatus: marketStatusPda,
         stakingPool,
         stakingVault,
@@ -178,13 +198,12 @@ function deriveSolClaimAccounts(
     ammState: AmmStateData,
     ammStatePda: PublicKey,
 ): SolClaimAccounts | null {
-    const solOracle = pub(ammState, 'solOracle', 'sol_oracle');
     const cpmmSolUsdcPool = pub(ammState, 'cpmmSolUsdcPool', 'cpmm_sol_usdc_pool');
     const cpmmSolUsdcConfig = pub(ammState, 'cpmmSolUsdcConfig', 'cpmm_sol_usdc_config');
     const cpmmProgram = pub(ammState, 'cpmmProgram', 'cpmm_program');
     const usdcMint = pub(ammState, 'usdcMint', 'usdc_mint');
 
-    if (!solOracle || !cpmmSolUsdcPool || !cpmmSolUsdcConfig || !cpmmProgram || !usdcMint) {
+    if (!cpmmSolUsdcPool || !cpmmSolUsdcConfig || !cpmmProgram || !usdcMint) {
         return null;
     }
 
@@ -209,7 +228,6 @@ function deriveSolClaimAccounts(
 
     return {
         cpmmProgram,
-        solOracle,
         wsolVault,
         wrappedSolMint: WSOL_MINT,
         solUsdcPoolState: cpmmSolUsdcPool,
@@ -234,19 +252,31 @@ export function useAmmData(): OfferDeskData {
         deployment,
         ammState,
         offerList,
+        altList,
         marketStatus,
         livePrice,
         livePriceUpdatedAt,
         refresh,
     } = useChainData();
 
-    const ammProgram = deployment?.ammProgram
-        ? new PublicKey(deployment.ammProgram)
-        : AMM_PROGRAM_ID;
+    const ammProgram = useMemo(
+        () => (deployment?.ammProgram ? new PublicKey(deployment.ammProgram) : AMM_PROGRAM_ID),
+        [deployment?.ammProgram],
+    );
 
     const mint = deployment?.mintKey;
-    const ammStatePda = mint ? deriveAmmStatePda(mint, ammProgram) : null;
-    const offerListPda = mint ? deriveOfferListPda(mint, ammProgram) : null;
+    // Derived keys must be referentially stable: a fresh PublicKey instance
+    // every render cascades through `accounts` (memo deps) into OfferLists'
+    // balance effect → setBalances every render → "Maximum update depth
+    // exceeded" → blank offer desk.
+    const ammStatePda = useMemo(
+        () => (mint ? deriveAmmStatePda(mint, ammProgram) : null),
+        [mint, ammProgram],
+    );
+    const offerListPda = useMemo(
+        () => (mint ? deriveOfferListPda(mint, ammProgram) : null),
+        [mint, ammProgram],
+    );
     const marketStatusPda = deployment?.marketStatusKey ?? null;
 
     // Fetch static mint decimals once per session. Everything else is derived
@@ -288,6 +318,26 @@ export function useAmmData(): OfferDeskData {
     const sheetStale = sheetDay !== null && tradingDay !== null && sheetDay !== tradingDay;
     const deskOpen = nightGate && offersLive && !sheetStale;
 
+    // Alt desk (suspended state, 3): fixed-terms sheet — big −5% / med −4% /
+    // sml −3% off LIVE price at claim time, 7/4/3-day vesting (mirrors
+    // alt_offers::quote_alt_claim; NO ratchet floor, NO bonus, NO above-spot
+    // gate — every tier prices strictly below live by construction). The
+    // regular sheet is hidden while the alt window is live.
+    const { altTiers, altSheetDay, altOffersLive } = useMemo(() => {
+        if (!altList) return { altTiers: [], altSheetDay: null, altOffersLive: false };
+        const list = [
+            parseTier('big', 2, 'Bulk lot', field(altList, 'bigOffer', 'big_offer')),
+            parseTier('med', 1, 'Medium lot', field(altList, 'medOffer', 'med_offer')),
+            parseTier('sml', 0, 'Small lot', field(altList, 'smlOffer', 'sml_offer')),
+        ];
+        const day = Number(big(field(altList, 'dayIndex', 'day_index')));
+        const live = list.some((t) => t.remaining > 0);
+        return { altTiers: list, altSheetDay: day, altOffersLive: live };
+    }, [altList]);
+
+    const altWindowOpen = marketState === 3 && altSheetDay !== null && tradingDay !== null && altSheetDay === tradingDay;
+    const altActive = altWindowOpen && altOffersLive;
+
     const accounts = useMemo(() => {
         if (!ammState || !ammStatePda || !offerListPda || !marketStatusPda || !mint) return null;
         return deriveClaimAccounts(ammState, ammStatePda, offerListPda, marketStatusPda, mint);
@@ -313,11 +363,38 @@ export function useAmmData(): OfferDeskData {
         (!ammState && 'AMM state not found — run anchor run amm-init') ||
         (decimalsQuery.error instanceof Error ? decimalsQuery.error.message : null);
 
+    // CLOSED-SESSION BOOST mirror (programs/amm offer_claim::quote_claim):
+    // while the market is CLOSED (state 2) every remaining tier prices 0.5%
+    // deeper (5 tenths, saturating at the u8 cap); back in extended hours
+    // (state 1 = pre-trade) it reverts to the sheet's base discount — and
+    // the bonus itself is GONE. The late-nite bonus NEVER shows, prices, or
+    // applies outside state 2: a floor at/above spot keeps the tier refused
+    // with FloorHeldAtSpot on-chain, and the UI mirrors that refusal
+    // instead of inventing a bonus the claim would reject. Kept as a
+    // SEPARATE bonusBps field — the UI shows the base discount pill plus a
+    // distinct blue bonus pill in state 2, while the cost math sums both
+    // to stay exact with the on-chain quote.
+    const floorBasis = ammState ? big(field(ammState, 'highestBuybackBasis', 'highest_buyback_basis')) : 0n;
+    const tiersDisplay = useMemo(() => {
+        // SUSPENDED-STATE OVERRIDE: while the alt window is live, the desk
+        // shows the alt sheet ONLY — the regular sheet is hidden (its
+        // on-chain claims are DeskClosed-gated in state 3 anyway). Alt tiers
+        // display their base discount as-is: no bonus exists on this desk.
+        if (altActive) return altTiers.map((t) => ({ ...t, bonusBps: 0 }));
+        if (marketState === 2) {
+            return tiers.map((t) => ({ ...t, bonusBps: Math.min(t.discountBps + 5, 255) - t.discountBps }));
+        }
+        return tiers;
+    }, [tiers, altTiers, altActive, marketState]);
+
     return {
-        tiers,
+        tiers: tiersDisplay,
         livePrice: livePrice.afhoUsdc,
+        afhoPriceIsTwap: livePrice.afhoPriceIsTwap,
         solPrice: livePrice.solUsdc,
-        floorBasis: ammState ? big(field(ammState, 'highestBuybackBasis', 'highest_buyback_basis')) : 0n,
+        solPoolReserves: livePrice.solPoolReserves,
+        claimLookupTable: deployment?.claimLookupTable ?? null,
+        floorBasis,
         afhoDecimals: decimals.afho,
         usdcDecimals: decimals.usdc,
         marketState,
@@ -326,6 +403,8 @@ export function useAmmData(): OfferDeskData {
         deskOpen,
         sheetStale,
         offersLive,
+        altActive,
+        altSheetDay,
         accounts,
         solAccounts,
         loading,

@@ -20,6 +20,11 @@ function requireEnv(name: string): string {
     return value;
 }
 
+// Single-source market status with a failover chain: the primary (massive)
+// API feeds the routine open/extended/closed/halted mapping, and the
+// earnings API is only consulted when the primary chain fails. No special
+// case for any single state — a halt (3) is reported the same way as every
+// other reading.
 const marketStatusJob = OracleJob.fromObject({
     tasks: [
         {
@@ -39,7 +44,7 @@ const marketStatusJob = OracleJob.fromObject({
                                 { key: '"closed"', value: "2" },
                                 { key: '"halted"', value: "3" },
                             ],
-                            defaultValue: "6",
+                            defaultValue: "0",
                         },
                     },
                 ],
@@ -59,7 +64,7 @@ const marketStatusJob = OracleJob.fromObject({
                                 { key: '"closed"', value: "2" },
                                 { key: '"halted"', value: "3" },
                             ],
-                            defaultValue: "6",
+                            defaultValue: "0",
                         },
                     },
                 ],

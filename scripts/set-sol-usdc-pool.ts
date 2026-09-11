@@ -24,25 +24,15 @@ import { writeDeploymentState } from "./deployment-state";
 //      these at the canonical Raydium SOL/USDC pool before launch).
 //   2. raydiumSolUsdcPool / raydiumSolUsdcConfig already in deployment.json.
 //   3. Devnet fallback: create our own SOL/USDC CPMM pool, seeded at the same
-//      200 USDC/SOL rate as the mock sol_oracle written by amm-init, so the
-//      claim's min-out math lines up. Seed amounts: SOL_USDC_SEED_SOL /
+//      200 USDC/SOL rate as the mock sol_oracle re-seeded by amm-test-data
+//      (200_000_000_000 floor units = price × 1e9), so the claim's min-out
+//      math lines up. Seed amounts: SOL_USDC_SEED_SOL /
 //      SOL_USDC_SEED_USDC env vars (defaults 0.3 SOL / 60 USDC — the devnet
 //      wallet has limited USDC; for bigger test claims seed a bigger pool).
-
-const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
-// Devnet USDC. MAINNET: swap in the real USDC mint and uncomment it.
-const USDC_MINT = new PublicKey("USDCoctVLVnvTXBEuP9s8hntucdJokbo17RwHuNXemT"); // devnet (Raydium devnet faucet)
-// const USDC_MINT = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"); // MAINNET
-
-// 200 USDC/SOL — matches the mock sol_oracle (200000) that amm-init seeds on
-// devnet. MAINNET: this only affects the fallback pool creation, which should
-// never run on mainnet (env vars are used instead).
-const SEED_RATE_USDC_PER_SOL = 200;
-
-const seedSol = parseFloat(process.env.SOL_USDC_SEED_SOL || "0.3");
-const seedUsdc = parseFloat(process.env.SOL_USDC_SEED_USDC || "60");
-
-async function main() {
+//
+// Exported for `anchor run set-pools`, which runs this before refreshing the
+// claim lookup table (a NEW pool address needs its keys added to it).
+export async function setSolUsdcPool(): Promise<void> {
     const provider = anchor.AnchorProvider.env();
     anchor.setProvider(provider);
     const wallet = provider.wallet as anchor.Wallet;
@@ -96,8 +86,8 @@ async function main() {
             if (await connection.getAccountInfo(keys.lpMint)) {
                 throw new Error(
                     `SOL/USDC LP mint ${keys.lpMint.toBase58()} exists but pool state ` +
-                        `${keys.poolId.toBase58()} does not — a previous createPool died mid-flight. ` +
-                        `Set DEVNET_SOL_USDC_POOL to an existing pool or clean up the half-created accounts.`
+                    `${keys.poolId.toBase58()} does not — a previous createPool died mid-flight. ` +
+                    `Set DEVNET_SOL_USDC_POOL to an existing pool or clean up the half-created accounts.`
                 );
             }
         }
@@ -191,7 +181,27 @@ async function main() {
     console.log(` SOL/USDC pool pinned: ${poolState.toBase58()} (tx ${tx})`);
 }
 
-main().catch((err) => {
-    console.error(err);
-    process.exit(1);
-});
+const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
+// Devnet USDC. MAINNET: swap in the real USDC mint and uncomment it.
+const USDC_MINT = new PublicKey("USDCoctVLVnvTXBEuP9s8hntucdJokbo17RwHuNXemT"); // devnet (Raydium devnet faucet)
+// const USDC_MINT = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"); // MAINNET
+
+// 200 USDC/SOL — matches the mock sol_oracle re-seeded by amm-test-data
+// (200_000_000_000 = 200 × 1e9 floor units). MAINNET: this only affects the
+// fallback pool creation, which should never run on mainnet (env vars are
+// used instead).
+const SEED_RATE_USDC_PER_SOL = 200;
+
+const seedSol = parseFloat(process.env.SOL_USDC_SEED_SOL || "03");
+const seedUsdc = parseFloat(process.env.SOL_USDC_SEED_USDC || "600");
+
+async function main() {
+    await setSolUsdcPool();
+}
+
+if (require.main === module) {
+    main().catch((err) => {
+        console.error(err);
+        process.exit(1);
+    });
+}

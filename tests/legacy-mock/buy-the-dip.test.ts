@@ -39,11 +39,11 @@ describe("buy_the_dip", () => {
     let poolAfho: PublicKey;
     let poolUsdc: PublicKey;
 
-    const REF_PRICE = 1_000; // spot-ring reference (floor units)
+    const REF_PRICE = 1_000_000_000; // spot-ring reference (floor units = price × 1e9)
     const USDC_DIP_FUND = 1_000_000_000; // 1000 USDC raw
     const SOL_DIP_FUND = 500_000_000; // 0.5 SOL above the rent floor
-    // mock rate: out = in * 100_000 -> exec price = 1e6/1e5 = 10 exactly
-    const MOCK_EXEC_PRICE = 10;
+    // mock rate: out = in * 100_000 -> exec price = 1e12/1e5 = 1e7 exactly
+    const MOCK_EXEC_PRICE = 10_000_000;
 
     const now = () => Math.floor(Date.now() / 1000);
 
@@ -242,7 +242,7 @@ describe("buy_the_dip", () => {
         // flat +1%/day ring -> slope 0 -> trend mult 1.0; spot 10% below ref
         await loadMetrics(new Array(20).fill(100), REF_PRICE);
         await setMarket(2, 2, now());
-        await setPrice(900);
+        await setPrice(900_000_000);
 
         const dipBefore = await dipBalance();
         const afhoBefore = await afhoBalance();
@@ -258,11 +258,11 @@ describe("buy_the_dip", () => {
     });
 
     it("ignores a shallow dip (<3% below the norm)", async () => {
-        await setPrice(980); // 2% below ref 1000 -> under the 3% trigger
+        await setPrice(980_000_000); // 2% below ref 1e9 -> under the 3% trigger
         const before = await dipBalance();
         await dipTx();
         assert.equal(await dipBalance(), before, "no spend on a shallow dip");
-        await setPrice(900); // restore the 10% dip
+        await setPrice(900_000_000); // restore the 10% dip
     });
 
     it("paces slices (immediate re-fire same day is a no-op)", async () => {

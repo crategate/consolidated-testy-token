@@ -86,6 +86,16 @@ export function deriveOfferListPda(mint: PublicKey, ammProgram = AMM_PROGRAM_ID)
     )[0];
 }
 
+/** Alt desk sheet (fixed-terms second sheet, suspended state only). Same
+ *  OfferList layout, separate deterministic PDA — derived directly, so the
+ *  client can reference it before the account exists on-chain. */
+export function deriveAltOfferListPda(mint: PublicKey, ammProgram = AMM_PROGRAM_ID) {
+    return PublicKey.findProgramAddressSync(
+        [Buffer.from('alt_offer_list'), mint.toBuffer()],
+        ammProgram,
+    )[0];
+}
+
 export function derivePoolPda(mint: PublicKey) {
     return PublicKey.findProgramAddressSync(
         [Buffer.from('pool'), mint.toBuffer()],
@@ -261,19 +271,58 @@ function tokenAmount(data: Uint8Array | null): bigint | null {
     return new DataView(data.buffer, data.byteOffset, data.byteLength).getBigUint64(64, true);
 }
 
+// ── On-chain TWAP mirror (programs/amm/src/instructions/raydium.rs) ──────
+// The AMM prices every claim off read_cpmm_price_floor: a time-weighted
+// sample of the pinned pool's observation ring when that ring is fresh and
+// dense, the raw vault-ratio only as a fallback. The desk MUST gate buys on
+// the same quantity — quoting against the raw ratio while the chain charges
+// the TWAP is exactly how "10.2% off, buyable" turned into a
+// FloorHeldAtSpot revert. These constants and this math mirror the Rust
+// 1:1; move them together.
+const TWAP_WINDOW_SECONDS = 600n;
+const TWAP_MAX_AGE_SECONDS = 600n;
+const OBSERVATION_NUM = 100;
+// ObservationState: disc(8) + initialized(1) + index(2) + padding(32).
+const OBSERVATION_HEADER_LEN = 43;
+// Observation: block_timestamp(8) + cumulative_token_0_price_x32(16)
+//            + cumulative_token_1_price_x32(16).
+const OBSERVATION_SIZE = 40;
+const Q32 = 1n << 32n;
+// Floor units = USDC price per whole token × 1e9 (nano-dollar). Must equal
+// programs/amm raydium::FLOOR_UNITS_PER_Q32 (see the Rust comment for why
+// this is 1e12 and not 1e9).
+const FLOOR_UNITS_PER_Q32 = 1_000_000_000_000n;
+
 export interface LivePriceData {
+    /** Claim-consistent AFHO/USDC price in floor units: the pinned pool's
+     *  TWAP when its ring is fresh+dense, else the raw vault ratio — the
+     *  exact quantity read_cpmm_price_floor hands to offer_claim. */
     afhoUsdc: bigint | null;
+    /** True when afhoUsdc is the observation-ring TWAP (not the vault-ratio
+     *  fallback). The desk surfaces it so buyers can tell a settled price
+     *  from a just-moved one. */
+    afhoPriceIsTwap: boolean;
     solUsdc: bigint | null;
+    /**
+     * Raw vault reserves of the pinned SOL/USDC pool — the exact numbers the
+     * on-chain offer_claim_sol charge solve reads at claim time. Null when
+     * the pool isn't pinned or a vault wasn't readable; 0 means the vault
+     * exists but is empty (the UI can distinguish both from unknown).
+     */
+    solPoolReserves: { wsolRaw: bigint; usdcRaw: bigint } | null;
 }
 
 /**
  * The accounts needed to compute both legs of the live price, in fixed order:
  * [afhoPoolVault, usdcPoolVault, solUsdcInputVault, solUsdcOutputVault,
- *  spotOracle, solOracle].
+ *  afhoPoolState, afhoObservation]. The last two feed the TWAP mirror of
+ *  raydium::read_cpmm_price_floor — without them the desk would gate buys on
+ *  the raw vault ratio while the chain prices claims off the TWAP.
  *
- * Unpinned pools are PublicKey.default placeholders (the RPC answers null for
- * them), so one getMultipleAccountsInfo covers the entire price read with no
- * fallback round-trips.
+ * Pricing is pool-only: no mock oracle fallbacks. Unpinned pools are
+ * PublicKey.default placeholders (the RPC answers null for them), so one
+ * getMultipleAccountsInfo covers the entire price read with no extra
+ * round-trips. solUsdc stays null until the SOL/USDC pool is pinned.
  */
 export function derivePriceAccounts(ammState: AmmStateData, mint: PublicKey): PublicKey[] {
     const cpmmPoolState = pub(ammState, 'cpmmPoolState', 'cpmm_pool_state');
@@ -285,6 +334,7 @@ export function derivePriceAccounts(ammState: AmmStateData, mint: PublicKey): Pu
     let usdcPoolVault: PublicKey | null = null;
     let solUsdcInputVault: PublicKey | null = null;
     let solUsdcOutputVault: PublicKey | null = null;
+    let afhoObservation: PublicKey | null = null;
 
     if (cpmmPoolState && cpmmProgram && usdcMint) {
         [afhoPoolVault] = PublicKey.findProgramAddressSync(
@@ -293,6 +343,10 @@ export function derivePriceAccounts(ammState: AmmStateData, mint: PublicKey): Pu
         );
         [usdcPoolVault] = PublicKey.findProgramAddressSync(
             [Buffer.from('pool_vault'), cpmmPoolState.toBuffer(), usdcMint.toBuffer()],
+            cpmmProgram,
+        );
+        [afhoObservation] = PublicKey.findProgramAddressSync(
+            [Buffer.from('observation'), cpmmPoolState.toBuffer()],
             cpmmProgram,
         );
     }
@@ -313,46 +367,153 @@ export function derivePriceAccounts(ammState: AmmStateData, mint: PublicKey): Pu
         usdcPoolVault ?? PublicKey.default,
         solUsdcInputVault ?? PublicKey.default,
         solUsdcOutputVault ?? PublicKey.default,
-        pub(ammState, 'spotOracle', 'spot_oracle') ?? PublicKey.default,
-        pub(ammState, 'solOracle', 'sol_oracle') ?? PublicKey.default,
+        cpmmPoolState ?? PublicKey.default,
+        afhoObservation ?? PublicKey.default,
     ];
 }
 
+function u128le(d: Uint8Array, off: number): bigint {
+    let out = 0n;
+    for (let i = 15; i >= 0; i--) out = (out << 8n) | BigInt(d[off + i]);
+    return out;
+}
+
+/** Exact port of raydium::read_twap_sample: (dcum, dt) over the last 600s,
+ *  or null when the ring is uninitialized / empty / stale (latest obs older
+ *  than TWAP_MAX_AGE_SECONDS) / too sparse (dt > 2 × window) — every null
+ *  case makes the on-chain reader fall back to the vault ratio. */
+export function readTwapSample(
+    obs: Uint8Array,
+    nowSec: number,
+): { dcum: bigint; dt: bigint } | null {
+    if (obs.length < OBSERVATION_HEADER_LEN + OBSERVATION_NUM * OBSERVATION_SIZE) return null;
+    if (obs[8] === 0) return null; // oracle not initialized
+    const idx = obs[9] | (obs[10] << 8);
+    const read = (i: number) => {
+        const s = OBSERVATION_HEADER_LEN + (i % OBSERVATION_NUM) * OBSERVATION_SIZE;
+        return { blockTimestamp: readU64le(obs, s), cum0: u128le(obs, s + 8) };
+    };
+    const latest = read(idx);
+    if (latest.blockTimestamp === 0n) return null;
+    const now = BigInt(Math.max(0, Math.trunc(nowSec)));
+    // A latest observation in the future (clock skew) is as unusable as a
+    // stale one — the on-chain Clock read would simply be ≥ the timestamps.
+    if (now < latest.blockTimestamp || now - latest.blockTimestamp > TWAP_MAX_AGE_SECONDS) {
+        return null;
+    }
+    // Walk backwards to the newest observation at or before (now − window).
+    let oldest: { blockTimestamp: bigint; cum0: bigint } | null = null;
+    for (let step = 0; step < OBSERVATION_NUM; step++) {
+        const o = read(idx + OBSERVATION_NUM - step);
+        if (o.blockTimestamp === 0n) break;
+        oldest = o;
+        if (
+            o.blockTimestamp <= now - TWAP_WINDOW_SECONDS ||
+            o.blockTimestamp <= latest.blockTimestamp - TWAP_WINDOW_SECONDS
+        ) {
+            break;
+        }
+    }
+    if (!oldest) return null;
+    const dt = latest.blockTimestamp - oldest.blockTimestamp;
+    if (dt === 0n) return null; // single observation / same slot
+    // The ring must be dense enough to actually span the window.
+    if (dt > TWAP_WINDOW_SECONDS * 2n) return null;
+    const dcum = latest.cum0 >= oldest.cum0 ? latest.cum0 - oldest.cum0 : 0n;
+    return { dcum, dt };
+}
+
+function readU64le(d: Uint8Array, off: number): bigint {
+    let out = 0n;
+    for (let i = 7; i >= 0; i--) out = (out << 8n) | BigInt(d[off + i]);
+    return out;
+}
+
+/** Exact port of raydium::q32_to_floor for (dcum, dt): floor-units price of
+ *  the pool's base token. token0IsBase mirrors the pool's mint order — the
+ *  CPMM stores mints sorted, so either orientation occurs. */
+export function q32ToFloor(dcum: bigint, dt: bigint, token0IsBase: boolean): bigint | null {
+    if (token0IsBase) {
+        // Direct: twap = dcum/dt is quote_raw/base_raw × Q32.
+        return (dcum * FLOOR_UNITS_PER_Q32) / dt / Q32;
+    }
+    // Inverted: 1/twap = dt/dcum × Q32.
+    if (dcum === 0n) return null;
+    return (dt * Q32 * FLOOR_UNITS_PER_Q32) / dcum;
+}
+
 /**
- * Pure math over the six account infos returned for derivePriceAccounts'
- * keys, in the same order. The spot/sol oracle slots are the same u64-LE
- * price fallbacks the previous two-call fetch used.
+ * The claim-consistent AFHO/USDC price: the pool's TWAP when its observation
+ * ring is fresh and dense — the exact number offer_claim will gate and price
+ * against — falling back to the instantaneous vault ratio in precisely the
+ * cases the on-chain reader falls back (uninitialized/stale/sparse ring).
+ * The SOL leg stays a raw vault ratio: offer_claim_sol solves its charge
+ * against the pool's live reserves, not a TWAP.
  */
-export function computeLivePrice(infos: Array<{ data: Uint8Array } | null>): LivePriceData {
-    const [afhoVaultInfo, usdcVaultInfo, solInInfo, solOutInfo, rawSpotInfo, solOracleInfo] = infos;
+export function computeLivePrice(
+    infos: Array<{ data: Uint8Array } | null>,
+    baseMint?: PublicKey,
+    quoteMint?: PublicKey,
+): LivePriceData {
+    // POOL-ONLY pricing — no mock oracle fallbacks on either leg. The AFHO
+    // price is the pinned AFHO/USDC pool (TWAP when fresh, else vault
+    // ratio); the SOL price is the pinned SOL/USDC pool vault ratio. Until a
+    // pool is pinned its leg is null: the UI shows "—" and gates the
+    // affected flows (fail closed).
+    const [afhoVaultInfo, usdcVaultInfo, solInInfo, solOutInfo, afhoPoolStateInfo, afhoObservationInfo] = infos;
 
     let afhoUsdc: bigint | null = null;
     const baseRaw = tokenAmount(afhoVaultInfo?.data ?? null);
     const quoteRaw = tokenAmount(usdcVaultInfo?.data ?? null);
     if (baseRaw !== null && quoteRaw !== null && baseRaw > 0n) {
-        afhoUsdc = (quoteRaw * 1_000_000n) / baseRaw;
+        afhoUsdc = (quoteRaw * 1_000_000_000_000n) / baseRaw;
     }
-    if (afhoUsdc === null && rawSpotInfo && rawSpotInfo.data.length >= 8) {
-        afhoUsdc = new DataView(rawSpotInfo.data.buffer, rawSpotInfo.data.byteOffset).getBigUint64(
-            0,
-            true,
-        );
+    let afhoPriceIsTwap = false;
+    if (afhoUsdc !== null && baseMint && quoteMint && afhoPoolStateInfo?.data && afhoObservationInfo?.data) {
+        // Pool mints sit at fixed offsets in this Raydium CPMM fork's
+        // zero-copy PoolState — the SAME offsets pool_state_mints() reads
+        // on-chain (programs/amm/src/instructions/raydium.rs): token_mint0
+        // @168..200, token_mint1 @200..232. Do NOT "fix" these to the
+        // vanilla raydium-cp-swap layout (73/105) — this fork's header is
+        // larger, and wrong offsets make the orientation check fail, which
+        // silently demotes the desk to the instant vault ratio while the
+        // chain still gates on the TWAP (the 2026-09-09 buy-gate divergence).
+        const pd = afhoPoolStateInfo.data;
+        const sample = readTwapSample(afhoObservationInfo.data, Date.now() / 1000);
+        if (sample && pd.length >= 232) {
+            const mint0 = new PublicKey(pd.slice(168, 200));
+            const mint1 = new PublicKey(pd.slice(200, 232));
+            const token0IsBase = mint0.equals(baseMint) && mint1.equals(quoteMint);
+            const token0IsQuote = mint0.equals(quoteMint) && mint1.equals(baseMint);
+            if (token0IsBase || token0IsQuote) {
+                const twap = q32ToFloor(sample.dcum, sample.dt, token0IsBase);
+                if (twap !== null && twap > 0n) {
+                    afhoUsdc = twap;
+                    afhoPriceIsTwap = true;
+                }
+            }
+        }
     }
 
     let solUsdc: bigint | null = null;
     const solBase = tokenAmount(solInInfo?.data ?? null);
     const solQuote = tokenAmount(solOutInfo?.data ?? null);
     if (solBase !== null && solQuote !== null && solBase > 0n) {
-        solUsdc = (solQuote * 1_000_000n) / solBase;
+        solUsdc = (solQuote * 1_000_000_000_000n) / solBase;
     }
-    if (solUsdc === null && solOracleInfo && solOracleInfo.data.length >= 8) {
-        solUsdc = new DataView(solOracleInfo.data.buffer, solOracleInfo.data.byteOffset).getBigUint64(
-            0,
-            true,
-        );
-    }
+    // Raw reserves for the exact claim-charge mirror (lamportsForCostExact):
+    // reported whenever both vaults were readable, even if a side is 0, so
+    // the UI can tell "unknown" (null) from "empty" (0) pool states.
+    const solPoolReserves =
+        solBase !== null && solQuote !== null ? { wsolRaw: solBase, usdcRaw: solQuote } : null;
+    // NO mock fallback for the SOL leg: the desk price must come from the
+    // pinned Raydium SOL/USDC pool vault ratio or not at all. A stale raw-u64
+    // stub (b"mock_price" + wSOL) once priced SOL 1000× off here; until
+    // `cpmm_sol_usdc_pool` is pinned in AmmState (`anchor run
+    // set-sol-usdc-pool`), solUsdc stays null — the UI shows "—" and keeps
+    // the SOL currency option disabled (fail closed).
 
-    return { afhoUsdc, solUsdc };
+    return { afhoUsdc, afhoPriceIsTwap, solUsdc, solPoolReserves };
 }
 
 /* ── wSOL ATA helper for SOL claim path ── */

@@ -309,7 +309,7 @@ describe("offer_claim + distribute_staker_rewards", () => {
         buyerUsdc = await createAssociatedTokenAccount(provider.connection, payer, usdcMint, buyer.publicKey);
         await mintTo(provider.connection, payer, usdcMint, buyerUsdc, payer.publicKey, 1_000_000_000); // 1000 USDC
 
-        await setPrice(10); // same units as the mock exec price (1e6/1e5)
+        await setPrice(10_000_000); // same units as the mock exec price (1e12/1e5)
     });
 
     it("loads a sheet and claims: 80/10/10 split + vesting position created", async () => {
@@ -342,7 +342,8 @@ describe("offer_claim + distribute_staker_rewards", () => {
         await setMarket(1, 0, now()); // after-hours, day 0 (sheet day_index = 0 from init)
 
         // 2 lots = 20 AFHO; price 10, discount 10% -> effective 9
-        // cost = 20e9 raw * 9 / 1e6 = 180_000 raw USDC
+        // 2 lots = 20 AFHO; price $0.01, discount 10% -> effective 9e6
+        // cost = 20e9 raw * 9e6 / 1e12 = 180_000 raw USDC
         const expectedCost = 180_000;
         const vaultBefore = await provider.connection.getTokenAccountBalance(usdcVault);
         const dipBefore = await provider.connection.getTokenAccountBalance(usdcDip);
@@ -377,6 +378,29 @@ describe("offer_claim + distribute_staker_rewards", () => {
         const sheet = await amm.account.offerList.fetch(offerListPda);
         assert.equal(sheet.smlOffer.remaining, 8);
         assert.equal(sheet.totalComplete, 20);
+    });
+
+    it("adds the closed-session +0.5% boost to remaining offers in state 2", async () => {
+        // Same sheet/day as the state-1 claim above (sml: 10 AFHO/lot, stored
+        // discount 100 tenths = 10%, 8 lots left). Closed (state 2) boosts the
+        // discount to 105 tenths: price 1e7 → effective 1e7 × (1 − 0.105) =
+        // 8.95e6; 1 lot = 10e9 raw × 8.95e6 / 1e12 = 89_500 raw USDC.
+        await setMarket(2, 0, now()); // closed, same trading day
+        const expectedCost = 89_500;
+        const buyerBefore = await provider.connection.getTokenAccountBalance(buyerUsdc);
+
+        await claimTx(0, 1, 1); // sml tier, 1 lot, position index 1
+
+        const buyerAfter = await provider.connection.getTokenAccountBalance(buyerUsdc);
+        assert.equal(Number(buyerBefore.value.amount) - Number(buyerAfter.value.amount), expectedCost, "closed boost: 10.5% off");
+
+        // Revert check: back in extended hours (state 1) the same tier prices
+        // at the base 10% again — 1 lot = 10e9 × 9e6 / 1e12 = 90_000.
+        await setMarket(1, 0, now());
+        const before2 = await provider.connection.getTokenAccountBalance(buyerUsdc);
+        await claimTx(0, 1, 2);
+        const after2 = await provider.connection.getTokenAccountBalance(buyerUsdc);
+        assert.equal(Number(before2.value.amount) - Number(after2.value.amount), 90_000, "state 1 reverts to base discount");
     });
 
 

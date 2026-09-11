@@ -28,6 +28,9 @@ pub use bounty_top_up::*;
 pub mod load_test_data;
 pub use load_test_data::*;
 
+pub mod migrate_offer_list;
+pub use migrate_offer_list::*;
+
 pub mod load_offers;
 pub use load_offers::*;
 
@@ -46,3 +49,12 @@ pub use distribute_staker_rewards::*;
 // Raw Raydium CPMM adapter + TWAP oracle (not an instruction module).
 pub mod raydium;
 pub use raydium::*;
+
+// Alt desk: fixed-terms second sheet, state-3 only. Appended LAST so the
+// module's error enum extends (never shifts) the program's error codes.
+pub mod alt_offers;
+pub use alt_offers::*;
+
+// DEVNET/TEST ONLY — full runtime-state wipe (append last, same reason).
+pub mod reset_devnet_state;
+pub use reset_devnet_state::*;

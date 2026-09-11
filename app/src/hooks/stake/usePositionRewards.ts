@@ -79,5 +79,34 @@ export function usePositionRewards(mint: PublicKey | null, positions: Position[]
         return enriched.reduce((sum, pos) => sum + pos.netRewardRaw, 0);
     }, [enriched]);
 
-    return { enriched, grandTotal, pool, marketData };
+    // Claimable vs locked: a still-vesting position (bond lots) gates ALL of
+    // its pending rewards — claim() requires entry_trading_day +
+    // days_to_unlock <= current trading day before it settles anything.
+    const claimSplit = useMemo(() => {
+        if (!marketData) return { claimableTotal: 0, vestingTotal: 0, vestingCount: 0 };
+        const currentTradingDay = marketData.tradingDay;
+        let claimableTotal = 0;
+        let vestingTotal = 0;
+        let vestingCount = 0;
+        for (const pos of enriched) {
+            const unlockDay = pos.entryTradingDay + (pos.daysToUnlock ?? 0);
+            if (currentTradingDay >= unlockDay) {
+                claimableTotal += pos.netRewardRaw;
+            } else {
+                vestingTotal += pos.netRewardRaw;
+                vestingCount += 1;
+            }
+        }
+        return { claimableTotal, vestingTotal, vestingCount };
+    }, [enriched, marketData]);
+
+    return {
+        enriched,
+        grandTotal,
+        claimableTotal: claimSplit.claimableTotal,
+        vestingTotal: claimSplit.vestingTotal,
+        vestingCount: claimSplit.vestingCount,
+        pool,
+        marketData,
+    };
 }

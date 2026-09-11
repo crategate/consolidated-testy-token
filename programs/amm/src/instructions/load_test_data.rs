@@ -51,12 +51,12 @@ pub struct TestMetrics {
     pub spot_head: u8,
     // Offer sheet writes (total_offered/remaining per tier) — always applied,
     // so tests can clear a sheet by passing zeros.
-    pub big_offered: u8,
-    pub big_remaining: u8,
-    pub med_offered: u8,
-    pub med_remaining: u8,
-    pub sml_offered: u8,
-    pub sml_remaining: u8,
+    pub big_offered: u32,
+    pub big_remaining: u32,
+    pub med_offered: u32,
+    pub med_remaining: u32,
+    pub sml_offered: u32,
+    pub sml_remaining: u32,
     // Offer terms — always applied too. Types mirror the Offer struct:
     // lot tier index, discount in tenths-of-percent (115 = 11.5%), vest days.
     pub big_lot_tier: u8,

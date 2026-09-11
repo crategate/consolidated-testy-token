@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { usePositions } from '../hooks/stake/usePositions';
 import { usePositionRewards } from '../hooks/stake/usePositionRewards';
 import { useClaimAll } from '../hooks/stake/useClaimAll';
@@ -15,9 +16,9 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
     const { positions, loading: positionsLoading, refresh: refreshPositions } = usePositions(mint);
     const { data: marketData } = useMarketStatus(marketStatusPda);
     const { pool } = usePool(mint);
-    const { enriched, grandTotal } = usePositionRewards(mint, positions, marketStatusPda);
+    const { enriched, claimableTotal, vestingTotal, vestingCount } = usePositionRewards(mint, positions, marketStatusPda);
     const { claimAll, loading: claimLoading } = useClaimAll(mint, positions, marketStatusPda);
-    const { unstake, loadingIndex: unstakeLoadingIndex } = useUnstake(mint, marketStatusPda, marketData?.state);
+    const { unstake, loadingIndex: unstakeLoadingIndex } = useUnstake(mint, marketStatusPda, marketData?.state, pool);
     const claimsOpen = marketData?.state === 0;
 
     // Exit penalties apply to principal and are tiered by market state
@@ -57,16 +58,34 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
     };
 
     const handleExitAll = async () => {
+        setExitingAll(true);
         for (const pos of positions) {
             try {
                 await unstake(pos);
             } catch (e) {
                 alert('Failed to exit a position: ' + (e as Error).message);
-                break;
+                setExitingAll(false);
+                setConfirmingExitAll(false);
+                refreshPositions();
+                return;
             }
         }
+        setExitingAll(false);
+        setConfirmingExitAll(false);
         refreshPositions();
     };
+
+    // ── Exit-all confirmation ──
+    // Exiting wipes the stacked multiplier bonuses (the weighted-stake climb
+    // that boosts reward accrual) — re-staking restarts the climb from 1x.
+    // The modal makes that cost explicit before any transaction is signed.
+    const [confirmingExitAll, setConfirmingExitAll] = useState(false);
+    const [exitingAll, setExitingAll] = useState(false);
+    const maxMultiplier = enriched.reduce((max, pos) => {
+        const m = 'multiplierDisplay' in pos ? parseFloat(pos.multiplierDisplay) : NaN;
+        return Number.isFinite(m) && m > max ? m : max;
+    }, 0);
+    const maxMultiplierLabel = maxMultiplier > 1 ? maxMultiplier.toFixed(maxMultiplier % 1 === 0 ? 0 : 2) : null;
 
     if (positionsLoading && !positions.length) return <div>Loading positions…</div>;
     if (positions.length === 0) return <div className="no-positions">No active stakes.</div>;
@@ -88,7 +107,10 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
         return Math.max(0, unlockDay - currentTradingDay);
     };
 
-    const grandTotalDisplay = (grandTotal).toFixed(4);
+    // The green tile shows CLAIMABLE AFHO only: rewards on still-vesting
+    // bond positions are gated by the program (claim() rejects unvested
+    // positions) and are surfaced in the vesting note below instead.
+    const grandTotalDisplay = claimableTotal.toFixed(4);
 
     // Sum of all staked principal — the user's total balance locked in staking.
     const lockedTotal = positions.reduce((sum, pos) => sum + pos.amount, 0) / 1e9;
@@ -107,17 +129,17 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
             </div>
 
 
-            <div className="claims-header neon-glitch glass-pane">
+            <div className="claims-header glass-pane neon-glitch ">
                 <button
                     className="claim-collect"
                     onClick={handleClaimAll}
-                    disabled={!claimsOpen || claimLoading || grandTotal <= 0}
+                    disabled={!claimsOpen || claimLoading || claimableTotal <= 0}
                 >
                     {!claimsOpen ? 'Claim Available After Opening Bell' : claimLoading ? 'Collecting…' : 'Collect All Claims'}
                 </button>
                 <button
                     className="exit-all-button"
-                    onClick={handleExitAll}
+                    onClick={() => setConfirmingExitAll(true)}
                     disabled={positions.length === 0}
                 >
                     Exit All Positions
@@ -125,6 +147,11 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
                 <span className="grand-total">
                     Total available: <strong>{grandTotalDisplay} AFHO</strong>
                 </span>
+                {vestingCount > 0 && vestingTotal > 0 && (
+                    <span className="vesting-note">
+                        +{vestingTotal.toFixed(4)} AFHO locked in vesting bond positions — becomes claimable at end of vesting
+                    </span>
+                )}
             </div>
 
             <div className="pos-contain">
@@ -138,7 +165,7 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
                                 <span><strong>{(pos.amount / 1e9).toFixed(2)} </strong> AFHO</span>
                                 <div className="position-badges">
                                     {isBond && (
-                                        <span className="bond-badge" title="Purchased via night-desk bond offer">
+                                        <span className="bond-badge neon-glitch" title="Purchased via night-desk bond offer">
                                             Bond
                                         </span>
                                     )}
@@ -193,6 +220,44 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
                     );
                 })}
             </div>
+
+            {confirmingExitAll && (
+                <div className="modal-overlay" onClick={() => !exitingAll && setConfirmingExitAll(false)}>
+                    <div
+                        className="exit-all-confirm glass-pane neon-glitch"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <h3 className="text-glitch-light">Exit all positions?</h3>
+                        <p>
+                            Exiting {positions.length} position{positions.length !== 1 ? 's' : ''} forfeits
+                            your <strong>stacked multiplier bonuses</strong>
+                            {maxMultiplierLabel ? ` (currently up to ${maxMultiplierLabel}x)` : ''} —
+                            re-staking restarts every multiplier climb from 1x.
+                        </p>
+                        <p>
+                            Exit penalties apply on the way out
+                            ({exitPenaltyPct}% of principal in the current session), and rewards
+                            still vesting stay locked until their vesting ends.
+                        </p>
+                        <div className="exit-all-confirm-actions">
+                            <button
+                                className="exit-all-cancel"
+                                onClick={() => setConfirmingExitAll(false)}
+                                disabled={exitingAll}
+                            >
+                                Keep staking
+                            </button>
+                            <button
+                                className="exit-all-confirm-button"
+                                onClick={handleExitAll}
+                                disabled={exitingAll}
+                            >
+                                {exitingAll ? 'Exiting…' : 'Confirm — exit everything'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

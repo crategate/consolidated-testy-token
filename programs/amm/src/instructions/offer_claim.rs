@@ -18,22 +18,38 @@
 // The floor (highest_buyback_basis) is USDC-denominated in BOTH paths: a SOL
 // claim converts its USDC-terms cost to lamports at the sol_oracle rate, so
 // the ratchet never mixes units. The buyer covers the CPMM 0.25% input fee
-// (+25bps on the lamports); min-out tolerates 2% pool drift/slippage.
+// The buyer's lamports are solved from the SOL/USDC pool's actual reserves so
+// the swap nets the full USDC cost after the pool fee and the trade's own
+// price impact; the swap min-out and the vault-delta check enforce it
+// fail-closed.
+//
+// Pricing policy (quote_claim):
+//   state 1  effective = max(discounted, floor)   — the floor is the bound
+//   state 2  effective = max(discounted, floor − bonus_allowance) — only the
+//            bonus's own depth (0.5%) may price below the basis; the base
+//            discount stays ratchet-restricted
+//   any      require!(effective < live)           — above-spot claims revert
+//            (FloorHeldAtSpot): no discount, no sale.
 
 use crate::state::offersState::{lot_sizer, AmmState, OfferList};
 use anchor_lang::prelude::*;
+use anchor_spl::associated_token::{create_idempotent, AssociatedToken, Create};
+use anchor_spl::token::{sync_native, SyncNative};
 use anchor_spl::token_interface::{
     transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked,
 };
-use anchor_spl::associated_token::{create_idempotent, AssociatedToken, Create};
-use anchor_spl::token::{sync_native, SyncNative};
+
+/// The pinned SOL/USDC amm_config's input-leg trade fee (0.25%) — the same
+/// assumption the historical `10_025` sizing buffers made. pub(crate): the
+/// alt desk's SOL path solves with the same fee model.
+pub(crate) const SOL_POOL_TRADE_FEE_BPS: u64 = 25;
 
 // ---------------------------------------------------------------------------
 // USDC payment
 // ---------------------------------------------------------------------------
 
 #[derive(Accounts)]
-#[instruction(tier: u8, units: u8, index: u64)]
+#[instruction(tier: u8, units: u32, index: u64)]
 pub struct OfferClaim<'info> {
     #[account(mut)]
     pub buyer: Signer<'info>,
@@ -57,15 +73,9 @@ pub struct OfferClaim<'info> {
     #[account(address = amm_state.usdc_mint)]
     pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
 
-    /// Absolute-price oracle (mock fallback). Address is pinned at init — an
-    /// attacker cannot substitute a fake price account. Used only when the
-    /// CPMM pool is NOT pinned (localnet tests / pre-mainnet devnet).
-    /// CHECK: address-verified against amm_state.spot_oracle
-    #[account(address = amm_state.spot_oracle)]
-    pub spot_oracle: UncheckedAccount<'info>,
-
-    // Raydium CPMM AFHO/USDC pool — live price source when the pool is pinned
-    // in state (set_cpmm_pool). Option so mock-mode tests can omit them.
+    // Raydium CPMM AFHO/USDC pool — the ONLY price source. The pool pins
+    // live in AmmState (set_cpmm_pool); the handler hard-errors when unset
+    // and validates every account against the pool's derived PDAs (H1).
     /// CHECK: pool state, pinned to amm_state.cpmm_pool_state in the handler
     pub cpmm_pool_state: Option<AccountInfo<'info>>,
     /// CHECK: pool observation (TWAP ring)
@@ -141,12 +151,12 @@ pub struct OfferClaim<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler(ctx: Context<OfferClaim>, tier: u8, units: u8, index: u64) -> Result<()> {
+pub fn handler(ctx: Context<OfferClaim>, tier: u8, units: u32, index: u64) -> Result<()> {
     let clock = Clock::get()?;
     let amm_state = &ctx.accounts.amm_state;
     let pinned = amm_state.cpmm_pool_state != Pubkey::default();
+    require!(pinned, ErrorCode::PoolNotPinned);
     require_pinned_pricing_accounts(
-        pinned,
         amm_state.cpmm_program,
         amm_state.cpmm_pool_state,
         &ctx.accounts.afho_mint.key(),
@@ -156,20 +166,16 @@ pub fn handler(ctx: Context<OfferClaim>, tier: u8, units: u8, index: u64) -> Res
         ctx.accounts.cpmm_output_vault.as_ref(),
         ctx.accounts.cpmm_input_vault.as_ref(),
     )?;
-    let live_price = if pinned {
-        super::raydium::read_cpmm_price_floor(
-            ctx.accounts.cpmm_pool_state.as_ref().unwrap(),
-            ctx.accounts.cpmm_observation.as_ref().unwrap(),
-            ctx.accounts.cpmm_output_vault.as_ref().unwrap(),
-            ctx.accounts.cpmm_input_vault.as_ref().unwrap(),
-            &ctx.accounts.afho_mint.key(),
-            &ctx.accounts.usdc_mint.key(),
-            clock.unix_timestamp as u64,
-        )
-        .ok_or(ErrorCode::InvalidOracle)?
-    } else {
-        read_live_price(&ctx.accounts.spot_oracle.to_account_info())?
-    };
+    let live_price = super::raydium::read_cpmm_price_floor(
+        ctx.accounts.cpmm_pool_state.as_ref().unwrap(),
+        ctx.accounts.cpmm_observation.as_ref().unwrap(),
+        ctx.accounts.cpmm_output_vault.as_ref().unwrap(),
+        ctx.accounts.cpmm_input_vault.as_ref().unwrap(),
+        &ctx.accounts.afho_mint.key(),
+        &ctx.accounts.usdc_mint.key(),
+        clock.unix_timestamp as u64,
+    )
+    .ok_or(ErrorCode::InvalidOracle)?;
 
     let q = quote_claim(
         &ctx.accounts.market_status,
@@ -261,7 +267,7 @@ pub fn handler(ctx: Context<OfferClaim>, tier: u8, units: u8, index: u64) -> Res
 // ---------------------------------------------------------------------------
 
 #[derive(Accounts)]
-#[instruction(tier: u8, units: u8, index: u64)]
+#[instruction(tier: u8, units: u32, index: u64)]
 pub struct OfferClaimSol<'info> {
     #[account(mut)]
     pub buyer: Signer<'info>,
@@ -367,21 +373,10 @@ pub struct OfferClaimSol<'info> {
     pub token_2022_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
 
-    // --- Optional pricing accounts (kept at the end so the client can omit
-    //     unused oracle accounts without shifting required accounts) ---
-    /// AFHO absolute-price oracle — fallback when the AFHO/USDC CPMM pool is
-    /// NOT pinned. Optional so the pinned path can omit it (the SOL claim
-    /// instruction is at the transaction-size limit; 2 fewer accounts matter).
-    /// CHECK: address-verified against amm_state.spot_oracle when present.
-    #[account(address = amm_state.spot_oracle)]
-    pub spot_oracle: Option<AccountInfo<'info>>,
-    /// SOL/USD price oracle — fallback when the SOL/USDC pool is NOT pinned.
-    /// Optional for the same transaction-size reason.
-    /// CHECK: address-verified against amm_state.sol_oracle when present.
-    #[account(address = amm_state.sol_oracle)]
-    pub sol_oracle: Option<AccountInfo<'info>>,
-
-    // Raydium CPMM AFHO/USDC pool — live spot-price source when pinned.
+    // --- Pricing accounts — the pinned pools are the ONLY price sources.
+    // Kept as Options purely so the client can omit them when unset (the
+    // SOL claim instruction is at the transaction-size limit); the handler
+    // hard-errors unless both pools are pinned and the accounts verify.
     /// CHECK: pool state, pinned to amm_state.cpmm_pool_state in the handler
     pub cpmm_pool_state: Option<AccountInfo<'info>>,
     /// CHECK: pool observation (TWAP ring)
@@ -392,7 +387,7 @@ pub struct OfferClaimSol<'info> {
     pub cpmm_output_vault: Option<AccountInfo<'info>>,
 }
 
-pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u8, index: u64) -> Result<()> {
+pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u32, index: u64) -> Result<()> {
     let clock = Clock::get()?;
     let (cpmm_pool_state, cpmm_program, cpmm_sol_usdc_pool) = {
         let a = &ctx.accounts.amm_state;
@@ -401,9 +396,13 @@ pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u8, index: u64)
     let pinned = cpmm_pool_state != Pubkey::default();
     let sol_pinned = cpmm_sol_usdc_pool != Pubkey::default();
 
-    // AFHO/USDC spot-price accounts (pinned when configured).
+    // Both pools are REQUIRED: the AFHO/USDC pool prices the bond, the
+    // SOL/USDC pool prices + executes the lamports conversion. No stubs.
+    require!(pinned, ErrorCode::PoolNotPinned);
+    require!(sol_pinned, ErrorCode::PoolNotPinned);
+
+    // AFHO/USDC spot-price accounts.
     require_pinned_pricing_accounts(
-        pinned,
         cpmm_program,
         cpmm_pool_state,
         &ctx.accounts.afho_mint.key(),
@@ -413,10 +412,9 @@ pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u8, index: u64)
         ctx.accounts.cpmm_output_vault.as_ref(),
         ctx.accounts.cpmm_input_vault.as_ref(),
     )?;
-    // SOL/USDC swap accounts (pinned when the pool is configured).
+    // SOL/USDC swap accounts.
     require!(
         super::raydium::pinned_sol_usdc_accounts_valid(
-            sol_pinned,
             cpmm_program,
             cpmm_sol_usdc_pool,
             ctx.accounts.amm_state.cpmm_sol_usdc_config,
@@ -432,20 +430,16 @@ pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u8, index: u64)
         ErrorCode::InvalidPoolAccount
     );
 
-    let live_price = if pinned {
-        super::raydium::read_cpmm_price_floor(
-            ctx.accounts.cpmm_pool_state.as_ref().unwrap(),
-            ctx.accounts.cpmm_observation.as_ref().unwrap(),
-            ctx.accounts.cpmm_output_vault.as_ref().unwrap(),
-            ctx.accounts.cpmm_input_vault.as_ref().unwrap(),
-            &ctx.accounts.afho_mint.key(),
-            &ctx.accounts.usdc_mint.key(),
-            clock.unix_timestamp as u64,
-        )
-        .ok_or(ErrorCode::InvalidOracle)?
-    } else {
-        read_live_price(ctx.accounts.spot_oracle.as_ref().ok_or(ErrorCode::InvalidOracle)?)?
-    };
+    let live_price = super::raydium::read_cpmm_price_floor(
+        ctx.accounts.cpmm_pool_state.as_ref().unwrap(),
+        ctx.accounts.cpmm_observation.as_ref().unwrap(),
+        ctx.accounts.cpmm_output_vault.as_ref().unwrap(),
+        ctx.accounts.cpmm_input_vault.as_ref().unwrap(),
+        &ctx.accounts.afho_mint.key(),
+        &ctx.accounts.usdc_mint.key(),
+        clock.unix_timestamp as u64,
+    )
+    .ok_or(ErrorCode::InvalidOracle)?;
 
     let q = quote_claim(
         &ctx.accounts.market_status,
@@ -458,36 +452,46 @@ pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u8, index: u64)
     )?;
 
     // ── Convert the USDC-denominated cost into lamports ──
-    // sol_price units match the spot oracle: (usdc_raw x 1e6) / lamports,
-    // so lamports = cost_usdc x 1e6 / sol_price. The CPMM charges a 0.25%
-    // fee on the input leg, so the buyer is charged 25bps on top — the pool
-    // then nets the protocol the full USDC cost (min-out below guards the
-    // residual slippage/drift).
-    let sol_price = if sol_pinned {
-        super::raydium::read_cpmm_price_floor(
-            &ctx.accounts.sol_usdc_pool_state.to_account_info(),
-            &ctx.accounts.sol_usdc_observation.to_account_info(),
-            &ctx.accounts.sol_usdc_input_vault.to_account_info(),  // wSOL (base)
-            &ctx.accounts.sol_usdc_output_vault.to_account_info(), // USDC (quote)
-            &ctx.accounts.wrapped_sol_mint.key(),
-            &ctx.accounts.usdc_mint.key(),
-            clock.unix_timestamp as u64,
-        )
-        .ok_or(ErrorCode::InvalidOracle)?
-    } else {
-        read_live_price(ctx.accounts.sol_oracle.as_ref().ok_or(ErrorCode::InvalidOracle)?)?
-    };
+    // sol_price units match the spot oracle: (usdc_raw x 1e12) / lamports
+    // (price per whole SOL × 1e9), so lamports = cost_usdc x 1e12 /
+    // sol_price. The CPMM charges a 0.25% fee on the input leg, so the buyer
+    // is charged 25bps on top — the pool then nets the protocol the full
+    // USDC cost (min-out below guards the residual slippage/drift).
+    let sol_price = super::raydium::read_cpmm_price_floor(
+        &ctx.accounts.sol_usdc_pool_state.to_account_info(),
+        &ctx.accounts.sol_usdc_observation.to_account_info(),
+        &ctx.accounts.sol_usdc_input_vault.to_account_info(), // wSOL (base)
+        &ctx.accounts.sol_usdc_output_vault.to_account_info(), // USDC (quote)
+        &ctx.accounts.wrapped_sol_mint.key(),
+        &ctx.accounts.usdc_mint.key(),
+        clock.unix_timestamp as u64,
+    )
+    .ok_or(ErrorCode::InvalidOracle)?;
     require!(sol_price > 0, ErrorCode::InvalidOracle);
-    let lamports = (q.cost_usdc as u128)
-        .checked_mul(1_000_000u128)
-        .ok_or(ErrorCode::MathOverflow)?
-        .checked_mul(10_025u128)
-        .ok_or(ErrorCode::MathOverflow)?
-        .checked_div(sol_price as u128)
-        .ok_or(ErrorCode::MathOverflow)?
-        .checked_div(10_000u128)
-        .ok_or(ErrorCode::MathOverflow)?;
-    let lamports = u64::try_from(lamports).map_err(|_| ErrorCode::MathOverflow)?;
+    // Size the buyer's input from the pool's ACTUAL reserves so the swap nets
+    // the full USDC cost after the 0.25% input-leg fee AND the trade's own
+    // constant-product price impact. The old form (cost × 1.0025 / price
+    // read) had zero impact headroom — the 25bps buffer exactly covered the
+    // pool fee — so any input larger than ~0.25% of the pool's wSOL reserve
+    // left usdc_got short of cost_usdc and failed the claim. Solving the
+    // constant-product equation makes netting the cost hold by construction
+    // at any size the pool can actually serve:
+    //   out = R_out × net/(R_in + net) ≥ cost ⇒ net = cost × R_in/(R_out − cost)
+    // The sol_price read stays as a fail-closed validation that the pinned
+    // pool still prices the wSOL/USDC pair (mints + TWAP ring sanity).
+    let pool_wsol =
+        super::raydium::token_account_amount(&ctx.accounts.sol_usdc_input_vault.to_account_info())
+            .ok_or(ErrorCode::InvalidOracle)?;
+    let pool_usdc =
+        super::raydium::token_account_amount(&ctx.accounts.sol_usdc_output_vault.to_account_info())
+            .ok_or(ErrorCode::InvalidOracle)?;
+    let lamports = super::raydium::cpmm_swap_input_for_out(
+        pool_wsol,
+        pool_usdc,
+        q.cost_usdc,
+        SOL_POOL_TRADE_FEE_BPS,
+    )
+    .ok_or(ErrorCode::InsufficientPoolLiquidity)?;
     require!(lamports > 0, ErrorCode::ZeroAmount);
 
     // ── 0. Ensure the wSOL ATA exists. bounty_top_up closes it after
@@ -537,6 +541,12 @@ pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u8, index: u64)
     let state_bump = ctx.accounts.amm_state.bump;
     let cpmm_program = ctx.accounts.amm_state.cpmm_program;
     let seeds: &[&[u8]] = &[b"amm_state", mint_key.as_ref(), &[state_bump]];
+    let usdc_before = ctx.accounts.usdc_vault.amount;
+    // Raydium enforces the economics itself now: the input is solved from the
+    // pool's reserves so the pool nets ≥ cost_usdc, and the CPI min-out pins
+    // that same floor. The vault-delta check below re-verifies it fail-closed
+    // (e.g. if the pinned amm_config's fee ever differs from the 25bps model).
+    let min_out = q.cost_usdc;
     let ix = crate::instructions::raydium::cpmm_swap_base_input_ix(
         cpmm_program,
         ctx.accounts.amm_state.key(),
@@ -553,7 +563,7 @@ pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u8, index: u64)
         ctx.accounts.usdc_mint.key(),
         ctx.accounts.sol_usdc_observation.key(),
         lamports,
-        q.cost_usdc.saturating_mul(98) / 100, // min-out: 2% tolerance for pool drift/slippage
+        min_out,
     );
     anchor_lang::solana_program::program::invoke_signed(
         &ix,
@@ -574,6 +584,14 @@ pub fn handler_sol(ctx: Context<OfferClaimSol>, tier: u8, units: u8, index: u64)
         ],
         &[seeds],
     )?;
+
+    // The swap must net the protocol the full USDC cost: the 80/10/10 split
+    // below moves cost-derived amounts out of usdc_vault, so a pool shortfall
+    // would otherwise be silently drawn from the pre-existing buyback-vault
+    // balance. Fail closed instead.
+    ctx.accounts.usdc_vault.reload()?;
+    let usdc_got = ctx.accounts.usdc_vault.amount.saturating_sub(usdc_before);
+    require!(usdc_got >= q.cost_usdc, ErrorCode::InsufficientSwapOutput);
 
     // ── 3. 80/10/10 split of the USDC (rounding favors the buyback vault) ──
     let dip = q.cost_usdc / 10;
@@ -669,7 +687,7 @@ fn quote_claim(
     afho_decimals: u8,
     live_price: u64,
     tier: u8,
-    units: u8,
+    units: u32,
 ) -> Result<ClaimQuote> {
     require!(units > 0, ErrorCode::ZeroAmount);
 
@@ -697,19 +715,108 @@ fn quote_claim(
         2 => offer_list.big_offer,
         _ => return err!(ErrorCode::InvalidTier),
     };
-    require!(offer.remaining >= units, ErrorCode::InsufficientOffer);
+    require!(
+        offer.remaining as u32 >= units,
+        ErrorCode::InsufficientOffer
+    );
     let (lot_tier, vesting_days, discount_stored) =
         (offer.lot_size, offer.vesting_days, offer.discount_bps);
 
     // ── Price: live absolute price minus the tier discount ──
     // discount_bps is stored in tenths of a percent (115 = 11.5%) → ×10 = bps.
     require!(live_price > 0, ErrorCode::InvalidOracle);
-    let discount_bps = discount_stored as u64 * 10;
+    // CLOSED-SESSION BOOST: whatever survives the after-hours session into the
+    // closed session (state 1 → 2) drops another 0.5% (5 tenths) — every tier
+    // drops together, so the closed window gets its own special price. When
+    // the market moves back to extended hours (state 1 = pre-trade), remaining
+    // offers price at the sheet's base discount again. Deliberately a pure
+    // function of the market state: the stored sheet is untouched, nothing to
+    // mutate/revert, no keeper dependency — a state-1 claim simply reads the
+    // base discount.
+    let boosted_stored = if current_state == 2 {
+        msg!("closed-session boost: +0.5% (state 2)");
+        discount_stored.saturating_add(5)
+    } else {
+        discount_stored
+    };
+    let discount_bps = boosted_stored as u64 * 10;
     let discounted = live_price.saturating_sub(live_price.saturating_mul(discount_bps) / 10_000);
 
-    // ── RATCHET: never sell below highest realized buyback basis ──
+    // ── RATCHET vs LATE-NITE ALLOWANCE ──
+    // The ratchet floor (highest realized buyback basis) stays the hard bound
+    // for the BASE discount in every session. In the closed session (state 2)
+    // the late-nite bonus buys exactly its own depth below that bound: the
+    // sale floor relaxes from `floor` to `floor − live × bonus_bps / 10000`,
+    // so only the bonus's 0.5% can price under the basis — the green % off
+    // amount is still ratchet-restricted. In extended hours (state 1) the
+    // floor is the hard bound with NO allowance: the late-nite bonus is a
+    // closed-session (state 2) feature only, so a floor at/above spot keeps
+    // the tier refused until the decay (or price recovery) restores a real
+    // discount.
     let floor = amm_state.highest_buyback_basis;
-    let effective_price = discounted.max(floor);
+
+    // ── TIER SCALING UNDER THE RATCHET ──
+    // Without this, every tier the floor clamps prices at exactly `bound`
+    // and the sheet's strict big>med>sml deal structure collapses (a 1-lot
+    // and a 100k-lot bond would cost the same per token). Rule, applied per
+    // tier from the SHALLOWEST discount down:
+    //   unclamped (discounted ≥ bound): the tier keeps its full discounted
+    //     quote — untouched, exactly as before;
+    //   clamped (discounted < bound): the tier rides the bound plus the
+    //     spread its discounted quote holds over the DEEPEST tier's
+    //     discounted quote, capped just under the next shallower tier's
+    //     effective price so the sheet's ordering survives the middle
+    //     regime (floor between med's and sml's discounted quotes).
+    // Invariants: no tier ever prices below its own full discounted quote
+    // (the late-nite allowance is the only thing that reaches below the
+    // basis, and only for the anchor tier), no tier prices below its bound,
+    // clamped tiers stay strictly ordered whenever the sheet's discounts
+    // differ, and fully-unclamped sheets price bit-identically to the old
+    // max(discounted, floor) rule. Bounds are per-tier: each tier's own
+    // late-nite allowance applies to its own effective price (they only
+    // diverge at the u8 discount-cap saturation).
+    let tier_quote = |d: u8| -> u64 {
+        let boosted = if current_state == 2 {
+            d.saturating_add(5)
+        } else {
+            d
+        };
+        live_price.saturating_sub(live_price.saturating_mul(boosted as u64 * 10) / 10_000)
+    };
+    let tier_bound = |d: u8| -> u64 {
+        let boosted = d.saturating_add(if current_state == 2 { 5 } else { 0 });
+        let tier_allowance =
+            live_price.saturating_mul(boosted.saturating_sub(d) as u64 * 10) / 10_000;
+        floor.saturating_sub(tier_allowance)
+    };
+    let q_sml = tier_quote(offer_list.sml_offer.discount_bps);
+    let q_med = tier_quote(offer_list.med_offer.discount_bps);
+    let q_big = tier_quote(offer_list.big_offer.discount_bps);
+    let b_sml = tier_bound(offer_list.sml_offer.discount_bps);
+    let b_med = tier_bound(offer_list.med_offer.discount_bps);
+    let b_big = tier_bound(offer_list.big_offer.discount_bps);
+    // sml holds the shallowest discount (highest quote) — if even sml is
+    // clamped, every tier is; spreads then order the whole sheet above the
+    // bound with nothing to cap against.
+    let eff_sml = if q_sml >= b_sml {
+        q_sml
+    } else {
+        b_sml.saturating_add(q_sml.saturating_sub(q_big))
+    };
+    let eff_med = if q_med >= b_med {
+        q_med
+    } else {
+        b_med
+            .saturating_add(q_med.saturating_sub(q_big))
+            .min(eff_sml.saturating_sub(1))
+            .max(b_med)
+    };
+    let eff_big = q_big.max(b_big);
+    let effective_price = match tier {
+        0 => eff_sml,
+        1 => eff_med,
+        _ => eff_big,
+    };
     if effective_price > discounted {
         msg!(
             "Ratchet active: floor {} vs discounted {}",
@@ -718,8 +825,22 @@ fn quote_claim(
         );
     }
 
+    // ── ABOVE-SPOT GATE: no discount, no sale ──
+    // A claim priced at/above the live pool price is refused outright — a
+    // spot-priced, vesting-locked bond is strictly dominated by the open
+    // market, and fills only slow the floor's decay (demand keep in
+    // calc_completed_offers). With the floor binding this is exactly the
+    // "floor ≥ spot" state; the desk stays dark until the decay (or price
+    // recovery) restores a real discount. In state 2 the boost keeps the
+    // discounted quote below spot and the bonus's own allowance can clear a
+    // floor sitting within 0.5% of spot; a floor further above spot still
+    // refuses the tier. In state 1 the floor is the hard bound — a floor
+    // at/above spot always refuses.
+    require!(effective_price < live_price, ErrorCode::FloorHeldAtSpot);
+
     // lot_size is a TIER INDEX — translate via lot_sizer to whole tokens,
-    // then to raw units. Price units: (usdc_raw × 1e6) / afho_raw.
+    // then to raw units. Price units: (usdc_raw × 1e12) / afho_raw
+    // (price per whole AFHO × 1e9).
     let unit = 10u64.checked_pow(afho_decimals as u32).unwrap_or(1);
     let total_tokens = lot_sizer(lot_tier) as u64 * units as u64;
     require!(total_tokens > 0, ErrorCode::InsufficientOffer);
@@ -729,7 +850,7 @@ fn quote_claim(
     let cost = total_raw
         .checked_mul(effective_price as u128)
         .ok_or(ErrorCode::MathOverflow)?
-        / 1_000_000u128;
+        / 1_000_000_000_000u128;
     let cost_usdc = u64::try_from(cost).map_err(|_| ErrorCode::MathOverflow)?;
     require!(cost_usdc > 0, ErrorCode::ZeroAmount);
 
@@ -745,10 +866,14 @@ fn quote_claim(
 }
 
 /// Client-supplied position index must match the staking user_index (if it
-/// already exists), so position PDAs can never collide.
-fn validate_user_index(user_index: &AccountInfo, index: u64) -> Result<()> {
+/// already exists), so position PDAs can never collide. pub(crate): shared
+/// with the alt desk's claim paths.
+pub(crate) fn validate_user_index(user_index: &AccountInfo, index: u64) -> Result<()> {
     if !user_index.data_is_empty() {
-        require!(user_index.owner == &staking::ID, ErrorCode::InvalidUserIndex);
+        require!(
+            user_index.owner == &staking::ID,
+            ErrorCode::InvalidUserIndex
+        );
         let data = user_index.try_borrow_data()?;
         require!(data.len() >= 16, ErrorCode::InvalidUserIndex);
         let next = u64::from_le_bytes(data[8..16].try_into().unwrap());
@@ -758,12 +883,17 @@ fn validate_user_index(user_index: &AccountInfo, index: u64) -> Result<()> {
 }
 
 /// Sheet accounting: decrement the tier's remaining lots; total_complete is
-/// in WHOLE TOKENS, not lots.
-fn settle_sheet(offer_list: &mut Account<OfferList>, tier: u8, units: u8, total_tokens: u64) {
+/// in WHOLE TOKENS, not lots. pub(crate): shared with the alt desk's claims.
+pub(crate) fn settle_sheet(
+    offer_list: &mut Account<OfferList>,
+    tier: u8,
+    units: u32,
+    total_tokens: u64,
+) {
     match tier {
-        0 => offer_list.sml_offer.remaining -= units,
-        1 => offer_list.med_offer.remaining -= units,
-        _ => offer_list.big_offer.remaining -= units,
+        0 => offer_list.sml_offer.remaining -= units as u32,
+        1 => offer_list.med_offer.remaining -= units as u32,
+        _ => offer_list.big_offer.remaining -= units as u32,
     }
     offer_list.total_complete = offer_list
         .total_complete
@@ -773,8 +903,9 @@ fn settle_sheet(offer_list: &mut Account<OfferList>, tier: u8, units: u8, total_
 /// CPI into staking: purchased AFHO moves from the AMM vault into a locked
 /// StakePosition. The amm_state PDA signs (the staking program verifies its
 /// seeds against pool.amm_program — that signature IS the authorization).
+/// pub(crate): shared with the alt desk's claim paths.
 #[allow(clippy::too_many_arguments)]
-fn cpi_create_position<'info>(
+pub(crate) fn cpi_create_position<'info>(
     staking_program: AccountInfo<'info>,
     owner: AccountInfo<'info>,
     mint: AccountInfo<'info>,
@@ -816,18 +947,11 @@ fn cpi_create_position<'info>(
     )
 }
 
-pub(crate) fn read_live_price(oracle: &AccountInfo) -> Result<u64> {
-    let data = oracle.try_borrow_data()?;
-    require!(data.len() >= 8, ErrorCode::InvalidOracle);
-    Ok(u64::from_le_bytes(data[0..8].try_into().unwrap()))
-}
-
-/// When the AFHO/USDC CPMM pool is pinned, verify the four pricing accounts
-/// (pool state, observation, USDC vault, AFHO vault) are the pool's own
-/// derived PDAs. No-op in mock/localnet mode.
+/// Verify the AFHO/USDC CPMM pricing accounts (pool state, observation,
+/// USDC vault, AFHO vault) are the pool's own derived PDAs. The pool is
+/// required to be pinned — callers check before calling.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn require_pinned_pricing_accounts(
-    pinned: bool,
     cpmm_program: Pubkey,
     expected_pool_state: Pubkey,
     afho_mint: &Pubkey,
@@ -837,9 +961,6 @@ pub(crate) fn require_pinned_pricing_accounts(
     acct_base_vault: Option<&AccountInfo>,
     acct_quote_vault: Option<&AccountInfo>,
 ) -> Result<()> {
-    if !pinned {
-        return Ok(());
-    }
     let pool_state = acct_pool_state.ok_or(ErrorCode::InvalidPoolAccount)?;
     let observation = acct_observation.ok_or(ErrorCode::InvalidPoolAccount)?;
     let base_vault = acct_base_vault.ok_or(ErrorCode::InvalidPoolAccount)?;
@@ -855,12 +976,22 @@ pub(crate) fn require_pinned_pricing_accounts(
     );
     require!(
         quote_vault.key()
-            == crate::instructions::raydium::pool_vault_pda(&cpmm_program, expected_pool_state, *usdc_mint).0,
+            == crate::instructions::raydium::pool_vault_pda(
+                &cpmm_program,
+                expected_pool_state,
+                *usdc_mint
+            )
+            .0,
         ErrorCode::InvalidPoolAccount
     );
     require!(
         base_vault.key()
-            == crate::instructions::raydium::pool_vault_pda(&cpmm_program, expected_pool_state, *afho_mint).0,
+            == crate::instructions::raydium::pool_vault_pda(
+                &cpmm_program,
+                expected_pool_state,
+                *afho_mint
+            )
+            .0,
         ErrorCode::InvalidPoolAccount
     );
     Ok(())
@@ -888,4 +1019,12 @@ pub enum ErrorCode {
     MathOverflow,
     #[msg("CPMM pool account mismatch")]
     InvalidPoolAccount,
+    #[msg("CPMM pool not pinned — run set_cpmm_pool / set_sol_usdc_pool")]
+    PoolNotPinned,
+    #[msg("SOL leg swap did not net the full USDC cost")]
+    InsufficientSwapOutput,
+    #[msg("SOL/USDC pool cannot serve this claim cost")]
+    InsufficientPoolLiquidity,
+    #[msg("Offer priced at/above spot — the ratchet floor holds, no discount available")]
+    FloorHeldAtSpot,
 }

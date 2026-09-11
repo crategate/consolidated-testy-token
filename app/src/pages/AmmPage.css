@@ -68,10 +68,20 @@
     flex-direction: column;
     gap: 10px;
     margin-bottom: 14px;
+    align-items: center;
+    margin-top: -34px;
+}
+
+.amm-title {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
 }
 
 .amm-title h1 {
+    text-align: center;
     font-size: 22px;
+    font-weight: 400;
     margin: 0 0 4px;
     letter-spacing: 0.03em;
     text-shadow: 0 0 14px rgba(0, 240, 255, 0.35);
@@ -136,6 +146,42 @@
     }
 }
 
+/* Yellow variant for the offer desk's open banner — same sparse flicker
+   shape as deskOpenPulse, yellow glow instead of the market badge's green
+   (which keeps deskOpenPulse). */
+@keyframes deskOpenPulseYellow {
+
+    0%,
+    13%,
+    31%,
+    48%,
+    66%,
+    84%,
+    100% {
+        box-shadow: none;
+    }
+
+    10% {
+        box-shadow: 0 0 5px rgba(255, 233, 100, 0.18);
+    }
+
+    28% {
+        box-shadow: 0 0 10px rgba(255, 233, 100, 0.3);
+    }
+
+    45% {
+        box-shadow: 0 0 5px rgba(255, 233, 100, 0.2);
+    }
+
+    63% {
+        box-shadow: 0 0 8px rgba(255, 233, 100, 0.26);
+    }
+
+    81% {
+        box-shadow: 0 0 11px rgba(255, 233, 100, 0.32);
+    }
+}
+
 .amm-controls {
     display: flex;
     align-items: center;
@@ -151,6 +197,13 @@
    the homepage connect tile), blue/pink once connected. */
 .amm-controls .wallet-button-wrapper {
     position: relative;
+    /* Raise the wrapper's isolated context (set by the generic
+       .wallet-button-wrapper rule) above the desk's later-DOM panes,
+       cards and the order bar — those create their own stacking contexts
+       (backdrop-filter/transform) and would otherwise paint over the
+       open wallet dropdown. 40 clears every desk element (max z-index 30)
+       and stays below the wallet modal (1040, portaled to body). */
+    z-index: 40;
     border-radius: var(--radius-sm);
 }
 
@@ -174,7 +227,7 @@
             var(--neon-purple) 360deg);
     filter: blur(10px);
     opacity: 0;
-    animation: rainbowGlitch calc(var(--fx-shadow-cycle) * 0.9) infinite;
+    animation: rainbowGlitch calc(var(--fx-shadow-cycle) * 1.8) infinite;
     animation-delay: var(--shadow-delay, 0.2s);
     pointer-events: none;
     /* ring-only mask: the glow renders around the button, never through it */
@@ -191,7 +244,7 @@
             var(--neon-blue) 240deg,
             var(--neon-pink) 360deg);
     animation-name: bluePinkGlitch;
-    animation-duration: calc(var(--fx-shadow-cycle) * 1.2);
+    animation-duration: calc(var(--fx-shadow-cycle) * 1.8);
 }
 
 .amm-updated {
@@ -209,6 +262,7 @@
     font-size: 14px;
     margin-bottom: 12px;
     line-height: 1.4;
+    isolation: isolate;
 }
 
 /* Faint broken-neon border, drifting on the desk clock */
@@ -223,10 +277,37 @@
     animation-delay: var(--glitch-delay, 0.4s);
 }
 
+/* Rainbow backlit shadow behind the banner — sparse ticks on the slow
+   desk clock, never a constant glow */
+.desk-banner::after {
+    content: '';
+    position: absolute;
+    inset: -5px;
+    border-radius: inherit;
+    z-index: -1;
+    padding: 5px;
+    background: conic-gradient(from 0deg at 50% 50%,
+            var(--neon-purple) 0deg,
+            var(--neon-amber) 70deg,
+            var(--neon-pink) 130deg,
+            var(--neon-cyan) 230deg,
+            var(--neon-purple) 360deg);
+    filter: blur(12px) saturate(var(--fx-sat, 1));
+    opacity: 0;
+    pointer-events: none;
+    animation: rainbowGlitch calc(var(--fx-desk-shadow-cycle) * 1.2) infinite;
+    animation-delay: var(--shadow-delay, 0.6s);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+}
+
 .desk-banner.open {
-    border-color: #2f5d43;
-    color: #b7f0cd;
-    animation: deskOpenPulse 10s ease-in-out infinite;
+    border-color: rgba(255, 226, 100, 0.5);
+    color: #ffefad;
+    background: linear-gradient(135deg, rgba(255, 226, 100, 0.16), rgba(255, 226, 100, 0.07));
+    animation: deskOpenPulseYellow 10s ease-in-out infinite;
 }
 
 .desk-banner.closed {
@@ -242,6 +323,36 @@
 .desk-banner.success {
     color: #b7f0cd;
     border-color: #2f5d43;
+}
+
+/* Desk paused (open window, no sales): floor ≥ spot, or the live-price
+   snapshot went stale. Orange replaces the old red — "paused", not "error"
+   — and pairs with the yellow open banner. */
+.desk-banner.paused {
+    color: #ffb877;
+    border-color: rgba(255, 158, 0, 0.45);
+    background: rgba(255, 158, 0, 0.13);
+}
+
+.desk-banner.paused::after {
+    opacity: 0.6;
+    animation-duration: calc(var(--fx-desk-shadow-cycle) * 1.8);
+}
+
+/* Success banner rides at the top of the viewport while the buyer scrolls
+   the desk — solid backdrop so content slides under it legibly. */
+.desk-banner--sticky {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    /* Solid fallback first: browsers that drop the color-mix() line (older
+       Firefox) otherwise inherit .glass-pane's 5% white wash — the banner
+       reads fully transparent and page content slides through it. */
+    background: var(--bg-elevated);
+    background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
 }
 
 .desk-banner a {
@@ -491,8 +602,10 @@
     mask-composite: exclude;
 }
 
+/* Connected: the selected tier keeps the slow rainbow keyframes — the
+   cycle only eases slightly tighter, it never starts strobing. */
 .amm-page-shell[data-connected='true'] .offer-card.selected::after {
-    animation-name: rainbowGlitchFast;
+    animation-duration: calc(var(--fx-desk-shadow-cycle) * 1.0 / var(--tier-excite, 1));
 }
 
 /* Hover: gently quicken the border rhythm, no strobe */
@@ -504,7 +617,6 @@
 .offer-card.sold-out {
     opacity: 0.55;
     filter: saturate(0.3);
-    border-style: dashed;
 }
 
 .offer-card.sold-out::before {
@@ -553,6 +665,47 @@
     border: 1px solid #2f5d43;
     border-radius: 999px;
     padding: 2px 10px;
+}
+
+/* CLOSED-session bonus pill — same size/shape as .offer-discount, blue. */
+.offer-discount--bonus {
+    color: var(--neon-blue);
+    background: #101c26;
+    border-color: #2f5470;
+}
+
+/* Price/lot discount confirmation: the header pill promises "up to X% off"
+   — the price line reports what the tier actually delivers, in the color of
+   what's applied. Green = full listed discount (same green as the pill);
+   blue = late-nite bonus is the live discount; blue↔green pulse = full
+   discount + bonus stacked; muted = the buyback floor ate part of the
+   discount (ratchet active, no bonus). */
+/* Scoped to .offer-facts to out-rank the `.offer-facts dd` color rule —
+   these were silently overridden before the scoping. */
+.offer-facts .offer-price--full {
+    color: var(--neon-green);
+    text-shadow: 0 0 8px rgba(60, 220, 130, 0.55), 0 0 18px rgba(60, 220, 130, 0.3);
+}
+
+.offer-facts .offer-price--full-bonus {
+    color: var(--neon-green);
+    text-shadow: 0 0 8px currentColor, 0 0 18px currentColor;
+    animation: priceDiscountTide 4.8s ease-in-out infinite;
+}
+
+.offer-facts .offer-price--bonus-only {
+    color: var(--neon-blue);
+    text-shadow: 0 0 8px rgba(80, 170, 255, 0.55), 0 0 18px rgba(80, 170, 255, 0.3);
+}
+
+.offer-facts .offer-price--reduced {
+    color: var(--text-muted);
+}
+
+.offer-bonus-row {
+    margin: 3px 0 6px;
+    display: flex;
+    flex-direction: row-reverse;
 }
 
 .offer-lot-size {
@@ -626,11 +779,40 @@
     box-shadow: 0 0 16px rgba(0, 240, 255, 0.3);
 }
 
-.qty-value {
-    min-width: 36px;
+/* editable quantity input between the stepper buttons */
+.qty-input {
+    min-width: 72px;
+    width: 72px;
+    height: 48px;
+    padding: 0 8px;
     text-align: center;
     font-size: 18px;
     font-weight: 700;
+    font-family: inherit;
+    color: var(--text-primary);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+
+.qty-input::-webkit-outer-spin-button,
+.qty-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.qty-input:focus {
+    border-color: rgba(0, 240, 255, 0.5);
+    box-shadow: 0 0 12px rgba(0, 240, 255, 0.18);
+}
+
+.qty-input:disabled {
+    opacity: 0.35;
+    cursor: default;
 }
 
 .offer-soldout {
@@ -639,6 +821,62 @@
     color: var(--text-muted);
     animation: soldoutFlicker 10s infinite;
 }
+
+/* Tier tile where the buyback floor holds the price at/above live spot —
+   the claim would revert FloorHeldAtSpot, so the tile says so up front. */
+.offer-card.floor-held {
+    opacity: 0.48;
+    border-color: rgba(255, 107, 107, 0.55);
+    filter: saturate(0.7);
+}
+
+.offer-card.floor-held::after {
+    content: none;
+}
+
+.offer-floor-held {
+    margin: 8px 0 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: #ff8a8a;
+    animation: soldoutFlicker 10s infinite;
+}
+
+/* Stale-price tiles: the snapshot is too old to quote a buy against. Softer
+   than floor-held (the desk is not dark — data is just late); amber note,
+   muted card until the next poll/ws tick refreshes the price. */
+.offer-card.price-stale {
+    opacity: 0.62;
+    border-color: rgba(255, 193, 107, 0.45);
+    filter: saturate(0.8);
+}
+
+.offer-card.price-stale::after {
+    content: none;
+}
+
+.offer-card.price-stale .offer-floor-held {
+    color: #ffc16b;
+    animation: none;
+}
+
+/* Desk-closed indicator inside the Total Order Size tile — visible BEFORE
+   the buyer tries to add an offer to the cart. */
+.order-desk-closed {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #ff8a8a;
+    padding: 6px 10px;
+    margin-bottom: 10px;
+    border: 1px solid rgba(255, 107, 107, 0.45);
+    border-radius: 8px;
+    background: rgba(255, 60, 60, 0.08);
+}
+
+
 
 /* ── order bar: sticky at the bottom on mobile. Border glitch scales
       with --order-excite (more lots → more excited). ── */
@@ -666,8 +904,8 @@
 }
 
 .order-bar[data-order='active']::before {
-    animation-name: neonFlickerFast;
-    animation-duration: calc(var(--fx-desk-cycle) * 0.9 / var(--order-excite, 1));
+    animation-name: neonFlickerSlow;
+    animation-duration: calc(var(--fx-desk-cycle) * 1.4 / var(--order-excite, 1));
 }
 
 /* Active order pane: sparse blue/pink edge glow behind the bar */
@@ -904,7 +1142,7 @@
     border-radius: 16px;
     z-index: -1;
     padding: 6px;
-    background: conic-gradient(from 0deg at 50% 50%,
+    background: conic-gradient(from var(--fx-rotor-angle, 0deg) at 50% 50%,
             var(--neon-purple) 0deg,
             var(--neon-amber) 70deg,
             var(--neon-pink) 130deg,
@@ -913,7 +1151,8 @@
     filter: blur(14px) saturate(calc(var(--fx-sat, 1) + (var(--order-excite, 1) - 1) * 0.5));
     opacity: 0;
     pointer-events: none;
-    animation: rainbowGlitch calc(var(--fx-desk-shadow-cycle) * 1.0 / var(--order-excite, 1)) infinite;
+    animation: rainbowGlitch calc(var(--fx-desk-shadow-cycle) * 1.4 / var(--order-excite, 1)) infinite,
+        fxRotorSpin var(--fx-rotor-cycle, 48s) linear infinite;
     animation-delay: 0.4s;
     -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
@@ -921,8 +1160,11 @@
     mask-composite: exclude;
 }
 
+/* Connected: the glitch cycle only tightens slightly; the rotor stays on
+   its own slow, constant spin. */
 .amm-page-shell[data-connected='true'] .buy-button.ready::after {
-    animation-name: rainbowGlitchFast;
+    animation-duration: calc(var(--fx-desk-shadow-cycle) * 1.0 / var(--order-excite, 1)),
+        var(--fx-rotor-cycle, 48s);
 }
 
 .order-note {
@@ -942,7 +1184,8 @@
 .amm-page-shell[data-glitch-burst='true'] .order-bar::after,
 .amm-page-shell[data-glitch-burst='true'] .buy-button.ready::after,
 .amm-page-shell[data-glitch-burst='true'] .amm-controls .wallet-button-wrapper::before {
-    animation-duration: calc(var(--fx-desk-shadow-cycle) * 0.35) !important;
+    animation-duration: calc(var(--fx-desk-shadow-cycle) * 0.35),
+        var(--fx-rotor-cycle, 48s) !important;
 }
 
 /* Hovering a tier dims its siblings' glitches so the hovered tile pops */
@@ -962,7 +1205,7 @@
     animation: textShadowGlitch calc(5s / var(--tier-excite, 1)) infinite;
 }
 
-.offer-card.selected .qty-value {
+.offer-card.selected .qty-input {
     animation: textShadowShiver 1.8s infinite;
 }
 
@@ -1010,6 +1253,7 @@
     .amm-topbar {
         flex-direction: row;
         align-items: center;
+        margin-top: -40px;
         justify-content: space-between;
         margin-bottom: 18px;
     }
@@ -1024,7 +1268,135 @@
         grid-template-columns: repeat(3, 1fr);
     }
 
+    .amm-topbar {
+        margin-top: -30px;
+    }
+
     .amm-page-shell {
         padding: 20px 24px 40px;
+    }
+}
+
+/* ═════════════════════════════════════════════════════════════════
+   Lit desk — the rare alt window (data-desk='lit').
+
+   Same effect grammar as the night desk, re-tuned to a gold / amber /
+   orange palette: the existing per-element shadows recolor via the
+   --card-glow-* and --shadow-* custom properties (no duplicate rules
+   to drift), a cornered backlit layer lands on MORE elements (market
+   badge, order bar, desk banner), and a dedicated sparse flicker-OUT
+   keyframe replaces the steady state — lit is intermittently brighter,
+   never a pulse, never a constant blink. reduced-motion strips it.
+   Names stay generic on purpose: nothing here says what triggers it.
+   ═════════════════════════════════════════════════════════════════ */
+
+.amm-page-shell[data-desk='lit'] {
+    /* gold-warm desk clock: brighter, slightly slower wander */
+    --desk-excitement: 1.8;
+    --desk-tempo: 1.7;
+    --lit-glow-a: #ffb300;
+    --lit-glow-b: #ff7a00;
+    --lit-glow-c: #ffd54f;
+    --lit-glow-soft: rgba(255, 179, 0, 0.45);
+    --lit-glow-deep: rgba(255, 122, 0, 0.28);
+}
+
+/* Recolor the per-tier card glows: every tier reads gold-family, only
+   the shade shifts per tier (deep amber → gold → bright yellow) so the
+   sheet still reads as three distinct tiers. */
+.amm-page-shell[data-desk='lit'] .offer-card[data-tier='0'] {
+    --card-glow-a: var(--lit-glow-a);
+    --card-glow-b: var(--lit-glow-b);
+    --card-glow-a-soft: var(--lit-glow-deep);
+}
+
+.amm-page-shell[data-desk='lit'] .offer-card[data-tier='1'] {
+    --card-glow-a: var(--lit-glow-c);
+    --card-glow-b: var(--lit-glow-a);
+    --card-glow-a-soft: var(--lit-glow-soft);
+}
+
+.amm-page-shell[data-desk='lit'] .offer-card[data-tier='2'] {
+    --card-glow-a: var(--lit-glow-c);
+    --card-glow-b: var(--lit-glow-b);
+    --card-glow-a-soft: rgba(255, 213, 79, 0.5);
+}
+
+/* Cornered backlit gold shadows on MORE elements — badge, order bar and
+   desk banner join the cards. Same maskless box-shadow grammar as
+   tierShadow* (edge-only, never through the glass). */
+.amm-page-shell[data-desk='lit'] .market-badge,
+.amm-page-shell[data-desk='lit'] .order-bar,
+.amm-page-shell[data-desk='lit'] .desk-banner {
+    position: relative;
+    animation: litCorneredShadow calc(var(--fx-desk-shadow-cycle) * 2.2) infinite;
+    animation-delay: var(--glitch-delay, 0.8s);
+}
+
+@keyframes litCorneredShadow {
+
+    0%,
+    30%,
+    33%,
+    72%,
+    100% {
+        box-shadow:
+            -6px -6px 12px -5px var(--lit-glow-soft),
+            6px 6px 12px -5px var(--lit-glow-deep),
+            0 0 10px rgba(255, 179, 0, 0.12);
+        opacity: 1;
+    }
+
+    31.4% {
+        box-shadow:
+            6px -6px 12px -5px var(--lit-glow-soft),
+            -6px 6px 12px -5px var(--lit-glow-deep),
+            0 0 14px rgba(255, 179, 0, 0.18);
+        opacity: 0.92;
+    }
+
+    32.2% {
+        box-shadow:
+            0 0 8px rgba(255, 179, 0, 0.1);
+        opacity: 0.6;
+    }
+
+    73% {
+        box-shadow:
+            -6px 6px 12px -5px var(--lit-glow-soft),
+            6px -6px 12px -5px var(--lit-glow-deep),
+            0 0 12px rgba(255, 179, 0, 0.16);
+        opacity: 0.95;
+    }
+
+    74% {
+        opacity: 0.7;
+    }
+}
+
+/* The shell's own ambient wash warms up while lit (background layer,
+   never flickers). */
+.amm-page-shell[data-desk='lit']::before {
+    background:
+        radial-gradient(ellipse at 50% 0%, rgba(255, 179, 0, 0.09) 0%, transparent 55%),
+        radial-gradient(ellipse at 50% 110%, rgba(255, 122, 0, 0.07) 0%, transparent 55%);
+}
+
+/* Title reads hot gold while lit. */
+.amm-page-shell[data-desk='lit'] .amm-title h1 {
+    text-shadow:
+        0 0 14px rgba(255, 179, 0, 0.55),
+        0 0 34px rgba(255, 122, 0, 0.3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    .amm-page-shell[data-desk='lit'] .market-badge,
+    .amm-page-shell[data-desk='lit'] .order-bar,
+    .amm-page-shell[data-desk='lit'] .desk-banner {
+        animation: none;
+        box-shadow:
+            -6px -6px 12px -5px var(--lit-glow-soft),
+            6px 6px 12px -5px var(--lit-glow-deep);
     }
 }

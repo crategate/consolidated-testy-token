@@ -71,6 +71,14 @@ pub mod amm {
         load_test_data::handler(ctx, data)
     }
 
+    // DEVNET/TEST ONLY — one-time offer_list resize for the devnet-big u8→u32
+    // count widening. Must run once after upgrading a deployment whose
+    // offer_list account predates the widening (the zero-copy load rejects the
+    // undersized account everywhere else). Idempotent. Remove before mainnet.
+    pub fn migrate_offer_list(ctx: Context<MigrateOfferList>) -> Result<()> {
+        migrate_offer_list::handler(ctx)
+    }
+
     // DEVNET/TEST ONLY — remove before mainnet. Posts a realistic, claimable
     // three-tier offer sheet (day_index = today) with the floor anchored to
     // the live pool price, for UI/claim development without a real make_offers run.
@@ -84,7 +92,7 @@ pub mod amm {
     // directly into a vesting StakePosition via CPI — it never sits in the
     // buyer's wallet. Claims only while the market is after-hours/closed,
     // against the current day's sheet.
-    pub fn offer_claim(ctx: Context<OfferClaim>, tier: u8, units: u8, index: u64) -> Result<()> {
+    pub fn offer_claim(ctx: Context<OfferClaim>, tier: u8, units: u32, index: u64) -> Result<()> {
         offer_claim::handler(ctx, tier, units, index)
     }
 
@@ -94,7 +102,7 @@ pub mod amm {
     pub fn offer_claim_sol(
         ctx: Context<OfferClaimSol>,
         tier: u8,
-        units: u8,
+        units: u32,
         index: u64,
     ) -> Result<()> {
         offer_claim::handler_sol(ctx, tier, units, index)
@@ -118,6 +126,50 @@ pub mod amm {
     // in depth and scaled by the 20-day trend slope. Any market state.
     pub fn buy_the_dip(ctx: Context<BuyTheDip>) -> Result<()> {
         buy_the_dip::handler(ctx)
+    }
+
+    // Alt desk sheet post: a second, fixed-terms bond sheet (exactly 5% of
+    // the bond vault; big −5%/med −4%/sml −3% off live price at claim time;
+    // 7/4/3-day vesting) that the keeper posts ONLY while the market-status
+    // feed reports the suspended state (3), at most ONE sheet per trading
+    // day. Deliberately a separate instruction family: the night desk's
+    // quote_claim pricing, ratchet floor and above-spot gate are untouched,
+    // and alt fills never touch the metrics (accepted_offers / demand-keep
+    // / ratchet are blind to this desk).
+    pub fn make_alt_offers(ctx: Context<MakeAltOffers>) -> Result<()> {
+        alt_offers::handler_make(ctx)
+    }
+
+    // Alt desk taking instruction (USDC): valid ONLY while the suspended
+    // state holds — any 3→(0|1|2) transition retires the sheet. Payment
+    // splits 80/10/10 exactly like the night desk; purchased AFHO goes
+    // directly into a vesting StakePosition via CPI.
+    pub fn alt_offer_claim(
+        ctx: Context<AltOfferClaim>,
+        tier: u8,
+        units: u32,
+        index: u64,
+    ) -> Result<()> {
+        alt_offers::handler_claim(ctx, tier, units, index)
+    }
+
+    // Alt desk taking instruction (SOL): the USDC-terms cost is charged in
+    // lamports and swapped to USDC on the pinned SOL/USDC pool, then splits
+    // 80/10/10 into the USDC buyback / dip / staker-rewards vaults.
+    pub fn alt_offer_claim_sol(
+        ctx: Context<AltOfferClaimSol>,
+        tier: u8,
+        units: u32,
+        index: u64,
+    ) -> Result<()> {
+        alt_offers::handler_claim_sol(ctx, tier, units, index)
+    }
+
+    // DEVNET/TEST ONLY — remove before mainnet. Zeroes the runtime
+    // counters/history (metrics rings, accepted fills, offer sheet, budget
+    // bookkeeping) while preserving pinned config + vault balances.
+    pub fn reset_devnet_state(ctx: Context<ResetDevnetState>) -> Result<()> {
+        reset_devnet_state::handler(ctx)
     }
 }
 #[derive(Accounts)]

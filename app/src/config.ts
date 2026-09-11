@@ -22,6 +22,11 @@ export type DeploymentConfig = {
     marketStatusFeedId?: string;
     priceFeedId?: string;
     oracleQuoteAccount?: string;
+    // Address lookup table holding the SOL bond claim's static account set
+    // (scripts/create-claim-alt.ts). Lets offer_claim_sol go out as a v0
+    // transaction with a compute-budget instruction — the legacy form is 19
+    // bytes under the packet limit and cannot carry one.
+    claimLookupTable?: string;
 
 };
 

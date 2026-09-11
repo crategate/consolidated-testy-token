@@ -21,7 +21,7 @@ from plot import (BLUE, GRAY, GREEN, INK, LGRAY, RED, WHITE, Canvas, Plot,
 
 LOT_LADDER = [0, 10, 25, 50, 100, 250, 500, 750, 1000, 2500, 5000, 7500,
               10000, 15000, 20000, 50000, 100000, 250000, 500000, 1000000,
-              2500000, 5000000]
+              2500000, 5000000, 10000000]
 TIERS = ("sml", "med", "big")
 VEST_BASE = {"sml": 5, "med": 10, "big": 20}
 VEST_MIN, VEST_MAX = 3, 25   # 25 = big-tier cap (sml/med saturate below: 8/15)
@@ -63,11 +63,25 @@ def discount_bump(m):
 
 
 def lot_tiers(vault, supply, mom_x, excitement):
+    """Exact port of make_offers::lot_tiers (devnet-big tier shift included).
+    The ladder window rides the vault's magnitude: t_hat = highest tier with
+    lot <= vault/100 whole tokens (1% of vault); shift = t_hat - ceiling,
+    floored at 0 so the small-vault (<= ~900k tokens) regime keeps the
+    original tuned ladder. The ladder TOPS OUT at tier 22 (10M tokens): a
+    full 1B vault (the supply cap) sits its 1% ceiling tier exactly there."""
     abundance = vault * 100 // supply if supply > 0 else 0
     ceiling = (9 if abundance >= 30 else 7 if abundance >= 20 else 5
                if abundance >= 10 else 3 if abundance >= 4 else 1)
+    target = vault // 100
+    t_hat = 0
+    if target > 0:
+        for t in range(22, 0, -1):
+            if LOT_LADDER[t] <= target:
+                t_hat = t
+                break
+    shift = clamp(t_hat - ceiling, 0, 22 - ceiling)
     climb = ((10000 - excitement) * 4 + 5000) // 10000
-    big = max(ceiling - climb, 3)
+    big = clamp(ceiling + shift - climb, 3, 22)
     spacing = 2 + (2 * mom_x + 5000) // 10000
     med = clamp(big - spacing, 2, big - 1)
     sml = clamp(med - spacing, 1, med - 1)
@@ -80,7 +94,7 @@ def tier_counts(total_tokens, tiers):
     for sh, t in zip(shares, tiers):
         lot = lot_sizer(t)
         mass = total_tokens * sh // 100
-        out.append(min(mass // lot, 255) if lot else 0)
+        out.append(mass // lot if lot else 0)
     return out
 
 
@@ -101,7 +115,6 @@ def build_sheet(momentum, stake_health, aggression, vault, supply=SUPPLY):
     excitement = (6 * mom_x + 4 * aggression) // 10
     tiers = lot_tiers(vault, supply, mom_x, excitement)
     counts = tier_counts(total_tokens, tiers)
-
     base = max(discount_bump(momentum) - (400 * aggression) // 10000, 0)
     raw = (base, base + 150, base + 300)  # sml, med, big (bps)
     big_s = clamp(raw[2] // 10, 0, 255)

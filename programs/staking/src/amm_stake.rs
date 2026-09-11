@@ -36,6 +36,13 @@ pub fn create_amm_position(
     let user_index = &mut ctx.accounts.user_index;
     let clock = Clock::get()?;
 
+    // Parity with stake(): positions are only created sequentially at the
+    // next free index — an arbitrary index can collide with a future PDA or
+    // overflow the next_index increment (index = u64::MAX panics). The AMM
+    // already validates this pre-CPI (offer_claim::validate_user_index);
+    // enforce it at the staking trust boundary too.
+    require!(index == user_index.next_index, StakeError::InvalidIndex);
+
     let trading_day_index = get_trading_day_index(&ctx.accounts.market_status)?;
 
     // Initialize position

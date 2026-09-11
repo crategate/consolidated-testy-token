@@ -25,18 +25,25 @@
 // ratchet only moves up, so cheap dip buys never lower the offer-desk floor).
 // Bought AFHO lands in the main afho_vault — desk inventory.
 //
-// NOTE (mainnet): spot_oracle / sol_oracle are raw-u64 mock PDAs on devnet;
-// swap in the real price-source adapters with the real DEX pool.
+// Pricing: the pinned Raydium CPMM pool's TWAP (vault-ratio fallback), like
+// every other priced instruction. The pool must be pinned or the instruction
+// hard-errors.
 
 use crate::state::offersState::{AmmState, MarketMetrics};
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
-use super::dex_buyback::{execute_swap, ratchet_within_band, SwapInfos, MAX_SLIPPAGE_BPS};
+use super::dex_buyback::{
+    execute_swap, ratchet_within_band, SwapInfos, MAX_SLIPPAGE_BPS, NOMINAL_SLOT_MS,
+    SLICE_INTERVAL_MS,
+};
 
-// Spot ring: ~30s between samples, 32 slots of history, 5 samples before the
-// trigger arms (cold start = no dip buys).
-const SPOT_SAMPLE_SLOTS: u64 = 75;
+// Spot ring: ~30s between samples (derived from dex_buyback::NOMINAL_SLOT_MS —
+// 150 slots @ 200ms; slower chains sample proportionally slower — 60s @
+// 400ms, ~25s on devnet's ~167ms today), 32 slots of history, 5 samples
+// before the trigger arms (cold start = no dip buys).
+const SPOT_SAMPLE_INTERVAL_MS: u64 = 30_000;
+const SPOT_SAMPLE_SLOTS: u64 = SPOT_SAMPLE_INTERVAL_MS / NOMINAL_SLOT_MS;
 const SPOT_MIN_SAMPLES: usize = 5;
 
 // Trigger/sizing (bps of reference depth, bps of reserve).
@@ -47,7 +54,13 @@ const DIP_TREND_GAIN: i64 = 10; // multiplier bps per centi-percent of slope
 const DIP_TREND_FLOOR_BPS: i64 = 2_500; // knife guard: 25% of base
 const DIP_TREND_CAP_BPS: i64 = 12_500; // uptrend boost: 125% of base
 const DIP_DAY_CAP_BPS: u64 = 4_000; // <=40% of the day-start reserve per leg
-const DIP_MIN_SLICE_SLOTS: u64 = 150;
+// Same rhythm as dex_buyback (~1 slice/min of wall clock at 200ms —
+// re-derives with NOMINAL_SLOT_MS; slower chains pace proportionally
+// slower). This — not the trigger — is what throttles QUICK dips:
+// at 3.5% depth a slice is only
+// ~3% of the reserve, so a slow pacing window means a minutes-long dip gets
+// one small slice and the ring mean re-adapts before the next one.
+const DIP_MIN_SLICE_SLOTS: u64 = SLICE_INTERVAL_MS / NOMINAL_SLOT_MS;
 
 // Same per-sample clamp as calculate_momentum_score.
 const SAMPLE_CAP_CP: i64 = 1_000;
@@ -71,21 +84,9 @@ pub struct BuyTheDip<'info> {
     #[account(mut, seeds = [b"metrics", amm_state.afho_mint.as_ref()], bump)]
     pub metrics: Box<Account<'info, MarketMetrics>>,
 
-    /// CHECK: live absolute spot price (raw-u64 mock PDA on devnet; real
-    /// price source adapter at mainnet). Address pinned at init.
-    #[account(address = amm_state.spot_oracle)]
-    pub spot_oracle: UncheckedAccount<'info>,
-    /// CHECK: vestigial SOL/USD price oracle (SOL legs retired — USDC-only
-    /// swaps; kept in the account list until the §4 state-field cleanup)
-    #[account(address = amm_state.sol_oracle)]
-    pub sol_oracle: UncheckedAccount<'info>,
-
     /// 10% claim split — USDC dip reserve (PDA token account, amm_state signs)
     #[account(mut, address = amm_state.usdc_dip)]
     pub usdc_dip: Box<InterfaceAccount<'info, TokenAccount>>,
-    /// CHECK: SOL dip reserve (space-0 system PDA)
-    #[account(mut, address = amm_state.sol_dip)]
-    pub sol_dip: AccountInfo<'info>,
     /// Swap out-leg destination: main desk inventory
     #[account(mut, address = amm_state.afho_vault)]
     pub afho_vault: Box<InterfaceAccount<'info, TokenAccount>>,
@@ -93,47 +94,9 @@ pub struct BuyTheDip<'info> {
     #[account(address = amm_state.usdc_mint)]
     pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
 
-    // --- swap adapter accounts (mock-dex-pool today; real DEX at launch) ---
-    /// CHECK: pool state PDA, verified against the configured dex_program
-    #[account(
-        mut,
-        seeds = [b"mock_pool", afho_mint.key().as_ref()],
-        seeds::program = amm_state.dex_program,
-        bump
-    )]
-    pub pool_state: UncheckedAccount<'info>,
-    // H1 — pinned to the pool's own topology (same as dex_buyback): the pool
-    // token accounts are the pool PDA's ATAs, pool_sol is the pool PDA
-    // itself, so a compromised keeper can't redirect the in-leg.
-    #[account(
-        mut,
-        associated_token::mint = afho_mint,
-        associated_token::authority = pool_state,
-        associated_token::token_program = token_2022_program,
-    )]
-    pub pool_afho: Box<InterfaceAccount<'info, TokenAccount>>,
-    #[account(
-        mut,
-        associated_token::mint = usdc_mint,
-        associated_token::authority = pool_state,
-        associated_token::token_program = token_program,
-    )]
-    pub pool_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
-    /// CHECK: vestigial lamport destination from the retired SOL leg (mock
-    /// topology pinned to the pool PDA; unused by the USDC-only swap paths)
-    #[account(mut, address = pool_state.key())]
-    pub pool_sol: AccountInfo<'info>,
-    /// CHECK: configured swap target program
-    #[account(address = amm_state.dex_program)]
-    pub dex_program: AccountInfo<'info>,
-
-    /// Classic SPL (USDC in-leg)
-    pub token_program: Interface<'info, TokenInterface>,
-    /// Token-2022 (AFHO out-leg via the pool)
-    pub token_2022_program: Interface<'info, TokenInterface>,
-    pub system_program: Program<'info, System>,
-
-    // --- Raydium CPMM accounts (None while the mock adapter is active) ---
+    // --- Raydium CPMM — the ONLY swap venue and price source. The pool pins
+    // live in AmmState (set_cpmm_pool); the handler hard-errors when unset
+    // and validates every account against the pool's derived PDAs (H1). ---
     #[account(mut)]
     /// CHECK: Raydium CPMM account (validated at CPI time).
     pub cpmm_pool_state: UncheckedAccount<'info>,
@@ -150,6 +113,17 @@ pub struct BuyTheDip<'info> {
     pub cpmm_observation: UncheckedAccount<'info>,
     /// CHECK: Raydium CPMM account (validated at CPI time).
     pub cpmm_authority: UncheckedAccount<'info>,
+    /// CHECK: the Raydium CPMM program itself — the runtime refuses the CPI
+    /// unless the callee program is among the caller instruction's accounts;
+    /// address-pinned to AmmState.cpmm_program.
+    #[account(address = amm_state.cpmm_program)]
+    pub cpmm_program: UncheckedAccount<'info>,
+
+    /// Classic SPL (USDC in-leg)
+    pub token_program: Interface<'info, TokenInterface>,
+    /// Token-2022 (AFHO out-leg via the pool)
+    pub token_2022_program: Interface<'info, TokenInterface>,
+    pub system_program: Program<'info, System>,
 }
 
 // Mean of the nonzero spot-ring samples + how many there were.
@@ -193,7 +167,11 @@ fn trend_slope_cp(metrics: &MarketMetrics) -> i64 {
             older_n += 1;
         }
     }
-    let recent = if recent_n > 0 { recent_sum / recent_n } else { 0 };
+    let recent = if recent_n > 0 {
+        recent_sum / recent_n
+    } else {
+        0
+    };
     let older = if older_n > 0 { older_sum / older_n } else { 0 };
     recent - older
 }
@@ -215,17 +193,11 @@ fn dip_spend_bps(depth_bps: u64, slope_cp: i64) -> u64 {
 pub fn handler(ctx: Context<BuyTheDip>) -> Result<()> {
     let swap = SwapInfos {
         amm_state: ctx.accounts.amm_state.to_account_info(),
-        // the vault slots carry the DIP reserve vaults here
+        // the vault slot carries the DIP reserve vault here
         usdc_vault: ctx.accounts.usdc_dip.to_account_info(),
         afho_vault: ctx.accounts.afho_vault.to_account_info(),
-        sol_vault: ctx.accounts.sol_dip.to_account_info(),
-        pool_state: ctx.accounts.pool_state.to_account_info(),
-        pool_afho: ctx.accounts.pool_afho.to_account_info(),
-        pool_usdc: ctx.accounts.pool_usdc.to_account_info(),
-        pool_sol: ctx.accounts.pool_sol.to_account_info(),
         afho_mint: ctx.accounts.afho_mint.to_account_info(),
         usdc_mint: ctx.accounts.usdc_mint.to_account_info(),
-        dex_program: ctx.accounts.dex_program.to_account_info(),
         token_program: ctx.accounts.token_program.to_account_info(),
         token_2022_program: ctx.accounts.token_2022_program.to_account_info(),
         system_program: ctx.accounts.system_program.to_account_info(),
@@ -244,11 +216,15 @@ pub fn handler(ctx: Context<BuyTheDip>) -> Result<()> {
         ErrorCode::UnauthorizedCaller
     );
 
-    // H1 re-pin: when the CPMM pool is pinned, the swap/pricing accounts must
-    // be the pool's own derived PDAs.
+    // The CPMM pool is the only swap venue: hard-error when unpinned.
+    require!(
+        amm_state.cpmm_pool_state != Pubkey::default(),
+        ErrorCode::PoolNotPinned
+    );
+    // H1 re-pin: the swap/pricing accounts must be the pool's own derived
+    // PDAs.
     require!(
         super::raydium::pinned_pool_accounts_valid(
-            amm_state.cpmm_pool_state != Pubkey::default(),
             amm_state.cpmm_program,
             amm_state.cpmm_pool_state,
             amm_state.cpmm_amm_config,
@@ -271,12 +247,10 @@ pub fn handler(ctx: Context<BuyTheDip>) -> Result<()> {
 
     let clock = Clock::get()?;
     let spot = super::raydium::read_price(
-        amm_state.cpmm_pool_state != Pubkey::default(),
         &ctx.accounts.cpmm_pool_state.to_account_info(),
         &ctx.accounts.cpmm_observation.to_account_info(),
         &ctx.accounts.cpmm_output_vault.to_account_info(), // AFHO (base) vault
         &ctx.accounts.cpmm_input_vault.to_account_info(),  // USDC (quote) vault
-        &ctx.accounts.spot_oracle.to_account_info(),
         &ctx.accounts.afho_mint.key(),
         &ctx.accounts.usdc_mint.key(),
         clock.unix_timestamp as u64,
@@ -338,20 +312,37 @@ pub fn handler(ctx: Context<BuyTheDip>) -> Result<()> {
     let slice_usdc = slice_usdc.min(cap_left_usdc);
     if slice_usdc > 0 {
         let before = ctx.accounts.afho_vault.amount;
-        let min_out = if spot > 0 {
-            (slice_usdc as u128 * 1_000_000u128 * 10_000u128
-                / (spot as u128 * (10_000 + MAX_SLIPPAGE_BPS) as u128)) as u64
-        } else {
-            0
-        };
-        execute_swap(&swap, mint_key, state_bump, slice_usdc, min_out, amm_state.cpmm_program, amm_state.cpmm_pool_state != Pubkey::default())?;
+        // Reserves-preview min-out (see dex_buyback): the TWAP-anchored floor
+        // fails into a climbing pool; the pool's own vaults are the truth.
+        let min_out = super::raydium::cpmm_swap_min_out_from_vaults(
+            &swap.cpmm_input_vault,  // pool USDC (input) vault
+            &swap.cpmm_output_vault, // pool AFHO (output) vault
+            slice_usdc,
+            MAX_SLIPPAGE_BPS,
+        )
+        .unwrap_or_else(|| {
+            if spot > 0 {
+                (slice_usdc as u128 * 1_000_000_000_000u128 * 10_000u128
+                    / (spot as u128 * (10_000 + MAX_SLIPPAGE_BPS) as u128)) as u64
+            } else {
+                0
+            }
+        });
+        execute_swap(
+            &swap,
+            mint_key,
+            state_bump,
+            slice_usdc,
+            min_out,
+            amm_state.cpmm_program,
+        )?;
         ctx.accounts.afho_vault.reload()?;
         let out = ctx.accounts.afho_vault.amount.saturating_sub(before);
         if out > 0 {
             // M3: fill must sit inside the slippage band vs spot
             ratchet_within_band(
                 amm_state,
-                (slice_usdc as u128 * 1_000_000 / out as u128) as u64,
+                (slice_usdc as u128 * 1_000_000_000_000 / out as u128) as u64,
                 spot,
             )?;
         }
@@ -387,4 +378,6 @@ pub enum ErrorCode {
     InvalidOracle,
     #[msg("CPMM pool account mismatch")]
     InvalidPoolAccount,
+    #[msg("CPMM pool not pinned — run set_cpmm_pool")]
+    PoolNotPinned,
 }

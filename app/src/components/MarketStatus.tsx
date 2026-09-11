@@ -11,11 +11,30 @@ const STATE_LABELS: Record<number, string> = {
 };
 
 const STATE_SUBTITLES: Record<number, string> = {
-    0: 'NYSE is open. Staking multipliers active. No penalties.',
-    1: 'After-hours session. Light penalties apply to claims & unstakes.',
-    2: 'Markets are closed. Medium penalties for early exits.',
+    0: 'NYSE is open. Reward Claim available. No penalties to exit positions.',
+    1: 'After-hours session. No reward claim available, small penalty to exit positions',
+    2: 'Markets are closed. Medium penalties to principle for exiting positions.',
     3: 'Trading halted due to volatility. Severe penalties active.',
 };
+
+/* Current hour in US Eastern time — state 1 is premarket before open (morning)
+   and after-hours after close (afternoon/evening). */
+function nyHour(d = new Date()): number {
+    return Number(
+        new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/New_York',
+            hour: 'numeric',
+            hourCycle: 'h23',
+        }).format(d),
+    );
+}
+
+function stateTitle(state: number): string {
+    if (state === 1) {
+        return nyHour() < 12 ? 'Premarket Trading' : 'After Hours Trading';
+    }
+    return STATE_LABELS[state] ?? 'Unknown';
+}
 
 interface MarketStatusProps {
     marketStatusPda?: PublicKey;
@@ -26,7 +45,7 @@ export function MarketStatus({ marketStatusPda, variant = 'full' }: MarketStatus
     const { data, loading, error, stale } = useMarketStatus(marketStatusPda);
 
     const state = data?.state ?? 99;
-    const label = STATE_LABELS[state] ?? 'Unknown';
+    const label = stateTitle(state);
     const subtitle = STATE_SUBTITLES[state] ?? 'Waiting for oracle…';
 
     return (
@@ -49,7 +68,6 @@ export function MarketStatus({ marketStatusPda, variant = 'full' }: MarketStatus
                 ) : (
                     <>
                         <div className={`status-pill ${stale ? 'stale' : ''}`}>
-                            <span className="status-dot" aria-hidden="true" />
                             {label}
                             {stale && <span className="stale-badge">Stale</span>}
                         </div>

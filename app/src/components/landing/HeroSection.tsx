@@ -17,7 +17,7 @@ export function HeroSection({ deployment }: HeroSectionProps) {
         <section className="hero-section">
             <div className="hero-brand">
                 <h1><span>After</span><span>_</span><span>Hours</span></h1>
-                <div className="tagline">A to<span>k</span>en <span>t</span>uned to t<span>h</span>e market clo<span>c</span>k</div>
+                <div className="tagline">A to<span>k</span>en <span>t</span>uned to W<span>all </span> <span> S</span>t</div>
             </div>
 
             <div className="hero-content">

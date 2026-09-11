@@ -10,24 +10,33 @@ name = "crank_oracle"
 
 [features]
 default = []
-no-entrypoint = []
-no-idl = []
-no-log-ix-name = []
-cpi = ["no-entrypoint"]
-idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build", "switchboard-on-demand/idl-build"]
-anchor-debug = []
+# The anchor CLI requires this feature to exist and uses it to regenerate
+# target/idl/crank_oracle.json from src/idl_spec.rs (the frozen anchor wire
+# contract). anchor-lang is ONLY compiled for IDL generation — the deployed
+# binary (default features) has no anchor-lang. The native implementation is
+# the only deployed code; `idl_discriminators_match` fails on drift.
+idl-build = [
+    "dep:anchor-lang",
+    "anchor-lang/idl-build",
+    "switchboard-on-demand/anchor",
+    "switchboard-on-demand/idl-build",
+]
 
 [dependencies]
-anchor-lang = "0.31.1"
-switchboard-on-demand = { version = "=0.10.3", features = ["anchor", "devnet"] }
-bytemuck = "1.14"
+solana-program = "2.2"
+anchor-lang = { version = "0.31.1", optional = true }
+# Vendored (workspace patch): switchboard-on-demand 0.10.3 with the
+# OracleAccountData stack-budget patch + the real on-chain quote layout parser.
+# No "anchor" feature — the native build reads the quote via
+# ParsedEd25519Instruction and keeps anchor-lang out of the binary entirely.
+switchboard-on-demand = { version = "=0.10.3", default-features = false, features = ["cpi", "solana-v2", "devnet"] }
 # Pin these to avoid constant_time_eq v0.4.2 which requires edition2024
 blake3 = "=1.8.2"
 constant_time_eq = "=0.3.1"
-anchor-spl = {version = "0.31.1", features=["token_2022" ]}
 
 [dev-dependencies]
 litesvm = "=0.6.1"
-solana-sdk = "2.1"
+solana-sdk = "2.2"
+serde_json = "1"
 hex = "0.4"
 openssl = { version = "0.10.74", features = ["vendored"] }
