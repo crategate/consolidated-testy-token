@@ -1,13 +1,13 @@
 # AFHO: a token tuned to market hours
 
 The hours of Wall St have never applied to crypto. This protocol 
-runs a feature driven narrative response of "what if"
+runs a feature defined narrative response to "what if".
 
 TradFi has failed on delivering new financial vehicles to retail investors.
 Certain securities became more accessible, but only crypto has pioneered and delivered 
 new investment formats.
 
-The recent emergence of perps proves that crypto driven securities design has only just begun.  
+The recent emergence of perps proves that crypto powered securities design has only just begun.  
 After Hours brings another speculative perspective and an experimental, ironic approach to demand & distribution.
 
 ## Carrot & Stick
@@ -23,7 +23,7 @@ performance of the token's staking and price.
 
 The wrong price conditions close the offer desk completely.
 
-## The market clock
+## the market clock
 
 The whole protocol runs off one on-chain state machine, updated by a
 permissionless keeper reading a Switchboard On-Demand feed:
@@ -32,16 +32,14 @@ permissionless keeper reading a Switchboard On-Demand feed:
 |---|---|---|
 | OPEN | NYSE trading hours | Buybacks run. Stakers can claim. |
 | AFTER-HOURS | early morning & evenings | Night desk opens. Unstaking penalizes principal |
-| CLOSED | Overnight / weekends | Night desk stays open. Larger unstake fee |
+| CLOSED | Overnight / weekends | Night desk stays open, bonus 0.5% discount. Larger unstake fee. |
 | HALTED | rare trading halt | Largest unstake fee |
 
 ## Cadence of the Coin
 
 - **At the bell (OPEN):** buybacks resume if last night's desk
   actually sold bonds. No sales, no buyback. The highest buyback price sets 
-  the bond price floor. This ratcheting floor decays slowly during bear cycles.
-
-  During this time, exiting locked positions carries no penalty.
+  the bond price floor. This ratcheting floor decays slowly during bear cycles. During this time, exiting locked positions carries no penalty.
 
 - **All Day & Night:** the dip hunting feature watches the price. A real dip (3%+ below its own recent average) triggers automatic
   buying, dampening turbulence & refilling the vault for bond offers. 
@@ -64,13 +62,12 @@ from the day's price momentum and how committed stakers are:
 - **Vesting length**: purchased AFHO lands straight in a staked position locked
   for **3 to 25 trading days**, so every bond buyer is also a staker from
   second one.
-- **Vault Balance Percentage**: at most 5% of the vault is offered per sheet. This maximum
- offering market condition range was tuned to sustain the bond desk's lifespan.
+- **Vault Balance Percentage**: at most 5% of the vault is offered per sheet. This maximum offering market condition range was tuned to sustain the bond desk's lifespan.
   
-The bond desk isn't sustainable and ultimately serves as the token's distribution model.
+The bond desk isn't fully sustainable, and isn't designed to be. Ultimately it  serves as the token's distribution model.
 75% of minted supply started in the protocol's bond desk vault, 25% went into Raydium pool.
 
-### Buybacks — 80% of every bond sale
+### Buybacks: 80% of every bond sale
 
 Buybacks only run during trade hours and only after accepted bond offers.
 The transactions get sliced out over the session rather than dumped at once:
@@ -81,9 +78,9 @@ The transactions get sliced out over the session rather than dumped at once:
 - **Ratchets**: every executed buyback raises the desk's pricing floor, so
   the desk can never sell cheaper than the protocol itself paid.
 
-## The dip reserve — 10%
+## The dip reserve: 10%
 
-Ten percent of bond proceeds fund an always-on dip buyer:
+Ten percent of bond proceeds fund an always-on dip sniper algo:
 
 - Triggers when the pool price falls **3% or more** below the mean of its own
   last 32 samples (sampled every 75 slots).
@@ -92,7 +89,7 @@ Ten percent of bond proceeds fund an always-on dip buyer:
 - Capped at **40% of the dip reserve per day**, so a knife never empties the
   reserve in one afternoon.
 
-## Lockup Rewards - 10%
+## Lockup Rewards: 10%
 
 Ten percent of every bond sale is converted to AFHO and distributed to
 stakers. Rewards are split by **weight**, and weight grows with commitment:
@@ -109,7 +106,7 @@ stakers. Rewards are split by **weight**, and weight grows with commitment:
 
 - **Pool fee**: Raydium CPMM's 0.25% per swap, paid by bond buyers on the
   payment leg (SOL buyers pay +25 bps to cover the conversion).
-- **Claim tax**: 5% of every claim
+- **Claim tax**: 5% of every reward claim
 - **Unstake penalties** (principal, by market state):
   - OPEN: none
   - AFTER-HOURS: 3%
@@ -126,8 +123,7 @@ stakers. Rewards are split by **weight**, and weight grows with commitment:
 - **Liquidity**: protocol-owned Raydium CPMM pool. Pricing (TWAP) comes from
   the same pool the swaps execute against, so the desk, the dip buyer, and
   the buyback all read and trade one honest venue.
-- **Launch plan**: 25% of supply seeded to the pool, 75% to the protocol
-  vault, per the mainnet checklist.
+- **Launch Mint**: 25% of supply seeded to the pool, 75% to the bond desk. Fully revoked.
 
 {{charts}}
 
