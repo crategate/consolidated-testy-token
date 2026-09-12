@@ -37,24 +37,21 @@ pub fn lot_sizer(tier: u8) -> u32 {
 // NOTE: the account structs below are zero-copy (`#[account(zero_copy)]`).
 // bytemuck::Pod requires a padding-free layout, so fields are ordered align 8
 // (u64) -> align 2 (u16) -> align 1 (u8 / Pubkey) and tail-padded to a multiple
-// of 8. The zero-copy AccountDeserialize is a memcpy (not borsh); we keep the
-// borsh-style `Account<T>` wrappers in the instruction contexts, so all the
-// `seeds` / `address` / `has_one` / `bump` constraints still work unchanged.
-// We only supply the missing `AccountSerialize` (also a memcpy) below.
+// of 8. The zero-copy AccountDeserialize is a memcpy (not borsh); instruction
+// contexts keep the borsh-style `Account<T>` wrapper, so the `seeds` /
+// `address` / `has_one` / `bump` constraints work unchanged. We only supply
+// the missing `AccountSerialize` (also a memcpy) below.
 
-// each individual offer has index
 #[repr(C)]
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Offer {
-    pub lot_size: u8, // size in whole AFHO tokens, 50, 100, 500, 1000, 5k, 10k, translated
-    // with "lot sizer" function
-    pub vesting_days: u8, // how many trading days to unlock
-    pub discount_bps: u8, // % bps discount from live DEX prices,
-    //                      (tenth percent resolution so 115 = 11.5%)
+    pub lot_size: u8, // tier index into lot_sizer()
+    pub vesting_days: u8, // trading days until unlock
+    pub discount_bps: u8, // discount from the live DEX price, tenths of a percent (115 = 11.5%)
     pub _pad: u8, // explicit pad: keeps the u32 fields 4-aligned with no
     //              implicit padding (bytemuck rejects implicit padding)
-    pub remaining: u32, // how how many units remained offered today
-    pub total_offered: u32, // how many total of this offer to start with
+    pub remaining: u32, // units still offered today
+    pub total_offered: u32, // units offered at sheet construction
 }
 
 #[account(zero_copy)]
@@ -120,7 +117,7 @@ pub struct AmmState {
     pub keeper: Pubkey,
     pub afho_mint: Pubkey,
     pub usdc_mint: Pubkey,
-    // big main vault, initial supply and where fees/buybacks go
+    // Main AFHO vault: launch supply lands here; buyback swaps draw from it.
     pub afho_vault: Pubkey,
     pub usdc_vault: Pubkey,
     pub usdc_dip: Pubkey,
@@ -143,10 +140,11 @@ pub struct AmmState {
     pub usdc_rewards: Pubkey,
 }
 
-// update beginning of trading day plz
+// Fill-% rings, written by calc_completed_offers on the day-start transition
+// (1→0 or 2→0).
 #[account(zero_copy)]
 pub struct AcceptedOffers {
-    pub day_index: u64, // last trading day this was recorded, prevents double-record
+    pub day_index: u64, // last trading day recorded; prevents double-record
     pub big_offers_accepted: [u8; 5], // stored as whole number % (0-100), last 5 offer instances
     // should be 0 for days when no offers were available (bear cycle)
     pub med_offers_accepted: [u8; 5],
@@ -175,7 +173,7 @@ pub struct MarketMetrics {
     pub price_changes: [i16; 20],
     pub sample_head: u8, // next write index into price_changes
     pub spot_head: u8,   // next write index into spot_prices
-    // used to calculate stake health, simple whole number %
+    // Trailing stake-health ring, whole-number % (0-100).
     pub trailing_stake_health: [u8; 5],
     pub _pad: [u8; 1],
 }

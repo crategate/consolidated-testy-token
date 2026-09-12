@@ -1,83 +1,50 @@
+// `#[program]` instruction signatures are the published IDL wire format —
+// `initialize_pool` takes eight flat args (scripts/amm-init.ts consumes
+// them), and the macro re-emits those signatures as external wrappers that
+// no scoped `#[allow]` can reach. Grouping into structs would break the
+// contract for no safety gain, so the lint is allowed crate-wide.
+#![allow(clippy::too_many_arguments)]
+
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::get_associated_token_address_with_program_id;
 use anchor_spl::token_interface::{
     transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked,
 };
 
+
 pub mod amm_stake;
+// The `#[program]` macro discovers the instruction handlers in `amm_stake`
+// through this glob and re-exports them (plus its generated
+// `__cpi_client_accounts_*` CPI structs) at the crate root. A glob here is
+// therefore required by anchor's instruction-module pattern; the resulting
+// re-export duplication is benign (same items), so the glob-ambiguity lint
+// is allowed on this one line rather than widened crate-wide.
+#[allow(ambiguous_glob_reexports)]
 pub use amm_stake::*;
-// =============================================================================
-// AFHO STAKING PROGRAM — COMPLETE IMPLEMENTATION
-// =============================================================================
+
+// AFHO staking: one global pool per mint, MasterChef-style share accounting.
 //
-// ARCHITECTURE OVERVIEW
-// ---------------------
-// This program manages a SINGLE global staking pool per token mint. All users
-// stake into this pool. The pool tracks aggregate state and owns vault accounts
-// that hold everyone's funds.
-//
-// REWARD MODEL: Pure Multiplier-Weighted Distribution (No Time-Based Yield)
-// ------------------------------------------------------------------------
-// There is NO automatic yield accrual over time. Rewards come exclusively from:
-//   1. Unstake principal penalties during non-market-open hours
-//   2. External deposits (AMM revenue, deposit_rewards / deposit_rewards_from_amm)
-//
-// The multiplier (1.0x → 3.0x logarithmic) determines your SHARE of rewards.
-// Longer lock = higher multiplier = bigger slice of the penalty/AMM pie.
-//
-// MASTERCHEF DISTRIBUTION (O(1) per user, no iteration needed):
-//   - Global index: accrued_reward_per_share (scaled by 1e12)
-//   - User debt:    reward_debt (scaled by 1e12) — prevents double-claiming
-//   - User claim:   (user_weight * global_index / 1e12) - user_debt
-//   - New debt set:  user_weight * global_index / 1e12
-//
-// WEIGHT CALCULATION:
+// Reward model — no time-based yield. Rewards come only from (1) unstake
+// principal penalties outside market-open and (2) external deposits
+// (deposit_rewards / deposit_rewards_from_amm). The logarithmic multiplier
+// (1.0x → 3.0x) sets each user's share:
 //   weight = staked_amount * multiplier / 10_000
-//   multiplier = 10_000 + (trading_days * (max_multiplier - 10_000)) / (trading_days + 60)
+//   multiplier = 10_000 + (days * (max_multiplier_bps - 10_000)) / (days + 60)
 //
-// CLAIMS: market-open only (ClaimsClosed otherwise) — no tiered claim
-// penalty; every claim pays the flat posr_tax (5% default) to the AMM bond vault.
+// Distribution is O(1) per user:
+//   global index:  accrued_reward_per_share (1e12-scaled)
+//   user debt:     reward_debt (1e12-scaled) — prevents double-claiming
+//   claim:         (user_weight * global_index / 1e12) - user_debt
 //
-// UNSTAKE PENALTY TIERS (principal, by market state):
-//   - State 0 (Open):      0 bps — no penalty
-//   - State 1 (After):     configurable (e.g., 300 = 3%)
-//   - State 2 (Closed):    configurable (e.g., 600 = 6%)
-//   - State 3 (Halted):    configurable (e.g., 3000 = 30%)
+// Unstake principal penalties by market state: 0 open / 1 after-hours /
+// 2 closed / 3 halted (bps configured at initialize_pool). Claims are
+// market-open only; every claim pays the flat posr_tax to the AMM bond vault.
 //
-// PENALTY ROUTING: 5% of every claim/unstake reward share (posr_tax) and 5%
-// of every principal exit penalty refills the AMM's bond vault (the AFHO ATA
-// of the AMM state PDA) — it grows the inventory available for future bond
-// sales. pool.posr_vault (seeds b"posr") is vestigial: still created at
-// initialize_pool but no longer funded.
-//
-// USER STORIES
-// ------------
-// [Alice stakes 1000 AFHO on Day 5, market open]
-//   → stake() creates position with entry_trading_day=5, amount=1000
-//   → weight = 1000 * 1.0x = 1000 (multiplier starts at base)
-//   → tokens move from Alice's wallet → pool vault
-//   → pool.total_staked += 1000, pool.total_weighted_stake += 1000
-//
-// [10 days later, Alice claims, market is open]
-//   → claim() reads state=0, penalty_bps=0
-//   → trading_days = 15 - 5 - 1 = 9, multiplier ≈ 1.3x
-//   → weight = 1000 * 1.3x = 1300
-//   → penalty_share = (1300 * global_index / 1e12) - debt
-//   → penalty = 0 (market open), posr_tax = 5% of penalty_share
-//   → Alice receives 95% of penalty_share
-//
-// [Bob unstakes during after-hours (state 1)]
-//   → unstake() reads state=1, principal penalty_bps=300 (3%)
-//   → 3% of Bob's principal is penalized: 5% of the penalty → bond vault,
-//     95% → reward_vault (index-bumped for remaining stakers)
-//   → reward share: 5% → bond vault, 95% → Bob
-//   → net principal returned, position account closed
-//
-// [Market opens next day — penalties distribute]
-//   → tokens move from penalty_vault → reward_vault
-//   → global_index += (penalty_amount * 1e12) / total_weighted_stake
-//   → Alice's next claim includes her share of Bob's penalty
-// =============================================================================
+// Penalty routing: 5% of every claim/unstake reward share (posr_tax) and
+// 5% of every principal exit penalty refills the AMM bond vault (the AFHO
+// ATA of the AMM state PDA) — inventory for future bond sales.
+// pool.posr_vault (seeds b"posr") is vestigial: created at initialize_pool
+// but never funded.
 
 declare_id!("AR1Wyj3CLhcxB5jAiqFn5xHFamcjdNiiYv9gQLCVvTZp");
 

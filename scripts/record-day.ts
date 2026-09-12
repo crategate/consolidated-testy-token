@@ -40,7 +40,7 @@ const DEPLOYMENT_PATH = path.join(process.cwd(), "app", "public", "deployment.js
 const LATEST_DAYS = 100; // live ledger size; overflow archives to PDF
 const ARCHIVE_BLOCK_DAYS = 60; // trading days per archive block (one PDF per block)
 
-// lot_sizer ladder — programs/amm/src/state/offersState.rs (tiers 0-22,
+// lot_sizer ladder — programs/amm/src/state/offers_state.rs (tiers 0-22,
 // whole AFHO tokens per lot). Offer.lot_size stores the TIER index.
 const LOT_LADDER: readonly number[] = [
     0, 10, 25, 50, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000, 15000,

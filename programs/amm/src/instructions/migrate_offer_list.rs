@@ -11,7 +11,7 @@
 //! DEVNET/TEST ONLY — remove before mainnet (same pattern as load_test_data).
 //! Authority-gated; the keeper can never call this.
 
-use crate::state::offersState::{AmmState, OfferList};
+use crate::state::offers_state::{AmmState, OfferList};
 use anchor_lang::prelude::*;
 
 #[derive(Accounts)]
@@ -36,7 +36,7 @@ pub struct MigrateOfferList<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler(ctx: Context<MigrateOfferList>) -> Result<()> {
+pub(crate) fn handler(ctx: Context<MigrateOfferList>) -> Result<()> {
     let needed = 8 + std::mem::size_of::<OfferList>();
     let info = &ctx.accounts.offer_list;
     if info.data_len() >= needed {

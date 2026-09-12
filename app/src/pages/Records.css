@@ -213,17 +213,6 @@
     font-variant-numeric: tabular-nums;
 }
 
-/* daily recorded numbers: green when up, red when down */
-.records-up {
-    color: #147a43;
-    font-weight: 600;
-}
-
-.records-down {
-    color: #ab241c;
-    font-weight: 600;
-}
-
 /* ── archives: downloadable PDFs for days older than the table shows ───── */
 .records-archives {
     margin-top: 20px;

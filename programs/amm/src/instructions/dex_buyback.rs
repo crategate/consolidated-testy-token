@@ -1,5 +1,7 @@
-use crate::state::offersState::AmmState;
+use crate::state::offers_state::AmmState;
 use anchor_lang::prelude::*;
+
+use crate::error::AmmError;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
 // Nominal slot duration every slot-denominated interval in this program is
@@ -149,7 +151,7 @@ pub(crate) struct SwapInfos<'info> {
     pub cpmm_authority: AccountInfo<'info>,
 }
 
-pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
+pub(crate) fn handler(ctx: Context<DexBuyback>) -> Result<()> {
     let swap = SwapInfos {
         amm_state: ctx.accounts.amm_state.to_account_info(),
         usdc_vault: ctx.accounts.usdc_vault.to_account_info(),
@@ -170,13 +172,13 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
     let caller = ctx.accounts.cranker.key();
     require!(
         caller == amm_state.authority || caller == amm_state.keeper,
-        ErrorCode::UnauthorizedCaller
+        AmmError::UnauthorizedCaller
     );
 
     // The CPMM pool is the only swap venue: hard-error when unpinned.
     require!(
         amm_state.cpmm_pool_state != Pubkey::default(),
-        ErrorCode::PoolNotPinned
+        AmmError::PoolNotPinned
     );
     // H1 re-pin: the swap/pricing accounts must be the pool's own derived
     // PDAs.
@@ -194,19 +196,19 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
             &ctx.accounts.cpmm_observation.to_account_info(),
             &ctx.accounts.cpmm_authority.to_account_info(),
         ),
-        ErrorCode::InvalidPoolAccount
+        AmmError::InvalidPoolAccount
     );
 
     // MarketStatus layout: disc(8) + current_state(1) + timestamp(8) + trading_day_index(8)
     let market_data = ctx.accounts.market_status.try_borrow_data()?;
-    require!(market_data.len() >= 25, ErrorCode::InvalidMarketStatus);
+    require!(market_data.len() >= 25, AmmError::InvalidMarketStatus);
     let current_state = market_data[8];
     let open_ts = i64::from_le_bytes(market_data[9..17].try_into().unwrap());
     let current_day = u64::from_le_bytes(market_data[17..25].try_into().unwrap());
     // Buybacks only execute while the market is OPEN. Fills are deliberately
     // NOT a gate: any balance in the buyback vault is spent on any trading day,
     // whether or not yesterday's offers were taken.
-    require!(current_state == 0, ErrorCode::InvalidMarketState);
+    require!(current_state == 0, AmmError::MarketNotOpen);
 
     let clock = Clock::get()?;
 
@@ -280,7 +282,7 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
             &ctx.accounts.usdc_mint.key(),
             clock.unix_timestamp as u64,
         )
-        .ok_or(ErrorCode::InvalidOracle)?;
+        .ok_or(AmmError::InvalidOracle)?;
         // min-out for the CPMM swap: preview the pool's actual constant-product
         // output from its vault balances. The old TWAP-anchored floor ignored
         // the trade's own price impact and lagged the live pool during the
@@ -416,30 +418,10 @@ pub(crate) fn ratchet_within_band(
     exec_price: u64,
     oracle_price: u64,
 ) -> Result<()> {
-    require!(oracle_price > 0, ErrorCode::InvalidOracle);
+    require!(oracle_price > 0, AmmError::InvalidOracle);
     let cap = (oracle_price as u128 * (10_000 + MAX_SLIPPAGE_BPS) as u128 / 10_000) as u64;
-    require!(exec_price <= cap, ErrorCode::SlippageExceeded);
+    require!(exec_price <= cap, AmmError::SlippageExceeded);
     ratchet_buyback_basis(amm_state, exec_price);
     Ok(())
-}
-
-#[error_code]
-pub enum ErrorCode {
-    #[msg("Unauthorized caller")]
-    UnauthorizedCaller,
-    #[msg("Invalid market status")]
-    InvalidMarketStatus,
-    #[msg("Market is not open")]
-    InvalidMarketState,
-    #[msg("No offers were taken last night — nothing to buy back")]
-    NoFillsToBuyBack,
-    #[msg("Fill exec price overpays the spot oracle beyond MAX_SLIPPAGE_BPS")]
-    SlippageExceeded,
-    #[msg("Invalid SOL price oracle")]
-    InvalidOracle,
-    #[msg("CPMM pool account mismatch")]
-    InvalidPoolAccount,
-    #[msg("CPMM pool not pinned — run set_cpmm_pool")]
-    PoolNotPinned,
 }
 

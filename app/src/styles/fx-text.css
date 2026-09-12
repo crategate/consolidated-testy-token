@@ -98,29 +98,6 @@
     }
 }
 
-@keyframes textShadowSmear {
-
-    0%,
-    90%,
-    93%,
-    96%,
-    100% {
-        text-shadow: none;
-    }
-
-    91% {
-        text-shadow: 0 3px 0 rgba(0, 240, 255, 0.55), 0 -2px 0 rgba(255, 42, 109, 0.5);
-    }
-
-    94% {
-        text-shadow: 0 -3px 2px rgba(211, 0, 249, 0.5), 0 2px 1px rgba(0, 240, 255, 0.5);
-    }
-
-    97% {
-        text-shadow: 0 1px 4px rgba(0, 240, 255, 0.8), 0 -1px 3px rgba(255, 42, 109, 0.6);
-    }
-}
-
 /* Sparse micro-flicker for the smallest labels — no constant vibration */
 @keyframes textShadowShiver {
 
@@ -270,114 +247,6 @@
         text-shadow:
             1px 0 2px rgba(255, 190, 210, 0.3),
             -0.5px 0 1px rgba(210, 200, 255, 0.22);
-    }
-}
-
-/* Light always arrives from the left */
-@keyframes textGlitchLeft {
-
-    0%,
-    12%,
-    31%,
-    33%,
-    55%,
-    74%,
-    76.5%,
-    93%,
-    100% {
-        text-shadow: none;
-    }
-
-    11% {
-        text-shadow: -2px 0 2px rgba(0, 240, 255, 0.32), -4px 0 1px rgba(240, 238, 245, 0.16);
-    }
-
-    29% {
-        text-shadow: -1px 0 3px rgba(255, 190, 210, 0.28), -3px 0 1px rgba(0, 240, 255, 0.18);
-    }
-
-    53% {
-        text-shadow: -2px 1px 2px rgba(210, 200, 255, 0.26), -4px 0 2px rgba(240, 238, 245, 0.14);
-    }
-
-    72% {
-        text-shadow: -1px 0 2px rgba(0, 240, 255, 0.3), -3px 0 1px rgba(255, 210, 160, 0.16);
-    }
-
-    91% {
-        text-shadow: -2px -1px 2px rgba(255, 160, 200, 0.26), -4px 0 1px rgba(0, 240, 255, 0.14);
-    }
-}
-
-/* Light always arrives from the right */
-@keyframes textGlitchRight {
-
-    0%,
-    13%,
-    32.5%,
-    35%,
-    56%,
-    75.5%,
-    78%,
-    94%,
-    100% {
-        text-shadow: none;
-    }
-
-    12% {
-        text-shadow: 2px 0 2px rgba(255, 160, 200, 0.3), 4px 0 1px rgba(240, 238, 245, 0.16);
-    }
-
-    31% {
-        text-shadow: 1px 0 3px rgba(0, 240, 255, 0.28), 3px 0 1px rgba(255, 210, 160, 0.18);
-    }
-
-    54% {
-        text-shadow: 2px 1px 2px rgba(210, 200, 255, 0.26), 4px 0 2px rgba(240, 238, 245, 0.14);
-    }
-
-    74% {
-        text-shadow: 1px 0 2px rgba(255, 190, 210, 0.3), 3px 0 1px rgba(0, 240, 255, 0.16);
-    }
-
-    92% {
-        text-shadow: 2px -1px 2px rgba(0, 240, 255, 0.26), 4px 0 1px rgba(240, 238, 245, 0.14);
-    }
-}
-
-/* Light swaps between corners */
-@keyframes textGlitchDiag {
-
-    0%,
-    11.5%,
-    30%,
-    32.5%,
-    53.5%,
-    73%,
-    75.5%,
-    92.5%,
-    100% {
-        text-shadow: none;
-    }
-
-    10% {
-        text-shadow: -2px -1px 2px rgba(0, 240, 255, 0.3), -1px 0 1px rgba(240, 238, 245, 0.16);
-    }
-
-    28% {
-        text-shadow: 2px 1px 2px rgba(255, 160, 200, 0.28), 1px 0 1px rgba(240, 238, 245, 0.14);
-    }
-
-    51% {
-        text-shadow: -1px 2px 2px rgba(210, 200, 255, 0.26), -2px 0 1px rgba(255, 210, 160, 0.18);
-    }
-
-    71% {
-        text-shadow: 1px -2px 2px rgba(0, 240, 255, 0.28), 2px 0 1px rgba(255, 190, 210, 0.16);
-    }
-
-    91% {
-        text-shadow: -2px 1px 2px rgba(255, 190, 210, 0.26), 2px -1px 1px rgba(0, 240, 255, 0.18);
     }
 }
 
@@ -1017,54 +886,16 @@
     animation-delay: var(--glitch-delay, 0s);
 }
 
-.text-glitch-rgb {
-    animation: textShadowRgbSplit calc(var(--fx-text-cycle) * 0.85 * var(--fx-tempo, 1)) infinite;
-    animation-delay: var(--glitch-delay, 0s);
-}
-
 .text-glitch-light {
     animation: textGlitchLight calc(var(--fx-text-cycle) * 1.3 * var(--fx-tempo, 1)) infinite;
     animation-delay: var(--glitch-delay, 0s);
 }
 
-.text-glitch-left {
-    animation: textGlitchLeft calc(var(--fx-text-cycle) * 1.4 * var(--fx-tempo, 1)) infinite;
-    animation-delay: var(--glitch-delay, 0s);
-}
-
-.text-glitch-right {
-    animation: textGlitchRight calc(var(--fx-text-cycle) * 1.5 * var(--fx-tempo, 1)) infinite;
-    animation-delay: var(--glitch-delay, 0s);
-}
-
-.text-glitch-diag {
-    animation: textGlitchDiag calc(var(--fx-text-cycle) * 1.45 * var(--fx-tempo, 1)) infinite;
-    animation-delay: var(--glitch-delay, 0s);
-}
-
-.text-glow-pulse {
-    animation: textPulseGlow calc(var(--fx-text-cycle) * 0.9 * var(--fx-tempo, 1)) ease-in-out infinite;
-    animation-delay: var(--glitch-delay, 0s);
-}
-
-.text-shadow-drop {
-    animation: textShadowDrop calc(var(--fx-text-cycle) * 1.1 * var(--fx-tempo, 1)) infinite;
-    animation-delay: var(--glitch-delay, 0s);
-}
-
 /* Connected: all text glitches speed onto the connected clock */
 .app-shell[data-connected='true'] .text-glitch,
-.app-shell[data-connected='true'] .text-glitch-rgb,
 .app-shell[data-connected='true'] .text-glitch-light,
-.app-shell[data-connected='true'] .text-glitch-left,
-.app-shell[data-connected='true'] .text-glitch-right,
-.app-shell[data-connected='true'] .text-glitch-diag,
 .amm-page-shell[data-connected='true'] .text-glitch,
-.amm-page-shell[data-connected='true'] .text-glitch-rgb,
-.amm-page-shell[data-connected='true'] .text-glitch-light,
-.amm-page-shell[data-connected='true'] .text-glitch-left,
-.amm-page-shell[data-connected='true'] .text-glitch-right,
-.amm-page-shell[data-connected='true'] .text-glitch-diag {
+.amm-page-shell[data-connected='true'] .text-glitch-light {
     animation-duration: calc(var(--fx-text-cycle) * 0.8);
 }
 
@@ -1073,6 +904,7 @@
 .landing-section .section-title {
     animation: textShadowGlitch calc(var(--fx-text-cycle) * 1.4) infinite;
     animation-delay: var(--glitch-delay, 0.1s);
+    font-weight: 300;
 }
 
 .app-shell[data-connected='true'] .landing-section .section-title {

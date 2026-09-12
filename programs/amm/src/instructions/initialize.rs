@@ -1,4 +1,4 @@
-use crate::state::offersState::{AcceptedOffers, AmmState, MarketMetrics, OfferList};
+use crate::state::offers_state::{AcceptedOffers, AmmState, MarketMetrics, OfferList};
 use anchor_lang::prelude::*;
 use anchor_spl::{
     associated_token::AssociatedToken,
@@ -6,13 +6,10 @@ use anchor_spl::{
     token_interface::{Mint, TokenAccount, TokenInterface},
 };
 
-pub fn handler(
+pub(crate) fn handler(
     ctx: Context<InitializeAmm>,
     staking_pool: Pubkey,
 ) -> Result<()> {
-    // initialize the POSR vault
-    // during minting, % of coins will get stored here
-
     let amm_state = &mut ctx.accounts.amm_state;
     let offer_list = &mut ctx.accounts.offer_list;
 
@@ -64,7 +61,7 @@ pub fn handler(
     offer_list.total_complete = 0;
     offer_list.bump = ctx.bumps.offer_list;
 
-    let empty_offer = crate::state::offersState::Offer {
+    let empty_offer = crate::state::offers_state::Offer {
         lot_size: 0,
         vesting_days: 0,
         discount_bps: 0,
@@ -179,7 +176,7 @@ pub struct InitializeAmm<'info> {
     )]
     pub metrics: Box<Account<'info, MarketMetrics>>,
 
-    /// CHECK: verfiy seeds derive against crank
+    /// CHECK: seeds derive against the crank program
     #[account(
         seeds = [b"market_status"],
         bump,
@@ -187,7 +184,7 @@ pub struct InitializeAmm<'info> {
     )]
     pub market_status_pda: UncheckedAccount<'info>,
 
-    /// CHECK: stored for verification in makeOffers
+    /// CHECK: stored for verification in make_offers
     pub crank_program: AccountInfo<'info>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub token_program: Interface<'info, TokenInterface>,

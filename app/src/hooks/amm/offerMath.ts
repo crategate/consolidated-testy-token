@@ -1,4 +1,4 @@
-// Pure offer-desk math — mirrors programs/amm/src/state/offersState.rs
+// Pure offer-desk math — mirrors programs/amm/src/state/offers_state.rs
 // (lot_sizer) and programs/amm/src/instructions/offer_claim.rs (quote_claim).
 // All integer math is BigInt so the estimate tracks the on-chain u64/u128
 // arithmetic exactly; the UI still labels the result "approximate" because

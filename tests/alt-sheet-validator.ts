@@ -46,25 +46,46 @@ export async function startValidator(): Promise<void> {
 }
 
 export async function airdrop(to: string, sol = 50): Promise<void> {
-    // Airdrop big amounts in 5-SOL chunks (localnet caps per-request size)
-    let remaining = sol;
-    while (remaining > 0) {
-        const chunk = Math.min(5, remaining);
+    // The faucet reports the validator healthy before it serves airdrops
+    // ("Waiting for fees to stabilize"), so requests sent too early are
+    // dropped. Retry the whole amount until the balance actually lands.
+    const target = sol * 1_000_000_000;
+    const deadline = Date.now() + 120_000;
+    while (Date.now() < deadline) {
+        // Airdrop in 5-SOL chunks (localnet caps per-request size)
+        let remaining = sol;
+        while (remaining > 0) {
+            const chunk = Math.min(5, remaining);
+            const res = await fetch(RPC, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: 1,
+                    method: 'requestAirdrop',
+                    params: [to, chunk * 1_000_000_000],
+                }),
+            });
+            const j = (await res.json()) as { error?: unknown };
+            if (j.error) throw new Error(`airdrop failed: ${JSON.stringify(j.error)}`);
+            remaining -= chunk;
+        }
+        // Poll until the credit is visible (requestAirdrop returns first).
         const res = await fetch(RPC, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
                 jsonrpc: '2.0',
                 id: 1,
-                method: 'requestAirdrop',
-                params: [to, chunk * 1_000_000_000],
+                method: 'getBalance',
+                params: [to],
             }),
         });
-        const j = (await res.json()) as { error?: unknown };
-        if (j.error) throw new Error(`airdrop failed: ${JSON.stringify(j.error)}`);
-        remaining -= chunk;
-        if (remaining > 0) await new Promise((r) => setTimeout(r, 400));
+        const j = (await res.json()) as { result?: { value?: number } };
+        if ((j.result?.value ?? 0) >= target) return;
+        await new Promise((r) => setTimeout(r, 1000));
     }
+    throw new Error(`airdrop of ${sol} SOL did not credit ${to} in time`);
 }
 
 export function rpcUrl(): string {

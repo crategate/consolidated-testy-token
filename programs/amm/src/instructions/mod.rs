@@ -50,11 +50,10 @@ pub use distribute_staker_rewards::*;
 pub mod raydium;
 pub use raydium::*;
 
-// Alt desk: fixed-terms second sheet, state-3 only. Appended LAST so the
-// module's error enum extends (never shifts) the program's error codes.
+// Alt desk: fixed-terms second sheet, state-3 only.
 pub mod alt_offers;
 pub use alt_offers::*;
 
-// DEVNET/TEST ONLY — full runtime-state wipe (append last, same reason).
+// DEVNET/TEST ONLY — full runtime-state wipe.
 pub mod reset_devnet_state;
 pub use reset_devnet_state::*;

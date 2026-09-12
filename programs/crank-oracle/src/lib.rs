@@ -26,7 +26,7 @@ use solana_program::{
     sysvar::{clock::Clock, rent::Rent, Sysvar, SysvarId},
 };
 use switchboard_on_demand::prelude::rust_decimal::prelude::ToPrimitive;
-use switchboard_on_demand::{default_queue, ParsedEd25519Instruction, QUOTE_PROGRAM_ID};
+use switchboard_on_demand::{ParsedEd25519Instruction, QUOTE_PROGRAM_ID};
 
 pub const ID: Pubkey = solana_program::pubkey!("HkA18DxZU3RSg2cJfC1vZEkkRmDnSWuXjHim2NXbao7U");
 
@@ -168,9 +168,9 @@ fn write_bounty_config(ai: &solana_program::account_info::AccountInfo, c: &Bount
 }
 
 // ────────────────────────── switchboard quote view ──────────────────────────
-/// On-chain quote layout (vendored SBOD `AccountDeserialize`): b"SBOracle"(8)
-/// + queue(32) + u16 LE blob length + blob(ED25519 instruction data) where the
-/// blob's suffix carries slot(8) + version(1) + b"SBOD"(4).
+/// On-chain quote layout (vendored SBOD `AccountDeserialize`): b"SBOracle"
+/// (8) + queue (32) + u16-LE blob length + blob (ED25519 instruction data);
+/// the blob suffix carries slot (8) + version (1) + b"SBOD" (4).
 struct QuoteView {
     queue: Pubkey,
     slot: u64,
@@ -938,6 +938,7 @@ pub(crate) use idl_spec::{
 mod tests {
     use super::*;
     use litesvm::LiteSVM;
+    use switchboard_on_demand::default_queue;
     use solana_sdk::{
         account::Account,
         instruction::{AccountMeta, Instruction},

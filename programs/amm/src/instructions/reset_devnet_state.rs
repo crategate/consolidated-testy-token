@@ -1,4 +1,4 @@
-use crate::state::offersState::{AcceptedOffers, AmmState, MarketMetrics, OfferList};
+use crate::state::offers_state::{AcceptedOffers, AmmState, MarketMetrics, OfferList};
 use anchor_lang::prelude::*;
 
 // DEVNET/TEST ONLY — remove before mainnet (same pattern as crank test_set_state
@@ -36,7 +36,7 @@ pub struct ResetDevnetState<'info> {
     pub offer_list: Box<Account<'info, OfferList>>,
 }
 
-fn reset_offer(o: &mut crate::state::offersState::Offer) {
+fn reset_offer(o: &mut crate::state::offers_state::Offer) {
     o.lot_size = 0;
     o.vesting_days = 0;
     o.discount_bps = 0;
@@ -44,7 +44,7 @@ fn reset_offer(o: &mut crate::state::offersState::Offer) {
     o.total_offered = 0;
 }
 
-pub fn handler(ctx: Context<ResetDevnetState>) -> Result<()> {
+pub(crate) fn handler(ctx: Context<ResetDevnetState>) -> Result<()> {
     let m = &mut ctx.accounts.metrics;
     m.day_index = 0;
     m.total_staked = 0;

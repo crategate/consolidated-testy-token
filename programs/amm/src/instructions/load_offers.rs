@@ -19,7 +19,8 @@
 
 use anchor_lang::prelude::*;
 
-use crate::state::offersState::{AmmState, Offer, OfferList};
+use crate::error::AmmError;
+use crate::state::offers_state::{AmmState, Offer, OfferList};
 
 use super::offer_claim::require_pinned_pricing_accounts;
 use super::raydium::read_cpmm_price_floor;
@@ -102,7 +103,7 @@ pub struct LoadOffers<'info> {
     pub cpmm_output_vault: Option<AccountInfo<'info>>,
 }
 
-pub fn handler(ctx: Context<LoadOffers>) -> Result<()> {
+pub(crate) fn handler(ctx: Context<LoadOffers>) -> Result<()> {
     let amm_state = &mut ctx.accounts.amm_state;
     let offer_list = &mut ctx.accounts.offer_list;
     // ── Current trading day from the crank's market-status PDA ──
@@ -110,7 +111,7 @@ pub fn handler(ctx: Context<LoadOffers>) -> Result<()> {
     let market_data = ctx.accounts.market_status.try_borrow_data()?;
     require!(
         market_data.len() >= 25,
-        crate::instructions::make_offers::ErrorCode::InvalidMarketStatus
+        AmmError::InvalidMarketStatus
     );
     let current_day = u64::from_le_bytes(market_data[17..25].try_into().unwrap());
 
@@ -118,7 +119,7 @@ pub fn handler(ctx: Context<LoadOffers>) -> Result<()> {
     let pinned = amm_state.cpmm_pool_state != Pubkey::default();
     require!(
         pinned,
-        crate::instructions::make_offers::ErrorCode::InvalidMarketStatus
+        AmmError::InvalidMarketStatus
     );
     require_pinned_pricing_accounts(
         amm_state.cpmm_program,

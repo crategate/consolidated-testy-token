@@ -31,7 +31,7 @@ import {
     ASSOCIATED_TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import { assert } from "chai";
-import { ensureValidator, rpcUrl } from "./alt-sheet-runtime";
+import { ensureValidator, rpcUrl, airdrop } from "./alt-sheet-runtime";
 
 // crank-oracle devnet/test drivers (native program, IDL-verified constants):
 const CRANK_ID = new PublicKey("HkA18DxZU3RSg2cJfC1vZEkkRmDnSWuXjHim2NXbao7U");
@@ -82,6 +82,9 @@ describe("alt sheet (make_alt_offers + gates)", () => {
     before(async function () {
         this.timeout(180_000);
         await ensureValidator();
+        // The suite assumes a pre-funded payer; fund it from the local faucet
+        // so a fresh validator runs standalone.
+        await airdrop(payer.publicKey.toBase58(), 50);
 
         // mints
         afhoMint = await createMint(provider.connection, payer, payer.publicKey, null, 9, undefined, undefined, TOKEN_2022_PROGRAM_ID);

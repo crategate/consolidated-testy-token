@@ -29,8 +29,10 @@
 // every other priced instruction. The pool must be pinned or the instruction
 // hard-errors.
 
-use crate::state::offersState::{AmmState, MarketMetrics};
+use crate::state::offers_state::{AmmState, MarketMetrics};
 use anchor_lang::prelude::*;
+
+use crate::error::AmmError;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
 use super::dex_buyback::{
@@ -189,7 +191,7 @@ fn dip_spend_bps(depth_bps: u64, slope_cp: i64) -> u64 {
     (DIP_BASE_SPEND_BPS as u128 * depth2 * mult as u128 / 100_000_000u128) as u64
 }
 
-pub fn handler(ctx: Context<BuyTheDip>) -> Result<()> {
+pub(crate) fn handler(ctx: Context<BuyTheDip>) -> Result<()> {
     let swap = SwapInfos {
         amm_state: ctx.accounts.amm_state.to_account_info(),
         // the vault slot carries the DIP reserve vault here
@@ -211,13 +213,13 @@ pub fn handler(ctx: Context<BuyTheDip>) -> Result<()> {
     let caller = ctx.accounts.cranker.key();
     require!(
         caller == amm_state.authority || caller == amm_state.keeper,
-        ErrorCode::UnauthorizedCaller
+        AmmError::UnauthorizedCaller
     );
 
     // The CPMM pool is the only swap venue: hard-error when unpinned.
     require!(
         amm_state.cpmm_pool_state != Pubkey::default(),
-        ErrorCode::PoolNotPinned
+        AmmError::PoolNotPinned
     );
     // H1 re-pin: the swap/pricing accounts must be the pool's own derived
     // PDAs.
@@ -235,12 +237,12 @@ pub fn handler(ctx: Context<BuyTheDip>) -> Result<()> {
             &ctx.accounts.cpmm_observation.to_account_info(),
             &ctx.accounts.cpmm_authority.to_account_info(),
         ),
-        ErrorCode::InvalidPoolAccount
+        AmmError::InvalidPoolAccount
     );
 
     // MarketStatus layout: disc(8) + current_state(1) + timestamp(8) + trading_day_index(8)
     let market_data = ctx.accounts.market_status.try_borrow_data()?;
-    require!(market_data.len() >= 25, ErrorCode::InvalidMarketStatus);
+    require!(market_data.len() >= 25, AmmError::InvalidMarketStatus);
     let current_day = u64::from_le_bytes(market_data[17..25].try_into().unwrap());
 
     let clock = Clock::get()?;
@@ -253,8 +255,8 @@ pub fn handler(ctx: Context<BuyTheDip>) -> Result<()> {
         &ctx.accounts.usdc_mint.key(),
         clock.unix_timestamp as u64,
     )
-    .ok_or(ErrorCode::InvalidOracle)?;
-    require!(spot > 0, ErrorCode::InvalidOracle);
+    .ok_or(AmmError::InvalidOracle)?;
+    require!(spot > 0, AmmError::InvalidOracle);
 
     let metrics = &mut ctx.accounts.metrics;
 
@@ -364,18 +366,4 @@ pub fn handler(ctx: Context<BuyTheDip>) -> Result<()> {
         amm_state.dip_day_usdc,
     );
     Ok(())
-}
-
-#[error_code]
-pub enum ErrorCode {
-    #[msg("Unauthorized caller")]
-    UnauthorizedCaller,
-    #[msg("Invalid market status")]
-    InvalidMarketStatus,
-    #[msg("Invalid price oracle")]
-    InvalidOracle,
-    #[msg("CPMM pool account mismatch")]
-    InvalidPoolAccount,
-    #[msg("CPMM pool not pinned — run set_cpmm_pool")]
-    PoolNotPinned,
 }

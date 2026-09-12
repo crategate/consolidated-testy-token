@@ -1,5 +1,7 @@
-use crate::state::offersState::{AmmState, MarketMetrics};
+use crate::state::offers_state::{AmmState, MarketMetrics};
 use anchor_lang::prelude::*;
+
+use crate::error::AmmError;
 use anchor_spl::token_interface::{Mint, TokenAccount};
 
 use super::helpers_make_offers::{record_price_change, record_stake_ratio};
@@ -55,27 +57,27 @@ pub struct UpdateTradedayStats<'info> {
     pub afho_vault: Box<InterfaceAccount<'info, TokenAccount>>,
 }
 
-pub fn handler(ctx: Context<UpdateTradedayStats>) -> Result<()> {
+pub(crate) fn handler(ctx: Context<UpdateTradedayStats>) -> Result<()> {
     let caller = ctx.accounts.cranker.key();
     require!(
         caller == ctx.accounts.amm_state.authority || caller == ctx.accounts.amm_state.keeper,
-        ErrorCode::UnauthorizedCaller
+        AmmError::UnauthorizedCaller
     );
 
     // MarketStatus layout: disc(8) + current_state(1) + timestamp(8) + trading_day_index(8)
     let market_data = ctx.accounts.market_status.try_borrow_data()?;
-    require!(market_data.len() >= 25, ErrorCode::InvalidMarketStatus);
+    require!(market_data.len() >= 25, AmmError::InvalidMarketStatus);
     let current_state = market_data[8];
     let current_day = u64::from_le_bytes(market_data[17..25].try_into().unwrap());
     // End of trading day only (after-hours or closed)
     require!(
         current_state == 1 || current_state == 2,
-        ErrorCode::InvalidMarketState
+        AmmError::InvalidMarketState
     );
     // Once per trading day
     require!(
         ctx.accounts.market_metrics.day_index != current_day,
-        ErrorCode::AlreadyConstructed
+        AmmError::AlreadyConstructed
     );
     ctx.accounts.market_metrics.day_index = current_day;
 
@@ -96,30 +98,30 @@ pub fn handler(ctx: Context<UpdateTradedayStats>) -> Result<()> {
     let spot = {
         let amm_state = &ctx.accounts.amm_state;
         let pinned = amm_state.cpmm_pool_state != Pubkey::default();
-        require!(pinned, ErrorCode::PoolNotPinned);
+        require!(pinned, AmmError::PoolNotPinned);
         let clock = Clock::get()?;
-            let pool_state = ctx.accounts.cpmm_pool_state.as_ref().ok_or(ErrorCode::InvalidPoolAccount)?;
-            let observation = ctx.accounts.cpmm_observation.as_ref().ok_or(ErrorCode::InvalidPoolAccount)?;
-            let base_vault = ctx.accounts.cpmm_output_vault.as_ref().ok_or(ErrorCode::InvalidPoolAccount)?;
-            let quote_vault = ctx.accounts.cpmm_input_vault.as_ref().ok_or(ErrorCode::InvalidPoolAccount)?;
+            let pool_state = ctx.accounts.cpmm_pool_state.as_ref().ok_or(AmmError::InvalidPoolAccount)?;
+            let observation = ctx.accounts.cpmm_observation.as_ref().ok_or(AmmError::InvalidPoolAccount)?;
+            let base_vault = ctx.accounts.cpmm_output_vault.as_ref().ok_or(AmmError::InvalidPoolAccount)?;
+            let quote_vault = ctx.accounts.cpmm_input_vault.as_ref().ok_or(AmmError::InvalidPoolAccount)?;
             require!(
                 pool_state.key() == amm_state.cpmm_pool_state,
-                ErrorCode::InvalidPoolAccount
+                AmmError::InvalidPoolAccount
             );
             require!(
                 observation.key()
                     == crate::instructions::raydium::observation_pda(&amm_state.cpmm_program, amm_state.cpmm_pool_state).0,
-                ErrorCode::InvalidPoolAccount
+                AmmError::InvalidPoolAccount
             );
             require!(
                 quote_vault.key()
                     == crate::instructions::raydium::pool_vault_pda(&amm_state.cpmm_program, amm_state.cpmm_pool_state, amm_state.usdc_mint).0,
-                ErrorCode::InvalidPoolAccount
+                AmmError::InvalidPoolAccount
             );
             require!(
                 base_vault.key()
                     == crate::instructions::raydium::pool_vault_pda(&amm_state.cpmm_program, amm_state.cpmm_pool_state, amm_state.afho_mint).0,
-                ErrorCode::InvalidPoolAccount
+                AmmError::InvalidPoolAccount
             );
             super::raydium::read_cpmm_price_floor(
                 pool_state,
@@ -130,28 +132,10 @@ pub fn handler(ctx: Context<UpdateTradedayStats>) -> Result<()> {
                 &amm_state.usdc_mint,
                 clock.unix_timestamp as u64,
             )
-            .ok_or(ErrorCode::InvalidOracle)?
+            .ok_or(AmmError::InvalidOracle)?
     };
     record_price_change(&mut ctx.accounts.market_metrics, spot);
     record_stake_ratio(&mut ctx.accounts.market_metrics);
 
     Ok(())
-}
-
-#[error_code]
-pub enum ErrorCode {
-    #[msg("Unauthorized caller")]
-    UnauthorizedCaller,
-    #[msg("Invalid market status")]
-    InvalidMarketStatus,
-    #[msg("Invalid market state for updating trade day stats")]
-    InvalidMarketState,
-    #[msg("Already constructed for this day")]
-    AlreadyConstructed,
-    #[msg("Invalid price oracle")]
-    InvalidOracle,
-    #[msg("CPMM pool account mismatch")]
-    InvalidPoolAccount,
-    #[msg("CPMM pool not pinned — run set_cpmm_pool")]
-    PoolNotPinned,
 }

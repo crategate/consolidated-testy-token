@@ -7,16 +7,14 @@ use anchor_spl::token_interface::{
     transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked,
 };
 
-// =============================================================================
 // AMM CPI GATE PATTERN
-// ---------------------
+//
 // A program ID can never sign (it is an on-curve keypair, not a PDA), so the
 // old `amm_program.is_signer` check could never pass. Instead, the AMM's STATE
 // PDA signs the CPI (the AMM program produces that signature via
 // invoke_signed). The seeds constraint with seeds::program = pool.amm_program
 // proves the signer PDA belongs to the authorized AMM program — only that
 // program can make it sign.
-// =============================================================================
 
 pub fn create_amm_position(
     ctx: Context<CreateAmmPosition>,
@@ -45,7 +43,6 @@ pub fn create_amm_position(
 
     let trading_day_index = get_trading_day_index(&ctx.accounts.market_status)?;
 
-    // Initialize position
     position.owner = ctx.accounts.owner.key();
     position.pool = pool.key();
     position.amount = amount;
@@ -55,19 +52,17 @@ pub fn create_amm_position(
     position.days_to_unlock = days_to_unlock;
     position.bump = ctx.bumps.position;
 
-    // Update user's next available index
     user_index.next_index = user_index.next_index.max(index + 1);
 
-    // Calculate initial weight (multiplier = 1.0x on day 0)
     let current_multiplier = calculate_multiplier(0, pool.max_multiplier_bps);
     let weight = (amount as u128 * current_multiplier as u128) / 10_000u128;
     position.current_weight = weight;
 
-    // Update pool aggregates
     pool.total_staked = pool.total_staked.saturating_add(amount);
     pool.total_weighted_stake = pool.total_weighted_stake.saturating_add(weight);
 
-    // Set reward debt so user doesn't claim past distributions
+    // Reward debt prevents claiming rewards distributed before this position
+    // existed.
     position.reward_debt = (weight * pool.accrued_reward_per_share) / 1_000_000_000_000u128;
 
     // Transfer tokens from the AMM vault (authority = amm_state PDA, which
@@ -119,7 +114,8 @@ pub fn deposit_rewards_from_amm(ctx: Context<DepositRewardsFromAmm>, amount: u64
     Ok(())
 }
 
-// mainnet release: remove before launch, won't need to update amm
+// Authority-gated AMM-program pointer update: rotate the program this pool
+// accepts CPIs from (see the accounts struct for the gate).
 pub fn update_amm_program(ctx: Context<UpdateAmmProgram>, new_amm_program: Pubkey) -> Result<()> {
     let pool = &mut ctx.accounts.pool;
     pool.amm_program = new_amm_program;

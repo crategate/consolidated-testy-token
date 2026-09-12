@@ -1,4 +1,4 @@
-use crate::state::offersState::{AcceptedOffers, AmmState, MarketMetrics, OfferList};
+use crate::state::offers_state::{AcceptedOffers, AmmState, MarketMetrics, OfferList};
 use anchor_lang::prelude::*;
 
 // DEVNET/TEST ONLY — remove before mainnet (same pattern as crank test_set_state).
@@ -70,7 +70,7 @@ pub struct TestMetrics {
     pub sml_vesting_days: u8,
 }
 
-pub fn handler(ctx: Context<LoadTestData>, data: TestMetrics) -> Result<()> {
+pub(crate) fn handler(ctx: Context<LoadTestData>, data: TestMetrics) -> Result<()> {
     let metrics = &mut ctx.accounts.metrics;
     metrics.price_changes = data.price_changes;
     metrics.sample_head = data.sample_head;

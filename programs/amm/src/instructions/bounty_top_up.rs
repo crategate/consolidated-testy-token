@@ -1,5 +1,7 @@
-use crate::state::offersState::AmmState;
+use crate::state::offers_state::AmmState;
 use anchor_lang::prelude::*;
+
+use crate::error::AmmError;
 use anchor_spl::associated_token::{create_idempotent, AssociatedToken, Create};
 use anchor_spl::token::{close_account, CloseAccount};
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
@@ -115,12 +117,12 @@ pub struct BountyTopUp<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler(ctx: Context<BountyTopUp>) -> Result<()> {
+pub(crate) fn handler(ctx: Context<BountyTopUp>) -> Result<()> {
     let amm_state = &ctx.accounts.amm_state;
     let cpmm_program = amm_state.cpmm_program;
     let afho_pinned = amm_state.cpmm_pool_state != Pubkey::default();
     let sol_pinned = amm_state.cpmm_sol_usdc_pool != Pubkey::default();
-    require!(afho_pinned && sol_pinned, ErrorCode::PoolNotPinned);
+    require!(afho_pinned && sol_pinned, AmmError::PoolNotPinned);
 
     // H1 re-pin: the swap/pricing accounts must be the pools' derived PDAs.
     require!(
@@ -137,7 +139,7 @@ pub fn handler(ctx: Context<BountyTopUp>) -> Result<()> {
             &ctx.accounts.cpmm_observation.to_account_info(),
             &ctx.accounts.cpmm_authority.to_account_info(),
         ),
-        ErrorCode::InvalidPoolAccount
+        AmmError::InvalidPoolAccount
     );
     require!(
         super::raydium::pinned_sol_usdc_accounts_valid(
@@ -153,7 +155,7 @@ pub fn handler(ctx: Context<BountyTopUp>) -> Result<()> {
             &ctx.accounts.sol_usdc_observation.to_account_info(),
             &ctx.accounts.sol_usdc_authority.to_account_info(),
         ),
-        ErrorCode::InvalidPoolAccount
+        AmmError::InvalidPoolAccount
     );
 
     let clock = Clock::get()?;
@@ -169,7 +171,7 @@ pub fn handler(ctx: Context<BountyTopUp>) -> Result<()> {
         &ctx.accounts.usdc_mint.key(),
         now,
     )
-    .ok_or(ErrorCode::InvalidOracle)?;
+    .ok_or(AmmError::InvalidOracle)?;
     let afho_price = super::raydium::read_cpmm_price_floor(
         &ctx.accounts.cpmm_pool_state.to_account_info(),
         &ctx.accounts.cpmm_observation.to_account_info(),
@@ -179,24 +181,24 @@ pub fn handler(ctx: Context<BountyTopUp>) -> Result<()> {
         &ctx.accounts.usdc_mint.key(),
         now,
     )
-    .ok_or(ErrorCode::InvalidOracle)?;
-    require!(sol_price > 0 && afho_price > 0, ErrorCode::InvalidOracle);
+    .ok_or(AmmError::InvalidOracle)?;
+    require!(sol_price > 0 && afho_price > 0, AmmError::InvalidOracle);
 
     // ── Size the top-up in bounty PAYMENTS (USDC), not SOL ──
     // BountyConfig layout (crank-oracle): disc(8) + authority(32) +
     // bounty_amount(8) + bounty_usd_raw(8) → u64 LE at offset 48..56.
     let cfg = ctx.accounts.bounty_config.try_borrow_data()?;
-    require!(cfg.len() >= 56, ErrorCode::InvalidPoolAccount);
+    require!(cfg.len() >= 56, AmmError::InvalidPoolAccount);
     let bounty_usd_raw = u64::from_le_bytes(cfg[48..56].try_into().unwrap()) as u128;
     drop(cfg);
-    require!(bounty_usd_raw > 0, ErrorCode::ZeroAmount);
+    require!(bounty_usd_raw > 0, AmmError::ZeroAmount);
 
     // Vault value in USDC raw: lamports × (usdc_raw × 1e12 / lamports) / 1e12.
     let vault_usdc_raw = (ctx.accounts.bounty_vault.lamports() as u128)
         .checked_mul(sol_price as u128)
-        .ok_or(ErrorCode::MathOverflow)?
+        .ok_or(AmmError::MathOverflow)?
         .checked_div(1_000_000_000_000u128)
-        .ok_or(ErrorCode::MathOverflow)?;
+        .ok_or(AmmError::MathOverflow)?;
     // Healthy vault → cheap no-op (the keeper sims before sending, so this
     // keeps the skip path free of a spent transaction).
     if vault_usdc_raw > LOW_WATER_PAYMENTS.saturating_mul(bounty_usd_raw) {
@@ -214,36 +216,36 @@ pub fn handler(ctx: Context<BountyTopUp>) -> Result<()> {
     // USDC hop below; the 25bps input-leg fee is paid out of the swap itself.
     let needed = (TOPUP_PAYMENTS
         .checked_mul(bounty_usd_raw)
-        .ok_or(ErrorCode::MathOverflow)?
+        .ok_or(AmmError::MathOverflow)?
         .checked_mul(1_000_000_000_000u128)
-        .ok_or(ErrorCode::MathOverflow)?
+        .ok_or(AmmError::MathOverflow)?
         .checked_div(sol_price as u128)
-        .ok_or(ErrorCode::MathOverflow)?) as u64;
+        .ok_or(AmmError::MathOverflow)?) as u64;
 
     // USDC needed to buy `needed` wSOL (25bps input fee on the SOL/USDC leg).
     let usdc_needed = (needed as u128)
         .checked_mul(sol_price as u128)
-        .ok_or(ErrorCode::MathOverflow)?
+        .ok_or(AmmError::MathOverflow)?
         .checked_mul(10_025u128)
-        .ok_or(ErrorCode::MathOverflow)?
+        .ok_or(AmmError::MathOverflow)?
         .checked_div(1_000_000_000_000u128)
-        .ok_or(ErrorCode::MathOverflow)?
+        .ok_or(AmmError::MathOverflow)?
         .checked_div(10_000u128)
-        .ok_or(ErrorCode::MathOverflow)? as u64;
+        .ok_or(AmmError::MathOverflow)? as u64;
     // AFHO to sell for that USDC (25bps input fee on the AFHO/USDC leg).
     let afho_in = (usdc_needed as u128)
         .checked_mul(1_000_000_000_000u128)
-        .ok_or(ErrorCode::MathOverflow)?
+        .ok_or(AmmError::MathOverflow)?
         .checked_mul(10_025u128)
-        .ok_or(ErrorCode::MathOverflow)?
+        .ok_or(AmmError::MathOverflow)?
         .checked_div(afho_price as u128)
-        .ok_or(ErrorCode::MathOverflow)?
+        .ok_or(AmmError::MathOverflow)?
         .checked_div(10_000u128)
-        .ok_or(ErrorCode::MathOverflow)? as u64;
-    require!(afho_in > 0, ErrorCode::ZeroAmount);
+        .ok_or(AmmError::MathOverflow)? as u64;
+    require!(afho_in > 0, AmmError::ZeroAmount);
     require!(
         ctx.accounts.afho_vault.amount >= afho_in,
-        ErrorCode::InsufficientAfho
+        AmmError::InsufficientAfho
     );
 
     let mint_key = amm_state.afho_mint;
@@ -323,7 +325,7 @@ pub fn handler(ctx: Context<BountyTopUp>) -> Result<()> {
     )?;
     ctx.accounts.usdc_vault.reload()?;
     let usdc_got = ctx.accounts.usdc_vault.amount.saturating_sub(usdc_before);
-    require!(usdc_got > 0, ErrorCode::SwapReturnedNothing);
+    require!(usdc_got > 0, AmmError::SwapReturnedNothing);
 
     // ── Leg 2: USDC → wSOL (into wsol_vault) ──
     // Impact-aware min-out (see leg 1): the bounty's USDC hop is a large share
@@ -406,22 +408,4 @@ pub fn handler(ctx: Context<BountyTopUp>) -> Result<()> {
         TOPUP_PAYMENTS
     );
     Ok(())
-}
-
-#[error_code]
-pub enum ErrorCode {
-    #[msg("Invalid pool price oracle")]
-    InvalidOracle,
-    #[msg("AFHO/USDC or SOL/USDC pool is not pinned")]
-    PoolNotPinned,
-    #[msg("Computed AFHO amount is zero")]
-    ZeroAmount,
-    #[msg("Treasury AFHO balance is too low to top up the bounty")]
-    InsufficientAfho,
-    #[msg("CPMM pool account mismatch")]
-    InvalidPoolAccount,
-    #[msg("AFHO→USDC swap returned no USDC")]
-    SwapReturnedNothing,
-    #[msg("Math overflow")]
-    MathOverflow,
 }

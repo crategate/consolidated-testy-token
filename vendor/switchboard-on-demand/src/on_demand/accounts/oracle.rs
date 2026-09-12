@@ -11,7 +11,7 @@ use crate::anchor_traits::*;
 use crate::impl_account_deserialize;
 // Use our AccountInfo type alias that conditionally uses pinocchio or anchor/solana-program
 use crate::AccountInfo;
-use crate::{cfg_anchor, cfg_client, get_sb_program_id, OnDemandError, Quote};
+use crate::{cfg_client, get_sb_program_id, OnDemandError, Quote};
 cfg_client! {
     use crate::address_lookup_table;
     use crate::solana_compat::AddressLookupTableAccount;

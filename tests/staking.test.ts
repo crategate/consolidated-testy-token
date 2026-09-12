@@ -62,6 +62,14 @@ describe("AFHO Staking", () => {
     }
 
     before(async () => {
+        // Self-fund the payer from the local faucet: the suite otherwise
+        // assumes a wallet that was pre-funded on the validator.
+        const airdropSig = await provider.connection.requestAirdrop(
+            provider.wallet.publicKey,
+            50_000_000_000
+        );
+        await provider.connection.confirmTransaction(airdropSig, "confirmed");
+
         mint = await createMint(
             provider.connection,
             (provider.wallet as anchor.Wallet).payer,

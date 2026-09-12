@@ -1,1 +1,1 @@
-pub mod offersState;
+pub mod offers_state;

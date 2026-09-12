@@ -1,7 +1,7 @@
 // Metric helpers for make_offers — the three inputs to the offer combinator.
 // Pure functions over MarketMetrics / AcceptedOffers; no account logic here.
 
-use crate::state::offersState::{AcceptedOffers, MarketMetrics};
+use crate::state::offers_state::{AcceptedOffers, MarketMetrics};
 use anchor_lang::prelude::*;
 
 // Record today's close→close price change (centi-percent) into the 20-day ring.
@@ -45,7 +45,7 @@ fn current_stake_ratio(metrics: &MarketMetrics) -> u8 {
 // Stake health score, 0-100. Consumed by the combinator's VESTING step:
 // a high/rising score means a sticky, committed staking base, so new buyers
 // get LONGER locks (they join the committed); a low/falling score shortens
-// locks so offers stay attractive while stakers head for the door.
+// locks so offers stay attractive while stakers exit.
 //   base = current staking ratio
 //   adjustment = today's ratio vs 5-day trailing average, clamped to +/-20
 pub(crate) fn calculate_stake_health(metrics: &MarketMetrics) -> u8 {
@@ -70,8 +70,8 @@ pub(crate) fn record_stake_ratio(metrics: &mut MarketMetrics) {
 // Offer acceptance aggression, 0-10000 (2 decimal bps precision).
 // Weighted mean of the last 5 days' fill % per tier; recent days and bigger
 // tiers weigh more. Consumed by the combinator as the EXCITEMENT gauge:
-// high aggression -> bigger/more lots (scale, not charity) and LOWER discounts
-// (demand is proven, don't give away the treasury).
+// high aggression -> bigger/more lots and LOWER discounts (demand is proven,
+// so the desk gives away less).
 // Ring values are written by calc_completed_offers at the start of the next
 // trading day; 0 for days with no sheet (bear), which drags the score down.
 pub(crate) fn offer_accepted_aggression(accepted: &AcceptedOffers) -> u16 {

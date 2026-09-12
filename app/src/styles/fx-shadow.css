@@ -155,77 +155,6 @@
     }
 }
 
-/* Connected priority panes: more stages per cycle, still spread out. */
-@keyframes rainbowGlitchFast {
-
-    0%,
-    10.5%,
-    29.5%,
-    48.5%,
-    67%,
-    86%,
-    100% {
-        opacity: 0;
-        transform: translate(0);
-    }
-
-    7% {
-        opacity: 0.24;
-        transform: translate(1px, 0);
-        box-shadow:
-            0 0 5px rgba(0, 240, 255, 0.32),
-            -1px 0 4px rgba(255, 42, 109, 0.2);
-    }
-
-    9% {
-        opacity: 0.36;
-        transform: translate(-1px, 1px);
-        box-shadow:
-            0 0 8px rgba(0, 240, 255, 0.4),
-            1px 0 5px rgba(255, 42, 109, 0.24);
-    }
-
-    26% {
-        opacity: 0.2;
-        transform: translate(-1px, 0);
-        box-shadow:
-            0 0 4px rgba(211, 0, 249, 0.28),
-            -1px 0 4px rgba(0, 240, 255, 0.2);
-    }
-
-    28% {
-        opacity: 0.32;
-        transform: translate(2px, -1px);
-        box-shadow:
-            0 0 7px rgba(211, 0, 249, 0.34),
-            1px 0 5px rgba(0, 240, 255, 0.24);
-    }
-
-    45% {
-        opacity: 0.24;
-        transform: translate(0, 1px);
-        box-shadow:
-            0 0 5px rgba(255, 42, 109, 0.3),
-            0 2px 5px rgba(255, 170, 0, 0.18);
-    }
-
-    63% {
-        opacity: 0.28;
-        transform: translate(-1px, -1px);
-        box-shadow:
-            0 0 6px rgba(255, 42, 109, 0.32),
-            -2px 0 5px rgba(255, 170, 0, 0.2);
-    }
-
-    82% {
-        opacity: 0.22;
-        transform: translate(1px, 1px);
-        box-shadow:
-            0 0 5px rgba(255, 170, 0, 0.26),
-            0 2px 5px rgba(0, 240, 255, 0.18);
-    }
-}
-
 /* Slowly rotating rainbow shadow — a constant, unhurried spin of the
    conic gradient angle. Only the color layout moves; nothing strobes. */
 @keyframes fxRotorSpin {
@@ -441,58 +370,11 @@
     mask-composite: exclude;
 }
 
-/* ─── Shadow palettes: different colors in different places ─── */
-
-.shadow-blue-pink {
-    --shadow-c1: var(--neon-blue);
-    --shadow-c2: var(--neon-pink);
-    --shadow-c3: var(--neon-blue);
-    --shadow-c4: var(--neon-pink);
-    --shadow-from: 45deg;
-}
-
-.shadow-amber-green {
-    --shadow-c1: var(--neon-amber);
-    --shadow-c2: var(--neon-green);
-    --shadow-c3: var(--neon-amber);
-    --shadow-c4: var(--neon-green);
-    --shadow-from: 120deg;
-}
-
-.shadow-violet {
-    --shadow-c1: var(--neon-purple);
-    --shadow-c2: var(--neon-blue);
-    --shadow-c3: var(--neon-pink);
-    --shadow-c4: var(--neon-purple);
-    --shadow-from: 200deg;
-}
-
-.shadow-rose {
-    --shadow-c1: var(--neon-pink);
-    --shadow-c2: var(--neon-amber);
-    --shadow-c3: var(--neon-pink);
-    --shadow-c4: var(--neon-cyan);
-    --shadow-from: 300deg;
-}
-
-.shadow-ghost {
-    --shadow-c1: #f0eef5;
-    --shadow-c2: var(--neon-blue);
-    --shadow-c3: #f0eef5;
-    --shadow-c4: var(--neon-pink);
-    --shadow-from: 160deg;
-}
-
 /* ─── Directional & cornered shadows ───
    Box-shadows paint only OUTSIDE the box, so these can never bleed
    through a pane body. Cornered variants light two adjacent sides —
    the sign is lit from one corner only. */
-.neon-shadow.shadow-right::after,
-.neon-shadow.shadow-left::after,
-.neon-shadow.shadow-top::after,
-.neon-shadow.shadow-bottom::after,
 .neon-shadow.shadow-split::after,
-.neon-shadow.shadow-diag::after,
 .neon-shadow.shadow-under::after,
 .neon-shadow.shadow-corner-tl::after,
 .neon-shadow.shadow-corner-tr::after,
@@ -506,28 +388,8 @@
     -webkit-mask: none;
 }
 
-.neon-shadow.shadow-right::after {
-    box-shadow: 8px 0 16px -4px rgba(0, 240, 255, 0.62), 2px 0 6px -2px rgba(255, 42, 109, 0.6);
-}
-
-.neon-shadow.shadow-left::after {
-    box-shadow: -8px 0 16px -4px rgba(255, 42, 109, 0.72), -2px 0 6px -2px rgba(0, 240, 255, 0.6);
-}
-
-.neon-shadow.shadow-top::after {
-    box-shadow: 0 -8px 16px -4px rgba(211, 0, 249, 0.82), 0 -2px 6px -2px rgba(0, 240, 255, 0.68);
-}
-
-.neon-shadow.shadow-bottom::after {
-    box-shadow: 0 8px 16px -4px rgba(255, 170, 0, 0.52), 0 2px 6px -2px rgba(5, 255, 161, 0.58);
-}
-
 .neon-shadow.shadow-split::after {
     box-shadow: -7px 0 14px -4px rgba(255, 42, 109, 0.8), 7px 0 14px -4px rgba(0, 240, 255, 0.8);
-}
-
-.neon-shadow.shadow-diag::after {
-    box-shadow: -7px -7px 14px -4px rgba(211, 0, 249, 0.6), 7px 7px 14px -4px rgba(5, 255, 161, 0.76);
 }
 
 .neon-shadow.shadow-under::after {

@@ -1,7 +1,9 @@
-use crate::state::offersState::{
+use crate::state::offers_state::{
     lot_sizer, AcceptedOffers, AmmState, MarketMetrics, Offer, OfferList,
 };
 use anchor_lang::prelude::*;
+
+use crate::error::AmmError;
 use anchor_spl::token_interface::Mint;
 
 use super::helpers_make_offers::*;
@@ -19,7 +21,7 @@ pub struct MakeOffers<'info> {
         bump = offer_list.bump,
     )]
     pub offer_list: Box<Account<'info, OfferList>>,
-    /// CHECK: market statusPDA
+    /// CHECK: market-status PDA, read-only
     #[account(
         seeds = [b"market_status"],
         seeds::program = amm_state.crank_program,
@@ -39,12 +41,12 @@ pub struct MakeOffers<'info> {
     #[account(address = amm_state.afho_mint)]
     pub afho_mint: Box<InterfaceAccount<'info, Mint>>,
 
-    /// CHECK: nyse_vault for balance capping
+    /// CHECK: afho_vault for balance capping
     #[account(mut, address = amm_state.afho_vault)]
     pub afho_vault: AccountInfo<'info>,
 }
 
-pub fn handler(ctx: Context<MakeOffers>) -> Result<()> {
+pub(crate) fn handler(ctx: Context<MakeOffers>) -> Result<()> {
     // Fires at END of every trading day: read the metrics, run the combinator,
     // post the offer sheet. All metric WRITES live in update_tradeday_stats
     // (end of day, fired before this) and calc_completed_offers (start of day).
@@ -55,19 +57,19 @@ pub fn handler(ctx: Context<MakeOffers>) -> Result<()> {
     let caller = ctx.accounts.cranker.key();
     require!(
         caller == amm_state.authority || caller == amm_state.keeper,
-        ErrorCode::UnauthorizedCaller
+        AmmError::UnauthorizedCaller
     );
     let market_data = ctx.accounts.market_status.try_borrow_data()?;
-    require!(market_data.len() >= 25, ErrorCode::InvalidMarketStatus);
+    require!(market_data.len() >= 25, AmmError::InvalidMarketStatus);
     let current_state = market_data[8];
     let current_day = u64::from_le_bytes(market_data[17..25].try_into().unwrap());
     require!(
         current_state == 1 || current_state == 2,
-        ErrorCode::InvalidMarketState
+        AmmError::InvalidMarketState
     );
     require!(
         offer_list.day_index != current_day,
-        ErrorCode::AlreadyConstructed
+        AmmError::AlreadyConstructed
     );
 
     // -- metrics (helpers_make_offers.rs) — read-only here --
@@ -87,13 +89,13 @@ pub fn handler(ctx: Context<MakeOffers>) -> Result<()> {
     let total_tokens = (vault_balance as u128 * totals_bps as u128 / 10_000) as u64;
 
     // Step 2 — lot tiers ← vault abundance (caps the ladder) + excitement
-    // (climbs it); spacing widens with momentum. The ladder window also RIDES
-    // THE VAULT'S MAGNITUDE (tier_shift below): a 750M-token vault lists
-    // million-token lots, a ~400k-token vault keeps the original
-    // small ladder. Uses totals step's vault read.
-    let mom_x = momentum.saturating_sub(3_500).min(6_500) * 10_000 / 6_500;
-    let excitement = (6 * mom_x + 4 * offer_aggression as u64) / 10;
-    let tiers = lot_tiers(vault_balance, metrics.total_supply, unit, mom_x, excitement);
+    // (climbs it); spacing widens with momentum. The ladder window also
+    // scales with the vault's magnitude (tier_shift below): a 750M-token
+    // vault lists million-token lots, a ~400k-token vault keeps the
+    // original ladder. Uses step 1's vault read.
+    let momentum_x = momentum.saturating_sub(3_500).min(6_500) * 10_000 / 6_500;
+    let excitement = (6 * momentum_x + 4 * offer_aggression as u64) / 10;
+    let tiers = lot_tiers(vault_balance, metrics.total_supply, unit, momentum_x, excitement);
 
     // Step 3 — counts DERIVED from steps 1+2: split total token mass
     // 50/35/15 (big/med/sml), divide by lot size. Floor division only ever
@@ -155,9 +157,9 @@ pub fn handler(ctx: Context<MakeOffers>) -> Result<()> {
 // Step 1 — daily totals as bps of vault, bump-taper over momentum:
 //   below 4500 → 40 · 4500–5500 → 50→200 (ignition) · 6750–7500 → 500
 //   plateau (the 5% ratchet max) · 7500–8500 → taper 500→200 · ≥8500 → 200.
-// Taper past the plateau so euphoria tops get monetized, not dumped into.
-// The plateau ends at 7500 because a clamped wash spike parks momentum at
-// ~7500–8000 for days — spikes land on the taper, genuine runs ride through.
+// The taper past the plateau sells into strength. The plateau ends at 7500
+// because a clamped wash spike parks momentum at ~7500–8000 for days —
+// spikes land on the taper, genuine runs ride through.
 // Cold start (momentum 0 = no price data) → 0: no reliable oracle, no desk.
 fn daily_totals_pct_bps(momentum: u64) -> u64 {
     const PTS: [(i64, i64); 6] = [
@@ -189,7 +191,8 @@ fn daily_totals_pct_bps(momentum: u64) -> u64 {
 // caps the ladder: initial vault ≈ 40% of supply, so the % -of-supply
 // thresholds 30/20/10/4 mirror the sim's 75/50/25/10%-of-initial ceilings
 // 9/7/5/3/1. Excitement E climbs toward the ceiling; spacing widens with
-// momentum (euphoria → whale bait). Ordering sml < med < big always holds.
+// momentum (wider spacing at high momentum serves larger buyers). Ordering
+// sml < med < big always holds.
 //
 // VAULT-SCALE SHIFT (devnet-big fix): the ladder window rides the vault's
 // absolute magnitude so lots stay a meaningful fraction of the sheet on any
@@ -288,7 +291,7 @@ fn cascade_discounts(raw: [i64; 3]) -> [u8; 3] {
     [sml as u8, med as u8, big as u8]
 }
 
-// Tiers listed below this stored discount (20 = 200 bps) are insult noise.
+// Tiers listed at a stored discount below 20 (200 bps) are not worth listing.
 const MIN_LIST_STORED: u8 = 20;
 
 // Step 5 — vesting in whole trading days: base × (0.5 + stake_health/100),
@@ -319,19 +322,5 @@ fn empty_offer() -> Offer {
         remaining: 0,
         total_offered: 0,
     }
-}
-
-#[error_code]
-pub enum ErrorCode {
-    #[msg("Unauthorized caller")]
-    UnauthorizedCaller,
-    #[msg("Invalid market status")]
-    InvalidMarketStatus,
-    #[msg("Invalid market state for offers")]
-    InvalidMarketState,
-    #[msg("Already constructed for this day")]
-    AlreadyConstructed,
-    #[msg("Invalid price oracle")]
-    InvalidOracle,
 }
 

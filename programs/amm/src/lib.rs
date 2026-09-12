@@ -1,4 +1,3 @@
-pub mod constants;
 pub mod error;
 pub mod instructions;
 pub mod state;
@@ -6,7 +5,6 @@ pub mod state;
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::Mint;
 
-pub use constants::*;
 pub use instructions::*;
 pub use state::*;
 
@@ -114,8 +112,6 @@ pub mod amm {
     }
 
     pub fn dex_buyback(ctx: Context<DexBuyback>) -> Result<()> {
-        // executes at start of every trading day
-        // uses 80% of funds made from all last night's claimed offers
         dex_buyback::handler(ctx)
     }
 

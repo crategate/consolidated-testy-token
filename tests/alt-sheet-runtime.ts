@@ -1,7 +1,6 @@
 // Runtime hack: imports run before the validator is up — start it here
 // BEFORE mocha loads the spec, then export the URL for the provider.
-import { startValidator, stopValidator, rpcUrl } from '../tests/alt-sheet-validator';
-
+import { startValidator, stopValidator, rpcUrl, airdrop } from '../tests/alt-sheet-validator';
 let started = false;
 
 export async function ensureValidator(): Promise<void> {
@@ -11,4 +10,4 @@ export async function ensureValidator(): Promise<void> {
     }
 }
 
-export { stopValidator, rpcUrl };
+export { stopValidator, rpcUrl, airdrop };

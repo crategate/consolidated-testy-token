@@ -1,5 +1,7 @@
-use crate::state::offersState::{AcceptedOffers, AmmState, Offer, OfferList};
+use crate::state::offers_state::{AcceptedOffers, AmmState, Offer, OfferList};
 use anchor_lang::prelude::*;
+
+use crate::error::AmmError;
 
 // Fires off at beginning of each trade day.
 
@@ -78,24 +80,24 @@ fn floor_decay_cut(gap: u64, live: u64, keep_pct: u64) -> u64 {
     cut.max(1).min(gap)
 }
 
-pub fn handler(ctx: Context<CalcCompletedOffers>) -> Result<()> {
+pub(crate) fn handler(ctx: Context<CalcCompletedOffers>) -> Result<()> {
     let caller = ctx.accounts.cranker.key();
     require!(
         caller == ctx.accounts.amm_state.authority || caller == ctx.accounts.amm_state.keeper,
-        ErrorCode::UnauthorizedCaller
+        AmmError::UnauthorizedCaller
     );
 
     // MarketStatus layout: disc(8) + current_state(1) + timestamp(8) + trading_day_index(8)
     let market_data = ctx.accounts.market_status.try_borrow_data()?;
-    require!(market_data.len() >= 25, ErrorCode::InvalidMarketStatus);
+    require!(market_data.len() >= 25, AmmError::InvalidMarketStatus);
     let current_state = market_data[8];
     let current_day = u64::from_le_bytes(market_data[17..25].try_into().unwrap());
     // Only record at the start of a trading day (market just opened)
-    require!(current_state == 0, ErrorCode::InvalidMarketState);
+    require!(current_state == 0, AmmError::InvalidMarketState);
     // Once per trading day
     require!(
         ctx.accounts.accepted_offers.day_index != current_day,
-        ErrorCode::AlreadyConstructed
+        AmmError::AlreadyConstructed
     );
     ctx.accounts.accepted_offers.day_index = current_day;
 
@@ -106,7 +108,7 @@ pub fn handler(ctx: Context<CalcCompletedOffers>) -> Result<()> {
     // sheet (L1 inits day_index to u64::MAX), so this correctly errors there.
     require!(
         ctx.accounts.offer_list.day_index == current_day.saturating_sub(1),
-        ErrorCode::StaleOfferSheet
+        AmmError::StaleOfferSheet
     );
 
     let offer_list = &ctx.accounts.offer_list;
@@ -126,31 +128,31 @@ pub fn handler(ctx: Context<CalcCompletedOffers>) -> Result<()> {
     let live_price = {
         let amm_state = &ctx.accounts.amm_state;
         let pinned = amm_state.cpmm_pool_state != Pubkey::default();
-        require!(pinned, ErrorCode::PoolNotPinned);
+        require!(pinned, AmmError::PoolNotPinned);
         let clock = Clock::get()?;
         let pool_state = ctx
             .accounts
             .cpmm_pool_state
             .as_ref()
-            .ok_or(ErrorCode::InvalidPoolAccount)?;
+            .ok_or(AmmError::InvalidPoolAccount)?;
         let observation = ctx
             .accounts
             .cpmm_observation
             .as_ref()
-            .ok_or(ErrorCode::InvalidPoolAccount)?;
+            .ok_or(AmmError::InvalidPoolAccount)?;
         let base_vault = ctx
             .accounts
             .cpmm_output_vault
             .as_ref()
-            .ok_or(ErrorCode::InvalidPoolAccount)?;
+            .ok_or(AmmError::InvalidPoolAccount)?;
         let quote_vault = ctx
             .accounts
             .cpmm_input_vault
             .as_ref()
-            .ok_or(ErrorCode::InvalidPoolAccount)?;
+            .ok_or(AmmError::InvalidPoolAccount)?;
         require!(
             pool_state.key() == amm_state.cpmm_pool_state,
-            ErrorCode::InvalidPoolAccount
+            AmmError::InvalidPoolAccount
         );
         require!(
             observation.key()
@@ -159,7 +161,7 @@ pub fn handler(ctx: Context<CalcCompletedOffers>) -> Result<()> {
                     amm_state.cpmm_pool_state
                 )
                 .0,
-            ErrorCode::InvalidPoolAccount
+            AmmError::InvalidPoolAccount
         );
         require!(
             quote_vault.key()
@@ -169,7 +171,7 @@ pub fn handler(ctx: Context<CalcCompletedOffers>) -> Result<()> {
                     amm_state.usdc_mint
                 )
                 .0,
-            ErrorCode::InvalidPoolAccount
+            AmmError::InvalidPoolAccount
         );
         require!(
             base_vault.key()
@@ -179,7 +181,7 @@ pub fn handler(ctx: Context<CalcCompletedOffers>) -> Result<()> {
                     amm_state.afho_mint
                 )
                 .0,
-            ErrorCode::InvalidPoolAccount
+            AmmError::InvalidPoolAccount
         );
         super::raydium::read_cpmm_price_floor(
             pool_state,
@@ -190,7 +192,7 @@ pub fn handler(ctx: Context<CalcCompletedOffers>) -> Result<()> {
             &amm_state.usdc_mint,
             clock.unix_timestamp as u64,
         )
-        .ok_or(ErrorCode::InvalidOracle)?
+        .ok_or(AmmError::InvalidOracle)?
     };
     let amm_state = &mut ctx.accounts.amm_state;
     let floor = amm_state.highest_buyback_basis;
@@ -305,25 +307,5 @@ fn update_offer_sheet_records(
 
     accepted.sml_offers_accepted.copy_within(1.., 0);
     accepted.sml_offers_accepted[4] = sml_pct;
-}
-
-#[error_code]
-pub enum ErrorCode {
-    #[msg("Unauthorized caller")]
-    UnauthorizedCaller,
-    #[msg("Invalid market status")]
-    InvalidMarketStatus,
-    #[msg("Invalid market state for offers")]
-    InvalidMarketState,
-    #[msg("Already constructed for this day")]
-    AlreadyConstructed,
-    #[msg("Offer sheet is not yesterday's — stale or missing sheet")]
-    StaleOfferSheet,
-    #[msg("Invalid price oracle")]
-    InvalidOracle,
-    #[msg("CPMM pool account mismatch")]
-    InvalidPoolAccount,
-    #[msg("CPMM pool not pinned — run set_cpmm_pool")]
-    PoolNotPinned,
 }
 

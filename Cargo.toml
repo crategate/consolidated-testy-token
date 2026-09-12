@@ -4,6 +4,18 @@ members = [
 ]
 resolver = "2"
 
+# cfg values emitted by proc macros into OUR crates (not declared as cargo
+# features): anchor-lang's `#[program]`/`#[derive(Accounts)]` emit
+# `feature = "anchor-debug"`; solana-program's `entrypoint!` emits
+# `feature = "custom-heap"/"custom-panic"` and `target_os = "solana"`.
+# Declaring them here turns the `unexpected_cfgs` lint from noise into a
+# real check: any NEW unexpected cfg will still warn.
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [
+    'cfg(feature, values("anchor-debug", "custom-heap", "custom-panic"))',
+    'cfg(target_os, values("solana"))',
+] }
+
 [profile.release]
 overflow-checks = true
 opt-level = "s"
@@ -21,6 +33,9 @@ opt-level = "z"
 
 [profile.release.package.staking]
 opt-level = "z"
+
+# Keep the warning surface clean: `cargo check` / `anchor build` must end
+# with zero warnings (see programs/*/Cargo.toml `[lints] workspace = true`).
 
 [profile.release.build-override]
 opt-level = 3

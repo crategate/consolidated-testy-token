@@ -1,5 +1,7 @@
-use crate::state::offersState::AmmState;
+use crate::state::offers_state::AmmState;
 use anchor_lang::prelude::*;
+
+use crate::error::AmmError;
 
 // Pin the Raydium SOL/USDC CPMM pool used to convert SOL bond payments to USDC
 // at claim time (All-USDC route). authority || keeper.
@@ -14,22 +16,16 @@ pub struct SetSolUsdcPool<'info> {
     pub amm_state: Box<Account<'info, AmmState>>,
 }
 
-pub fn handler(ctx: Context<SetSolUsdcPool>, pool_state: Pubkey, amm_config: Pubkey) -> Result<()> {
+pub(crate) fn handler(ctx: Context<SetSolUsdcPool>, pool_state: Pubkey, amm_config: Pubkey) -> Result<()> {
     let caller = ctx.accounts.cranker.key();
     // Authority-only: same rationale as set_cpmm_pool — the SOL/USDC pool
     // decides offer_claim_sol pricing and the bounty top-up route.
     require!(
         caller == ctx.accounts.amm_state.authority,
-        ErrorCode::UnauthorizedCaller
+        AmmError::UnauthorizedCaller
     );
     ctx.accounts.amm_state.cpmm_sol_usdc_pool = pool_state;
     ctx.accounts.amm_state.cpmm_sol_usdc_config = amm_config;
     msg!("SOL/USDC pool pinned: pool {} amm_config {}", pool_state, amm_config);
     Ok(())
-}
-
-#[error_code]
-pub enum ErrorCode {
-    #[msg("Unauthorized caller")]
-    UnauthorizedCaller,
 }

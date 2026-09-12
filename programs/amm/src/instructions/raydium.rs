@@ -512,7 +512,7 @@ pub fn read_cpmm_price_floor(
     if base_raw == 0 {
         return None;
     }
-    Some(u64::try_from(quote_raw as u128 * 1_000_000_000_000u128 / base_raw as u128).ok()?)
+    u64::try_from(quote_raw as u128 * 1_000_000_000_000u128 / base_raw as u128).ok()
 }
 
 /// Unified price reader for the whole AMM: the pinned CPMM pool's TWAP,

@@ -33,8 +33,10 @@
 // desk; proceeds also accumulate into total_usdc_proceeds. Purchased AFHO
 // moves straight into a vesting StakePosition via the same staking CPI.
 
-use crate::state::offersState::{lot_sizer, AmmState, Offer, OfferList};
+use crate::state::offers_state::{lot_sizer, AmmState, Offer, OfferList};
 use anchor_lang::prelude::*;
+
+use crate::error::AmmError;
 use anchor_spl::associated_token::{create_idempotent, AssociatedToken, Create};
 use anchor_spl::token::{sync_native, SyncNative};
 use anchor_spl::token_interface::{
@@ -112,23 +114,23 @@ fn pick_tier(per_lot: u64) -> u8 {
     0
 }
 
-pub fn handler_make(ctx: Context<MakeAltOffers>) -> Result<()> {
+pub(crate) fn handler_make(ctx: Context<MakeAltOffers>) -> Result<()> {
     let amm_state = &ctx.accounts.amm_state;
     let alt_list = &mut ctx.accounts.alt_list;
     let caller = ctx.accounts.cranker.key();
     require!(
         caller == amm_state.authority || caller == amm_state.keeper,
-        ErrorCode::UnauthorizedCaller
+        AmmError::UnauthorizedCaller
     );
 
     // ── Market gate: the alt sheet exists only in the suspended state ──
     // MarketStatus layout: disc(8) + current_state(1) + timestamp(8) +
     // trading_day_index(8) — same raw read as make_offers/offer_claim.
     let market_data = ctx.accounts.market_status.try_borrow_data()?;
-    require!(market_data.len() >= 25, ErrorCode::InvalidMarketStatus);
+    require!(market_data.len() >= 25, AmmError::InvalidMarketStatus);
     let current_state = market_data[8];
     let current_day = u64::from_le_bytes(market_data[17..25].try_into().unwrap());
-    require!(current_state == 3, ErrorCode::InvalidMarketState);
+    require!(current_state == 3, AmmError::InvalidMarketState);
     drop(market_data);
 
     // ── Cooldown: ONE alt sheet per trading day ──
@@ -137,7 +139,7 @@ pub fn handler_make(ctx: Context<MakeAltOffers>) -> Result<()> {
     // cooldown check exactly once.
     let fresh = alt_list.owner == Pubkey::default();
     if !fresh {
-        require!(alt_list.day_index != current_day, ErrorCode::AlreadyPosted);
+        require!(alt_list.day_index != current_day, AmmError::AlreadyPosted);
     }
 
     // ── Sizing: exactly 5% of the bond vault, no scaling, no exceptions ──
@@ -262,48 +264,48 @@ fn quote_alt_claim(
     tier: u8,
     units: u32,
 ) -> Result<AltQuote> {
-    require!(units > 0, ErrorCode::ZeroAmount);
+    require!(units > 0, AmmError::ZeroAmount);
 
     // ── Market gate: active ONLY while the suspended state holds ──
     // MarketStatus layout: disc(8) + current_state(1) + timestamp(8) +
     // trading_day_index(8). Any 3→(0|1|2) transition retires the sheet.
     let market_data = market_status.try_borrow_data()?;
-    require!(market_data.len() >= 25, ErrorCode::InvalidMarketStatus);
+    require!(market_data.len() >= 25, AmmError::InvalidMarketStatus);
     let current_state = market_data[8];
     let current_day = u64::from_le_bytes(market_data[17..25].try_into().unwrap());
     drop(market_data);
-    require!(current_state == 3, ErrorCode::NotActive);
+    require!(current_state == 3, AmmError::NotActive);
 
     // ── Freshness: only the sheet posted this trading day is claimable ──
     require!(
         alt_list.day_index == current_day,
-        ErrorCode::StaleOfferSheet
+        AmmError::StaleOfferSheet
     );
 
     let offer = match tier {
         0 => alt_list.sml_offer,
         1 => alt_list.med_offer,
         2 => alt_list.big_offer,
-        _ => return err!(ErrorCode::InvalidTier),
+        _ => return err!(AmmError::InvalidTier),
     };
-    require!(offer.remaining >= units, ErrorCode::InsufficientOffer);
+    require!(offer.remaining >= units, AmmError::InsufficientOffer);
     let lot_tier = offer.lot_size;
 
     // ── Price: live absolute price minus the fixed tier discount ──
     // discount_bps stored in tenths of a percent (50 = 5.0%) → ×10 = bps.
-    require!(live_price > 0, ErrorCode::InvalidOracle);
+    require!(live_price > 0, AmmError::InvalidOracle);
     let discount_bps = offer.discount_bps as u64 * 10;
     let effective_price = live_price
         .checked_sub(
             live_price
                 .checked_mul(discount_bps)
-                .ok_or(ErrorCode::MathOverflow)?
+                .ok_or(AmmError::MathOverflow)?
                 / 10_000,
         )
-        .ok_or(ErrorCode::MathOverflow)?;
+        .ok_or(AmmError::MathOverflow)?;
     require!(
         effective_price > 0 && effective_price < live_price,
-        ErrorCode::InvalidOracle
+        AmmError::InvalidOracle
     );
 
     // lot_size is a TIER INDEX — translate via lot_sizer to whole tokens,
@@ -311,20 +313,20 @@ fn quote_alt_claim(
     // (price per whole AFHO × 1e9) — identical scaling to offer_claim.
     let unit = 10u64.checked_pow(afho_decimals as u32).unwrap_or(1);
     let total_tokens = lot_sizer(lot_tier) as u64 * units as u64;
-    require!(total_tokens > 0, ErrorCode::InsufficientOffer);
+    require!(total_tokens > 0, AmmError::InsufficientOffer);
     let total_raw = (total_tokens as u128)
         .checked_mul(unit as u128)
-        .ok_or(ErrorCode::MathOverflow)?;
+        .ok_or(AmmError::MathOverflow)?;
     let cost = total_raw
         .checked_mul(effective_price as u128)
-        .ok_or(ErrorCode::MathOverflow)?
+        .ok_or(AmmError::MathOverflow)?
         / 1_000_000_000_000u128;
-    let cost_usdc = u64::try_from(cost).map_err(|_| ErrorCode::MathOverflow)?;
-    require!(cost_usdc > 0, ErrorCode::ZeroAmount);
+    let cost_usdc = u64::try_from(cost).map_err(|_| AmmError::MathOverflow)?;
+    require!(cost_usdc > 0, AmmError::ZeroAmount);
 
     Ok(AltQuote {
         total_tokens,
-        total_raw: u64::try_from(total_raw).map_err(|_| ErrorCode::MathOverflow)?,
+        total_raw: u64::try_from(total_raw).map_err(|_| AmmError::MathOverflow)?,
         cost_usdc,
         vesting_days: offer.vesting_days,
         effective_price,
@@ -427,11 +429,11 @@ pub struct AltOfferClaim<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler_claim(ctx: Context<AltOfferClaim>, tier: u8, units: u32, index: u64) -> Result<()> {
+pub(crate) fn handler_claim(ctx: Context<AltOfferClaim>, tier: u8, units: u32, index: u64) -> Result<()> {
     let clock = Clock::get()?;
     let amm_state = &ctx.accounts.amm_state;
     let pinned = amm_state.cpmm_pool_state != Pubkey::default();
-    require!(pinned, ErrorCode::PoolNotPinned);
+    require!(pinned, AmmError::PoolNotPinned);
     super::offer_claim::require_pinned_pricing_accounts(
         amm_state.cpmm_program,
         amm_state.cpmm_pool_state,
@@ -451,7 +453,7 @@ pub fn handler_claim(ctx: Context<AltOfferClaim>, tier: u8, units: u32, index: u
         &ctx.accounts.usdc_mint.key(),
         clock.unix_timestamp as u64,
     )
-    .ok_or(ErrorCode::InvalidOracle)?;
+    .ok_or(AmmError::InvalidOracle)?;
 
     let q = quote_alt_claim(
         &ctx.accounts.market_status,
@@ -662,7 +664,7 @@ pub struct AltOfferClaimSol<'info> {
     pub cpmm_output_vault: Option<AccountInfo<'info>>,
 }
 
-pub fn handler_claim_sol(
+pub(crate) fn handler_claim_sol(
     ctx: Context<AltOfferClaimSol>,
     tier: u8,
     units: u32,
@@ -678,8 +680,8 @@ pub fn handler_claim_sol(
 
     // Both pools are REQUIRED: the AFHO/USDC pool prices the bond, the
     // SOL/USDC pool prices + executes the lamports conversion. No stubs.
-    require!(pinned, ErrorCode::PoolNotPinned);
-    require!(sol_pinned, ErrorCode::PoolNotPinned);
+    require!(pinned, AmmError::PoolNotPinned);
+    require!(sol_pinned, AmmError::PoolNotPinned);
 
     // AFHO/USDC spot-price accounts.
     super::offer_claim::require_pinned_pricing_accounts(
@@ -707,7 +709,7 @@ pub fn handler_claim_sol(
             &ctx.accounts.sol_usdc_observation.to_account_info(),
             &ctx.accounts.sol_usdc_authority.to_account_info(),
         ),
-        ErrorCode::InvalidPoolAccount
+        AmmError::InvalidPoolAccount
     );
 
     let live_price = super::raydium::read_cpmm_price_floor(
@@ -719,7 +721,7 @@ pub fn handler_claim_sol(
         &ctx.accounts.usdc_mint.key(),
         clock.unix_timestamp as u64,
     )
-    .ok_or(ErrorCode::InvalidOracle)?;
+    .ok_or(AmmError::InvalidOracle)?;
 
     let q = quote_alt_claim(
         &ctx.accounts.market_status,
@@ -744,22 +746,22 @@ pub fn handler_claim_sol(
         &ctx.accounts.usdc_mint.key(),
         clock.unix_timestamp as u64,
     )
-    .ok_or(ErrorCode::InvalidOracle)?;
-    require!(sol_price > 0, ErrorCode::InvalidOracle);
+    .ok_or(AmmError::InvalidOracle)?;
+    require!(sol_price > 0, AmmError::InvalidOracle);
     let pool_wsol =
         super::raydium::token_account_amount(&ctx.accounts.sol_usdc_input_vault.to_account_info())
-            .ok_or(ErrorCode::InvalidOracle)?;
+            .ok_or(AmmError::InvalidOracle)?;
     let pool_usdc =
         super::raydium::token_account_amount(&ctx.accounts.sol_usdc_output_vault.to_account_info())
-            .ok_or(ErrorCode::InvalidOracle)?;
+            .ok_or(AmmError::InvalidOracle)?;
     let lamports = super::raydium::cpmm_swap_input_for_out(
         pool_wsol,
         pool_usdc,
         q.cost_usdc,
         SOL_POOL_TRADE_FEE_BPS,
     )
-    .ok_or(ErrorCode::InsufficientPoolLiquidity)?;
-    require!(lamports > 0, ErrorCode::ZeroAmount);
+    .ok_or(AmmError::InsufficientPoolLiquidity)?;
+    require!(lamports > 0, AmmError::ZeroAmount);
 
     // ── 0. Ensure the wSOL ATA exists (bounty_top_up closes it after
     //       unwrapping; recreated here idempotently). ──
@@ -852,7 +854,7 @@ pub fn handler_claim_sol(
     // balance. Fail closed instead.
     ctx.accounts.usdc_vault.reload()?;
     let usdc_got = ctx.accounts.usdc_vault.amount.saturating_sub(usdc_before);
-    require!(usdc_got >= q.cost_usdc, ErrorCode::InsufficientSwapOutput);
+    require!(usdc_got >= q.cost_usdc, AmmError::InsufficientSwapOutput);
 
     // ── 3. 80/10/10 split of the USDC (rounding favors the buyback vault;
     //       the buyback share simply stays in usdc_vault) ──
@@ -926,38 +928,3 @@ pub fn handler_claim_sol(
 
 // Error enum — this module is appended LAST in instructions/mod.rs so the
 // code numbers below extend (never shift) the program's existing codes.
-#[error_code]
-pub enum ErrorCode {
-    #[msg("Unauthorized caller")]
-    UnauthorizedCaller,
-    #[msg("Invalid market status")]
-    InvalidMarketStatus,
-    #[msg("Alt sheet requires the suspended market state")]
-    InvalidMarketState,
-    #[msg("Alt sheet already posted for this trading day")]
-    AlreadyPosted,
-    #[msg("Alt desk is not active")]
-    NotActive,
-    #[msg("Alt sheet is stale (not today's sheet)")]
-    StaleOfferSheet,
-    #[msg("Invalid tier")]
-    InvalidTier,
-    #[msg("Insufficient offer remaining")]
-    InsufficientOffer,
-    #[msg("Zero amount")]
-    ZeroAmount,
-    #[msg("Invalid price oracle")]
-    InvalidOracle,
-    #[msg("Position index does not match the staking user_index")]
-    InvalidUserIndex,
-    #[msg("Math overflow")]
-    MathOverflow,
-    #[msg("CPMM pool account mismatch")]
-    InvalidPoolAccount,
-    #[msg("CPMM pool not pinned — run set_cpmm_pool / set_sol_usdc_pool")]
-    PoolNotPinned,
-    #[msg("SOL leg swap did not net the full USDC cost")]
-    InsufficientSwapOutput,
-    #[msg("SOL/USDC pool cannot serve this claim cost")]
-    InsufficientPoolLiquidity,
-}

@@ -13,8 +13,10 @@
 // If there are no stakers, the funds stay in the holding vaults and roll into
 // the next day (the staking program would reject the deposit anyway).
 
-use crate::state::offersState::AmmState;
+use crate::state::offers_state::AmmState;
 use anchor_lang::prelude::*;
+
+use crate::error::AmmError;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
 use super::dex_buyback::{execute_swap, ratchet_within_band, SwapInfos, MAX_SLIPPAGE_BPS};
@@ -82,7 +84,7 @@ pub struct DistributeStakerRewards<'info> {
     pub token_2022_program: Interface<'info, TokenInterface>,
 }
 
-pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
+pub(crate) fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
     // AccountInfo clones for the swap adapter, collected before amm_state is
     // mutably borrowed (same pattern as dex_buyback). The vault slots hold
     // the staker-rewards HOLDING vaults here (not the buyback vaults).
@@ -106,13 +108,13 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
     let caller = ctx.accounts.cranker.key();
     require!(
         caller == amm_state.authority || caller == amm_state.keeper,
-        ErrorCode::UnauthorizedCaller
+        AmmError::UnauthorizedCaller
     );
 
     // The CPMM pool is the only swap venue: hard-error when unpinned.
     require!(
         amm_state.cpmm_pool_state != Pubkey::default(),
-        ErrorCode::PoolNotPinned
+        AmmError::PoolNotPinned
     );
     // H1 re-pin: the swap/pricing accounts must be the pool's own derived
     // PDAs.
@@ -130,20 +132,20 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
             &ctx.accounts.cpmm_observation.to_account_info(),
             &ctx.accounts.cpmm_authority.to_account_info(),
         ),
-        ErrorCode::InvalidPoolAccount
+        AmmError::InvalidPoolAccount
     );
 
     // MarketStatus layout: disc(8) + current_state(1) + timestamp(8) + trading_day_index(8)
     let market_data = ctx.accounts.market_status.try_borrow_data()?;
-    require!(market_data.len() >= 25, ErrorCode::InvalidMarketStatus);
+    require!(market_data.len() >= 25, AmmError::InvalidMarketStatus);
     let current_state = market_data[8];
     let current_day = u64::from_le_bytes(market_data[17..25].try_into().unwrap());
     // Distribute at the start of the trading day (market open).
-    require!(current_state == 0, ErrorCode::InvalidMarketState);
+    require!(current_state == 0, AmmError::MarketNotOpen);
     // Once per trading day.
     require!(
         amm_state.rewards_day_index != current_day,
-        ErrorCode::AlreadyDistributed
+        AmmError::AlreadyDistributed
     );
 
     let usdc_in = ctx.accounts.usdc_rewards.amount;
@@ -175,7 +177,7 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
             &ctx.accounts.usdc_mint.key(),
             clock.unix_timestamp as u64,
         )
-        .ok_or(ErrorCode::InvalidOracle)?;
+        .ok_or(AmmError::InvalidOracle)?;
         let before = ctx.accounts.afho_vault.amount;
         // Reserves-preview min-out (see dex_buyback): the TWAP-anchored floor
         // fails into a climbing pool; the pool's own vaults are the truth.
@@ -215,7 +217,7 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
         total_out = total_out.saturating_add(out);
     }
 
-    require!(total_out > 0, ErrorCode::SwapReturnedNothing);
+    require!(total_out > 0, AmmError::SwapReturnedNothing);
     amm_state.rewards_day_index = current_day;
 
     // ── Deposit the AFHO into the staking reward vault ──
@@ -243,24 +245,4 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
         total_out
     );
     Ok(())
-}
-
-#[error_code]
-pub enum ErrorCode {
-    #[msg("Unauthorized caller")]
-    UnauthorizedCaller,
-    #[msg("Invalid market status")]
-    InvalidMarketStatus,
-    #[msg("Market is not open")]
-    InvalidMarketState,
-    #[msg("Already distributed for this day")]
-    AlreadyDistributed,
-    #[msg("Swap returned nothing")]
-    SwapReturnedNothing,
-    #[msg("Invalid SOL price oracle")]
-    InvalidOracle,
-    #[msg("CPMM pool account mismatch")]
-    InvalidPoolAccount,
-    #[msg("CPMM pool not pinned — run set_cpmm_pool")]
-    PoolNotPinned,
 }

@@ -41,79 +41,6 @@
     }
 }
 
-/* Broken-neon flicker: intermittent, unpredictable */
-@keyframes neonFlicker {
-
-    0%,
-    6.4%,
-    32%,
-    58%,
-    79.6%,
-    100% {
-        opacity: 0;
-        transform: translate(0);
-    }
-
-    4% {
-        opacity: 0.26;
-        transform: translate(0, 1px);
-        box-shadow:
-            0 0 3px var(--neon-cyan),
-            0 0 8px rgba(0, 240, 255, 0.88),
-            1px 0 3px var(--neon-pink);
-    }
-
-    5.4% {
-        opacity: 0.16;
-        transform: translate(-1px, 0);
-        box-shadow:
-            0 0 2px var(--neon-purple),
-            -0.5px 0 3px var(--neon-green);
-    }
-
-    29% {
-        opacity: 0.74;
-        transform: translate(1px, 0);
-        box-shadow:
-            0 0 4px var(--neon-cyan),
-            0 0 14px rgba(0, 240, 255, 0.86),
-            -1px 0 3px var(--neon-pink);
-    }
-
-    30.8% {
-        opacity: 0.5;
-        transform: translate(0);
-        box-shadow:
-            0 0 2px var(--neon-pink),
-            0 0 8px rgba(255, 42, 109, 0.18);
-    }
-
-    57% {
-        opacity: 0.44;
-        transform: translate(-1px, -1px);
-        box-shadow:
-            0 0 2px var(--neon-purple),
-            0.5px 0 3px var(--neon-green);
-    }
-
-    76% {
-        opacity: 0.46;
-        transform: translate(0, 1px);
-        box-shadow:
-            0 0 4px var(--neon-cyan),
-            0 0 12px rgba(0, 240, 255, 0.24),
-            1px 0 3px var(--neon-pink);
-    }
-
-    78.2% {
-        opacity: 0.88;
-        transform: translate(0);
-        box-shadow:
-            0 0 2px var(--neon-pink),
-            -0.5px 0 3px var(--neon-purple);
-    }
-}
-
 /* Slow wandering glitch — the nyseh wallet-pane flicker, slowed way down:
    two brief tick-pairs per cycle at irregular intervals, dark the rest of
    the time. Slow and unpredictable by design: no constant pulse, no
@@ -159,94 +86,6 @@
     56.4% {
         opacity: 0.1;
         transform: translate(0);
-    }
-}
-
-/* Faster, more erratic when the wallet is connected */
-@keyframes neonFlickerFast {
-
-    0%,
-    10%,
-    27%,
-    44%,
-    61.5%,
-    75%,
-    92.5%,
-    100% {
-        opacity: 0.05;
-        transform: translate(0);
-    }
-
-    7% {
-        opacity: 0.28;
-        transform: translate(1px, 0);
-        box-shadow:
-            0 0 3px var(--neon-cyan),
-            0 0 10px rgba(0, 240, 255, 0.2),
-            1px 0 3px var(--neon-pink);
-    }
-
-    8.6% {
-        opacity: 0.2;
-        transform: translate(-1px, 1px);
-        box-shadow:
-            0 0 2px var(--neon-purple),
-            -1px 0 3px var(--neon-pink);
-    }
-
-    24% {
-        opacity: 0.34;
-        transform: translate(0, -1px);
-        box-shadow:
-            0 0 5px var(--neon-cyan),
-            0 0 16px rgba(0, 240, 255, 0.16),
-            -1px 0 4px var(--neon-pink);
-    }
-
-    25.6% {
-        opacity: 0.16;
-        transform: translate(0);
-        box-shadow:
-            0 0 2px var(--neon-green),
-            0 0 8px rgba(5, 255, 161, 0.14);
-    }
-
-    41% {
-        opacity: 0.24;
-        transform: translate(-1px, 0);
-        box-shadow:
-            0 0 3px var(--neon-pink),
-            0 0 10px rgba(255, 42, 109, 0.16);
-    }
-
-    59% {
-        opacity: 0.38;
-        transform: translate(1px, 1px);
-        box-shadow:
-            0 0 6px var(--neon-cyan),
-            0 0 18px rgba(0, 240, 255, 0.18),
-            1px 0 4px var(--neon-pink);
-    }
-
-    60.5% {
-        opacity: 0.2;
-        transform: translate(0);
-    }
-
-    72% {
-        opacity: 0.27;
-        transform: translate(-1px, -1px);
-        box-shadow:
-            0 0 3px var(--neon-purple),
-            0 0 12px rgba(211, 0, 249, 0.14);
-    }
-
-    90% {
-        opacity: 0.3;
-        transform: translate(0, 1px);
-        box-shadow:
-            0 0 4px var(--neon-cyan),
-            0 0 12px rgba(0, 240, 255, 0.16);
     }
 }
 
@@ -438,43 +277,6 @@
             0 0 5px rgba(240, 238, 245, 0.6),
             0 0 14px rgba(0, 240, 255, 0.2);
         transform: translate(0, -1px);
-    }
-}
-
-@keyframes neonFlickerRose {
-
-    0%,
-    72%,
-    81.5%,
-    100% {
-        opacity: 0;
-        transform: translate(0);
-    }
-
-    73% {
-        opacity: 0.6;
-        box-shadow:
-            0 0 4px var(--neon-pink),
-            0 0 12px rgba(255, 42, 109, 0.35),
-            2px 0 4px var(--neon-amber);
-        transform: translate(-1px, -1px);
-    }
-
-    75.4% {
-        opacity: 0.2;
-        box-shadow:
-            0 0 2px var(--neon-amber),
-            -1px 0 4px rgba(255, 170, 0, 0.32);
-        transform: translate(1px, 0);
-    }
-
-    78.2% {
-        opacity: 0.75;
-        box-shadow:
-            0 0 6px var(--neon-pink),
-            0 0 16px rgba(255, 42, 109, 0.26),
-            -1px 0 4px var(--neon-amber);
-        transform: translate(0, 1px);
     }
 }
 
@@ -766,33 +568,6 @@
     }
 }
 
-/* ─── Border utility classes ─── */
-
-.neon-border {
-    position: relative;
-    border: 1px solid var(--border-subtle);
-    transition: border-color 0.3s ease, box-shadow 0.3s ease;
-}
-
-.neon-border::before {
-    content: '';
-    position: absolute;
-    inset: -1px;
-    border-radius: inherit;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-    box-shadow:
-        0 0 2px var(--neon-cyan),
-        0 0 8px rgba(0, 240, 255, 0.15),
-        inset 0 0 2px rgba(0, 240, 255, 0.05);
-}
-
-.neon-border:hover::before,
-.neon-border:focus-within::before {
-    opacity: 1;
-}
-
 /* Glitch border — the base flicker applied via ::before */
 .neon-glitch {
     position: relative;
@@ -854,12 +629,6 @@
     animation-name: neonFlickerGhost;
 }
 
-.neon-glitch.glitch-buzz::before,
-.app-shell[data-connected='true'] .neon-glitch.glitch-buzz::before,
-.amm-page-shell[data-connected='true'] .neon-glitch.glitch-buzz::before {
-    animation-name: neonBuzz;
-}
-
 .neon-glitch.glitch-shift::before,
 .app-shell[data-connected='true'] .neon-glitch.glitch-shift::before,
 .amm-page-shell[data-connected='true'] .neon-glitch.glitch-shift::before {
@@ -877,12 +646,6 @@
 .app-shell[data-connected='true'] .neon-glitch.glitch-double::before,
 .amm-page-shell[data-connected='true'] .neon-glitch.glitch-double::before {
     animation-name: neonPulseTwo;
-}
-
-.neon-glitch.glitch-broken::before,
-.app-shell[data-connected='true'] .neon-glitch.glitch-broken::before,
-.amm-page-shell[data-connected='true'] .neon-glitch.glitch-broken::before {
-    animation-name: neonFlickerBroken;
 }
 
 /* ─── Dividers & section separators ───

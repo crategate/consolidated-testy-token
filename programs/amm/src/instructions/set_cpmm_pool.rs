@@ -1,5 +1,7 @@
-use crate::state::offersState::AmmState;
+use crate::state::offers_state::AmmState;
 use anchor_lang::prelude::*;
+
+use crate::error::AmmError;
 
 // Pin the Raydium CPMM pool the swap adapter routes through. authority || keeper
 // (same gate as the other crank-fired instructions); the pool only becomes real
@@ -15,7 +17,7 @@ pub struct SetCpmmPool<'info> {
     pub amm_state: Box<Account<'info, AmmState>>,
 }
 
-pub fn handler(
+pub(crate) fn handler(
     ctx: Context<SetCpmmPool>,
     cpmm_program: Pubkey,
     pool_state: Pubkey,
@@ -26,7 +28,7 @@ pub fn handler(
     // hot-wallet keeper must not be able to re-pin it to a pool it controls.
     require!(
         caller == ctx.accounts.amm_state.authority,
-        ErrorCode::UnauthorizedCaller
+        AmmError::UnauthorizedCaller
     );
     ctx.accounts.amm_state.cpmm_program = cpmm_program;
     ctx.accounts.amm_state.cpmm_pool_state = pool_state;
@@ -38,10 +40,4 @@ pub fn handler(
         amm_config
     );
     Ok(())
-}
-
-#[error_code]
-pub enum ErrorCode {
-    #[msg("Unauthorized caller")]
-    UnauthorizedCaller,
 }
