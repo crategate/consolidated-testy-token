@@ -637,11 +637,28 @@ async function main() {
                         0,
                         Math.floor(Date.now() / 1000) - Number(bn(statusNow.lastUpdatedTimestamp))
                     );
-                    const bbWeight = bbElapsed < 3600 ? 150n : 500n;
                     const slotNow = BigInt(await connection.getSlot());
                     const bbX =
                         slotNow ^ (bn(statusNow.tradingDayIndex) << 16n) ^ bn(ammState.bbSliceCount);
-                    const bbFactor = 5000n + (bbX % 10001n);
+                    // Mirror the on-chain per-day hour-1 target (30–60%) and
+                    // its derived per-slice weight; the tail keeps the
+                    // 0.5x–1.5x spread.
+                    let bbWeight: bigint;
+                    let bbFactor: bigint;
+                    if (bbElapsed < 3600) {
+                        const mintBytes = afhoMint.toBytes();
+                        const daySeed =
+                            ((bn(statusNow.tradingDayIndex) * 0x9e37_79b9_7f4a_7c15n) &
+                                0xffff_ffff_ffff_ffffn) ^
+                            (BigInt(mintBytes[0]) << 56n) ^
+                            (BigInt(mintBytes[31]) << 32n);
+                        const hour1TargetBps = 3000n + (mix64(daySeed) % 3001n);
+                        bbWeight = firstHourSliceWeightBps(hour1TargetBps);
+                        bbFactor = 10000n;
+                    } else {
+                        bbWeight = 500n;
+                        bbFactor = 5000n + (bbX % 10001n);
+                    }
                     const estSlice = (bbSpendable * bbWeight * bbFactor) / 100_000_000n;
                     const estSliceCapped = estSlice > bbSpendable ? bbSpendable : estSlice;
                     const pacingLeft =
@@ -988,6 +1005,28 @@ async function main() {
 
 function sleep(ms: number) {
     return new Promise((r) => setTimeout(r, ms));
+}
+
+// Mirror of dex_buyback.rs's per-day hour-1 target → per-slice weight
+// conversion (first_hour_slice_weight_bps). Est-slice logging only.
+function mix64(x: bigint): bigint {
+    let h = x & 0xffff_ffff_ffff_ffffn;
+    h ^= h >> 29n;
+    h = (h * 0xbf58_476d_1ce4_e5b9n) & 0xffff_ffff_ffff_ffffn;
+    h ^= h >> 32n;
+    return h;
+}
+
+function firstHourSliceWeightBps(hour1TargetBps: bigint): bigint {
+    // -ln(1-F) scaled by 1e12, F = hour1TargetBps / 10_000.
+    const f = hour1TargetBps;
+    let term = f * 100_000_000n; // F × 1e12
+    let ln = 0n;
+    for (let k = 1n; k <= 8n && term > 0n; k += 1n) {
+        ln += term / k;
+        term = (term * f) / 10_000n;
+    }
+    return (ln * 10_000n) / (60n * 1_000_000_000_000n);
 }
 
 // ── Slot-time assumption watch ─────────────────────────────────────────────

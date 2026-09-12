@@ -34,12 +34,15 @@ pub(crate) const SLICE_INTERVAL_MS: u64 = 60_000;
 // Minimum slots between slices — pacing so one crank burst can't drain the
 // day's budget in a single block.
 const MIN_SLICE_SLOTS: u64 = SLICE_INTERVAL_MS / NOMINAL_SLOT_MS;
-// Slice weights: 1.5% of remaining budget during the first hour after open,
-// 5% after. With ~1 slice/min the hour-1 spend is 1 - (1 - 0.015)^n: with
-// n ≈ 36-60 first-hour slices (slot-time dependent) that lands ~40-60% of the
-// day's budget (the vault snapshot) in the first hour, ~50% at ~0.5s slots;
-// the 5% tail spends the rest by close.
-const FIRST_HOUR_WEIGHT_BPS: u64 = 150;
+// Slice sizing. The first hour's "lion's share" is a per-day pseudo-random
+// target drawn 30%..60% of the day's budget (the vault snapshot), converted to
+// a per-slice compounding weight via first_hour_slice_weight_bps() so that the
+// ~60 first-hour slices at the nominal 200ms slot pacing (SLICE_INTERVAL_MS =
+// 60_000ms) land on that target. It is NOT gated on fills and does not scale to
+// vault size or price — any balance gets spent on any trading day. The tail
+// slices 5% of the remaining budget each time, which drains the rest well
+// before close. (Slot-time drift applies as documented above: a slower chain
+// spends a little less than the target in hour 1, a faster chain a little more.)
 const TAIL_WEIGHT_BPS: u64 = 500;
 
 // M3 — per-fill sanity band vs the spot oracle: a fill whose exec price
@@ -47,6 +50,29 @@ const TAIL_WEIGHT_BPS: u64 = 500;
 // back with it), and the floor ratchets only inside the band — a price spike
 // into a fill can't pin the offer-desk floor above market.
 pub(crate) const MAX_SLIPPAGE_BPS: u64 = 500; // 5%
+
+/// Convert a day's hour-1 spend target (basis points of the day's budget,
+/// 3000..=6000 → 30%..60%) into the per-slice compounding weight (also bps,
+/// where `slice = remaining × weight_bps / 10_000`) that spends ~that share
+/// over the ~60 first-hour slices at the nominal 200ms slot pacing
+/// (SLICE_INTERVAL_MS = 60_000ms). w ≈ -ln(1-F)/60 is exact to <1% for
+/// F ≤ 60% because w stays small; the Mercator series is summed in fixed
+/// point to avoid floats in the SBF build.
+fn first_hour_slice_weight_bps(hour1_target_bps: u64) -> u64 {
+    let f = hour1_target_bps as u128; // F × 10_000
+    // -ln(1-F) scaled by 1e12. term_k = F^k/k × 1e12, advanced as
+    // term_{k+1} = term_k × F (F = f/10_000).
+    let mut term = f * 100_000_000u128; // F × 1e12 (term 1)
+    let mut ln = 0u128;
+    let mut k = 1u128;
+    while k <= 8 && term > 0 {
+        ln += term / k;
+        term = term * f / 10_000u128;
+        k += 1;
+    }
+    // weight_bps = (-ln(1-F)) × 10_000 / 60.
+    (ln * 10_000u128 / (60u128 * 1_000_000_000_000u128)) as u64
+}
 
 #[derive(Accounts)]
 pub struct DexBuyback<'info> {
@@ -63,7 +89,8 @@ pub struct DexBuyback<'info> {
     )]
     pub market_status: UncheckedAccount<'info>,
 
-    /// Fill evidence: buybacks only run on days after offers were taken.
+    /// Retained for IDL/keeper compatibility — buybacks no longer gate on
+    /// fill evidence (any balance is spent every trading day).
     #[account(seeds = [b"accepted_offers", amm_state.afho_mint.as_ref()], bump)]
     pub accepted_offers: Box<Account<'info, AcceptedOffers>>,
 
@@ -184,15 +211,10 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
     let current_state = market_data[8];
     let open_ts = i64::from_le_bytes(market_data[9..17].try_into().unwrap());
     let current_day = u64::from_le_bytes(market_data[17..25].try_into().unwrap());
-    // Buybacks only execute while the market is OPEN.
+    // Buybacks only execute while the market is OPEN. Fills are deliberately
+    // NOT a gate: any balance in the buyback vault is spent on any trading day,
+    // whether or not yesterday's offers were taken.
     require!(current_state == 0, ErrorCode::InvalidMarketState);
-    // ...and only when offers were actually taken while it was closed
-    // (yesterday's fill %, any tier — written by calc_completed_offers).
-    let accepted = &ctx.accounts.accepted_offers;
-    let had_fills = accepted.sml_offers_accepted[4] > 0
-        || accepted.med_offers_accepted[4] > 0
-        || accepted.big_offers_accepted[4] > 0;
-    require!(had_fills, ErrorCode::NoFillsToBuyBack);
 
     let clock = Clock::get()?;
 
@@ -219,17 +241,33 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
         return Ok(());
     }
 
-    // Slice size: front-loaded weight × pseudo-random factor 0.5x–1.5x derived
-    // from slot/day/slice (no on-chain RNG; good enough for spread, not for
-    // adversarial unpredictability).
+    // Slice size. The first hour targets a per-day pseudo-random share of the
+    // budget (30%..60%, drawn from the day index + mint so a mid-hour keeper
+    // restart can't change it), converted to a per-slice compounding weight;
+    // the tail slices a flat 5% of the remainder with a 0.5x–1.5x spread so
+    // individual tail sizes aren't a fixed ladder.
     let elapsed = (clock.unix_timestamp - open_ts).max(0) as u64;
     let weight_bps = if elapsed < 3_600 {
-        FIRST_HOUR_WEIGHT_BPS
+        let mut day_seed = current_day
+            .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            ^ ((amm_state.afho_mint.to_bytes()[0] as u64) << 56)
+            ^ ((amm_state.afho_mint.to_bytes()[31] as u64) << 32);
+        day_seed ^= day_seed >> 29;
+        day_seed = day_seed.wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        day_seed ^= day_seed >> 32;
+        let hour1_target_bps = 3_000 + (day_seed % 3_001); // 30%..=60%
+        first_hour_slice_weight_bps(hour1_target_bps)
     } else {
         TAIL_WEIGHT_BPS
     };
     let x = clock.slot ^ (current_day << 16) ^ amm_state.bb_slice_count as u64;
-    let factor_bps = 5_000 + (x % 10_001);
+    // Hour-1 slices use the exact target weight (factor 1.0) so the 30–60%
+    // bound holds; tail slices get the 0.5x–1.5x spread.
+    let factor_bps = if elapsed < 3_600 {
+        10_000
+    } else {
+        5_000 + (x % 10_001)
+    };
 
     let mint_key = amm_state.afho_mint;
     let state_bump = amm_state.bump;
