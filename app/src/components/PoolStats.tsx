@@ -30,15 +30,16 @@ export function PoolStats({ mint }: PoolStatsProps) {
         return <div className="pool-stats loading">Loading on-chain stats…</div>;
     }
 
-    const pctStaked = stats.totalSupply > 0
-        ? ((stats.totalStaked / stats.totalSupply) * 100).toFixed(2)
+    const availableSupply = stats.totalSupply - (vaultBalance ?? 0);
+    const pctStaked = availableSupply > 0
+        ? ((stats.totalStaked / availableSupply) * 100).toFixed(2)
         : '0.00';
 
     const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 
     const STAT_ITEMS = [
         { label: 'Total Staked', value: fmt(Math.trunc(stats.totalStaked)) },
-        { label: 'Staked / Supply', value: `${pctStaked}%` },
+        { label: 'Staked / available', value: `${pctStaked}%` },
         { label: 'Stakers', value: stats.userCount.toString() },
         { label: 'Bond Desk Vault', value: vaultBalance !== null ? fmt(Math.trunc(vaultBalance)) : '—' },
         { label: 'Total Supply', value: `1B` },

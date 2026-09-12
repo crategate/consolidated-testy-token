@@ -137,6 +137,11 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
                 >
                     {!claimsOpen ? 'Claim Available After Opening Bell' : claimLoading ? 'Collecting…' : 'Collect All Claims'}
                 </button>
+                <span className="grand-total">
+                    Total rewards
+                    <br />
+                    available: <strong>{grandTotalDisplay} AFHO</strong>
+                </span>
                 <button
                     className="exit-all-button"
                     onClick={() => setConfirmingExitAll(true)}
@@ -144,9 +149,6 @@ export function Positions({ mint, marketStatusPda }: PositionsProps) {
                 >
                     Exit All Positions
                 </button>
-                <span className="grand-total">
-                    Total available: <strong>{grandTotalDisplay} AFHO</strong>
-                </span>
                 {vestingCount > 0 && vestingTotal > 0 && (
                     <span className="vesting-note">
                         +{vestingTotal.toFixed(4)} AFHO locked in vesting bond positions — becomes claimable at end of vesting

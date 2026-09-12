@@ -18,11 +18,9 @@ pub mod amm {
 
     pub fn initialize_amm(
         ctx: Context<InitializeAmm>,
-        spot_oracle: Pubkey,
         staking_pool: Pubkey,
-        sol_oracle: Pubkey,
     ) -> Result<()> {
-        initialize::handler(ctx, spot_oracle, staking_pool, sol_oracle)
+        initialize::handler(ctx, staking_pool)
     }
 
     pub fn make_offers(ctx: Context<MakeOffers>) -> Result<()> {

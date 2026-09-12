@@ -80,7 +80,6 @@ pub struct DistributeStakerRewards<'info> {
     pub token_program: Interface<'info, TokenInterface>,
     /// Token-2022 (AFHO out-leg + staking deposit)
     pub token_2022_program: Interface<'info, TokenInterface>,
-    pub system_program: Program<'info, System>,
 }
 
 pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
@@ -95,7 +94,6 @@ pub fn handler(ctx: Context<DistributeStakerRewards>) -> Result<()> {
         usdc_mint: ctx.accounts.usdc_mint.to_account_info(),
         token_program: ctx.accounts.token_program.to_account_info(),
         token_2022_program: ctx.accounts.token_2022_program.to_account_info(),
-        system_program: ctx.accounts.system_program.to_account_info(),
         cpmm_pool_state: ctx.accounts.cpmm_pool_state.to_account_info(),
         cpmm_amm_config: ctx.accounts.cpmm_amm_config.to_account_info(),
         cpmm_input_vault: ctx.accounts.cpmm_input_vault.to_account_info(),

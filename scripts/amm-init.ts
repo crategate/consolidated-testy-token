@@ -82,14 +82,6 @@ async function main() {
     ).publicKey;
     console.log(" Crank oracle:", CRANK_PROGRAM_ID.toBase58());
 
-    // ── 3b. DEX program slot (§4: legacy state field, no longer read) ──
-    // AmmState.dex_program used to hold the mock-dex-pool program id; every
-    // swap/pricing path now requires the pinned Raydium CPMM pool instead.
-    // The field is dead but still written at init — pass the default pubkey
-    // until the §4 state-field cleanup removes it.
-    const DEX_PROGRAM_ID = PublicKey.default;
-    console.log(" DEX program slot: default (legacy field — unused)");
-
     // ── 3c. Staking program + pool (offer_claim CPIs into it; run pool-init first) ──
     const stakingKeyPath = path.join(
         process.cwd(), "target", "deploy", "staking-keypair.json"
@@ -109,10 +101,6 @@ async function main() {
     );
     const [offerListPda] = PublicKey.findProgramAddressSync(
         [Buffer.from("offer_list"), AFHO_MINT.toBuffer()],
-        AMM_PROGRAM_ID
-    );
-    const [solVaultPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("amm_sol_vault"), AFHO_MINT.toBuffer()],
         AMM_PROGRAM_ID
     );
     const usdcVaultAta = getAssociatedTokenAddressSync(
@@ -136,15 +124,6 @@ async function main() {
     );
     const [usdcRewardsPda] = PublicKey.findProgramAddressSync(
         [Buffer.from("amm_usdc_rewards"), AFHO_MINT.toBuffer()],
-        AMM_PROGRAM_ID
-    );
-    // Legacy oracle slots (§4: dead state fields, no longer read anywhere).
-    // initializeAmm still stores them; default pubkeys until the cleanup.
-    const spotOraclePda = PublicKey.default;
-    const solOraclePda = PublicKey.default;
-    // Holding PDA for the stakers' 10% share of SOL claim proceeds
-    const [solRewardsPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("amm_sol_rewards"), AFHO_MINT.toBuffer()],
         AMM_PROGRAM_ID
     );
     // Staking pool PDA (seeds [b"pool", mint] under the staking program)
@@ -221,14 +200,6 @@ async function main() {
         });
     }
 
-    const [solDipPda] = PublicKey.findProgramAddressSync(
-        [
-            Buffer.from("amm_sol_dip"),
-            AFHO_MINT.toBuffer()
-        ],
-        AMM_PROGRAM_ID
-    );
-
     const [acceptedOffersPda] = PublicKey.findProgramAddressSync(
         [
             Buffer.from("accepted_offers"),
@@ -248,36 +219,21 @@ async function main() {
         CRANK_PROGRAM_ID
     );
 
-    // Canonical Switchboard quote account ([market_status, price] feeds) — run feed-deploy first
-    const deploymentPath = path.join(process.cwd(), "app", "public", "deployment.json");
-    const deployment = fs.existsSync(deploymentPath)
-        ? JSON.parse(fs.readFileSync(deploymentPath, "utf-8"))
-        : {};
-    if (!deployment.oracleQuoteAccount) {
-        throw new Error("oracleQuoteAccount missing from deployment.json. Run 'anchor run feed-deploy' first.");
-    }
-    const priceOracle = new PublicKey(deployment.oracleQuoteAccount);
-
     // Shared accounts for initializeAmm (normal send + print mode).
     const initializeAmmAccounts = {
         authority: AUTHORITY,
         afhoMint: AFHO_MINT,
         usdcMint: USDC_MINT,
-        solVault: solVaultPda,
         usdcVault: usdcVaultAta,
         afhoVault: afhoVaultAta,
         usdcDip: usdcDipPda,
         usdcRewards: usdcRewardsPda,
-        solRewards: solRewardsPda,
-        solDip: solDipPda,
         ammState: ammStatePda,
         offerList: offerListPda,
         acceptedOffers: acceptedOffersPda,
         metrics: metricsPda,
         marketStatusPda: marketStatusPda,
         crankProgram: CRANK_PROGRAM_ID,
-        priceOracle: priceOracle,
-        dexProgram: DEX_PROGRAM_ID,
         associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
         tokenProgram: TOKEN_PROGRAM_ID,
         token2022Program: TOKEN_2022_PROGRAM_ID,
@@ -290,7 +246,7 @@ async function main() {
         console.log(" below, so a PDA authority (e.g. a Squads vault) must execute");
         console.log(" this inside a multisig vault transaction. Compose in Squads:\n");
         console.log("   program: initialize_amm @ " + AMM_PROGRAM_ID.toBase58());
-        console.log("   args:    spot_oracle=Pubkey::default(), staking_pool, sol_oracle=Pubkey::default()");
+        console.log("   args:    staking_pool");
         console.log("   accounts (signer + rent payer = authority):");
         for (const [name, key] of Object.entries(initializeAmmAccounts)) {
             console.log(`     - ${name.padEnd(24)} ${(key as PublicKey).toBase58()}`);
@@ -305,7 +261,6 @@ async function main() {
     console.log("\n Derived AMM accounts:");
     console.log("  AMM State:     ", ammStatePda.toBase58());
     console.log("  Offer List:    ", offerListPda.toBase58());
-    console.log("  SOL Vault:     ", solVaultPda.toBase58());
     console.log("  USDC Vault:    ", usdcVaultAta.toBase58());
     console.log("  AFHO Vault:   ", afhoVaultAta.toBase58());
     console.log("  Market Status: ", marketStatusPda.toBase58());
@@ -344,7 +299,7 @@ async function main() {
     console.log("\n Initializing AMM accounts...");
     try {
         const tx = await ammProgram.methods
-            .initializeAmm(spotOraclePda, stakingPoolPda, solOraclePda)
+            .initializeAmm(stakingPoolPda)
             .accounts(initializeAmmAccounts)
             .rpc();
 
@@ -369,7 +324,6 @@ async function main() {
         ammProgram: pubkey(AMM_PROGRAM_ID),
         ammState: pubkey(ammStatePda),
         ammOfferList: pubkey(offerListPda),
-        ammSolVault: pubkey(solVaultPda),
         ammUsdcVault: pubkey(usdcVaultAta),
         ammAfhoVault: pubkey(afhoVaultAta),
     });

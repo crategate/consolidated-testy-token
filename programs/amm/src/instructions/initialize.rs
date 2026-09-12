@@ -8,9 +8,7 @@ use anchor_spl::{
 
 pub fn handler(
     ctx: Context<InitializeAmm>,
-    spot_oracle: Pubkey,
     staking_pool: Pubkey,
-    sol_oracle: Pubkey,
 ) -> Result<()> {
     // initialize the POSR vault
     // during minting, % of coins will get stored here
@@ -23,25 +21,20 @@ pub fn handler(
     amm_state.keeper = ctx.accounts.authority.key();
     amm_state.afho_mint = ctx.accounts.afho_mint.key();
     amm_state.usdc_mint = ctx.accounts.usdc_mint.key();
-    amm_state.sol_vault = ctx.accounts.sol_vault.key();
     amm_state.usdc_vault = ctx.accounts.usdc_vault.key();
-    amm_state.sol_dip = ctx.accounts.sol_dip.key();
     amm_state.usdc_dip = ctx.accounts.usdc_dip.key();
     amm_state.afho_vault = ctx.accounts.afho_vault.key();
     amm_state.offer_list = offer_list.key();
     amm_state.accepted_offers = ctx.accounts.accepted_offers.key();
     amm_state.market_status_pda = ctx.accounts.market_status_pda.key();
     amm_state.crank_program = ctx.accounts.crank_program.key();
-    amm_state.price_oracle = ctx.accounts.price_oracle.key();
-    amm_state.dex_program = ctx.accounts.dex_program.key();
     // Raydium CPMM pool is pinned later via set_cpmm_pool (once the launch
-    // pool exists); default(0) keeps the mock adapter active until then.
+    // pool exists); default(0) until then.
     amm_state.cpmm_pool_state = Pubkey::default();
     amm_state.cpmm_amm_config = Pubkey::default();
     amm_state.cpmm_program = Pubkey::default();
     amm_state.cpmm_sol_usdc_pool = Pubkey::default();
     amm_state.cpmm_sol_usdc_config = Pubkey::default();
-    amm_state.total_sol_proceeds = 0;
     amm_state.total_usdc_proceeds = 0;
     amm_state.highest_buyback_basis = 0;
     // All day-index guards init to u64::MAX, NOT 0: the first trading day IS
@@ -52,28 +45,18 @@ pub fn handler(
     amm_state.bb_day_index = u64::MAX;
     amm_state.bb_budget_usdc = 0;
     amm_state.bb_spent_usdc = 0;
-    amm_state.bb_budget_sol = 0;
-    amm_state.bb_spent_sol = 0;
     amm_state.bb_slice_count = 0;
     amm_state.bb_last_slot = 0;
     amm_state.untaken_days = 0;
-    amm_state.spot_oracle = spot_oracle;
     amm_state.staking_pool = staking_pool;
     amm_state.usdc_rewards = ctx.accounts.usdc_rewards.key();
     amm_state.rewards_day_index = u64::MAX;
-    amm_state.sol_oracle = sol_oracle;
-    amm_state.sol_rewards = ctx.accounts.sol_rewards.key();
     amm_state.dip_day_index = u64::MAX;
     amm_state.dip_day_usdc = 0;
-    amm_state.dip_day_sol = 0;
     amm_state.dip_spent_usdc = 0;
-    amm_state.dip_spent_sol = 0;
     amm_state.dip_last_slot = 0;
     amm_state.dip_slice_count = 0;
-    amm_state.sol_dip_bump = ctx.bumps.sol_dip;
     amm_state.bump = ctx.bumps.amm_state;
-    amm_state.sol_vault_bump = ctx.bumps.sol_vault;
-    amm_state.sol_rewards_bump = ctx.bumps.sol_rewards;
 
     offer_list.owner = ctx.accounts.authority.key();
     offer_list.seed = 0;
@@ -103,39 +86,14 @@ pub fn handler(
     metrics.day_index = u64::MAX; // L1
     metrics.price_changes = [0; 20];
     metrics.sample_head = 0;
-    metrics.treasury_sol = 0;
     metrics.total_staked = 0;
     metrics.total_supply = 0;
+    metrics.available_supply = 0;
     metrics.trailing_stake_health = [0; 5];
     metrics.spot_prices = [0; 32];
     metrics.spot_head = 0;
     metrics.spot_last_slot = 0;
 
-    // Fund the three space-0 SOL holding PDAs with the rent-exempt minimum.
-    // The system transfer creates them system-owned with NO data. The SOL
-    // legs these PDAs once funded are retired (USDC-only swaps) — the PDAs
-    // remain until the §4 state-field cleanup lands.
-    let sol_rent = Rent::get()?.minimum_balance(0);
-    for info in [
-        ctx.accounts.sol_dip.to_account_info(),
-        ctx.accounts.sol_vault.to_account_info(),
-        ctx.accounts.sol_rewards.to_account_info(),
-    ] {
-        if info.lamports() < sol_rent {
-            anchor_lang::solana_program::program::invoke(
-                &anchor_lang::solana_program::system_instruction::transfer(
-                    &ctx.accounts.authority.key(),
-                    &info.key(),
-                    sol_rent - info.lamports(),
-                ),
-                &[
-                    ctx.accounts.authority.to_account_info(),
-                    info,
-                    ctx.accounts.system_program.to_account_info(),
-                ],
-            )?;
-        }
-    }
     msg!(
         "did initialize the AMM empty state for mint {}",
         amm_state.afho_mint
@@ -196,18 +154,6 @@ pub struct InitializeAmm<'info> {
         token::token_program = token_program,
     )]
     pub usdc_rewards: Box<InterfaceAccount<'info, TokenAccount>>,
-    /// CHECK: SOL dip reserve (system PDA, seeds [b"amm_sol_dip", mint]).
-    /// Space-0, system-owned — a data-carrying or program-owned account
-    /// fails outbound system transfers ("Transfer: from must not carry
-    /// data"). Funded with rent-exempt minimum in the handler below.
-    #[account(mut, seeds = [b"amm_sol_dip", afho_mint.key().as_ref()], bump)]
-    pub sol_dip: AccountInfo<'info>,
-    /// CHECK: SOL buyback vault (same space-0 system-PDA pattern)
-    #[account(mut, seeds = [b"amm_sol_vault", afho_mint.key().as_ref()], bump)]
-    pub sol_vault: AccountInfo<'info>,
-    /// CHECK: holding PDA for the stakers' 10% share of SOL proceeds (same)
-    #[account(mut, seeds = [b"amm_sol_rewards", afho_mint.key().as_ref()], bump)]
-    pub sol_rewards: AccountInfo<'info>,
     #[account(
         init,
         payer = authority,
@@ -243,12 +189,6 @@ pub struct InitializeAmm<'info> {
 
     /// CHECK: stored for verification in makeOffers
     pub crank_program: AccountInfo<'info>,
-    /// CHECK: legacy Switchboard quote slot — pinned in state but no longer
-    /// read (momentum comes from the self-sampled pool price ring)
-    pub price_oracle: AccountInfo<'info>,
-    /// CHECK: legacy dex-program slot (§4 — unused since the mock removal;
-    /// default pubkey stored)
-    pub dex_program: AccountInfo<'info>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub token_program: Interface<'info, TokenInterface>,
     pub token_2022_program: Program<'info, Token2022>,

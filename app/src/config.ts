@@ -16,7 +16,6 @@ export type DeploymentConfig = {
     ammProgram?: string;
     ammState?: string;
     ammOfferList?: string;
-    ammSolVault?: string;
     ammUsdcVault?: string;
     ammAfhoVault?: string;
     marketStatusFeedId?: string;

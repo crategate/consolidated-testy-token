@@ -169,10 +169,6 @@ export interface OfferListData {
 export interface AmmStateData {
     highestBuybackBasis?: number | bigint;
     highest_buyback_basis?: number | bigint;
-    spotOracle?: PublicKey;
-    spot_oracle?: PublicKey;
-    solOracle?: PublicKey;
-    sol_oracle?: PublicKey;
     crankProgram?: PublicKey;
     crank_program?: PublicKey;
     stakingPool?: PublicKey;

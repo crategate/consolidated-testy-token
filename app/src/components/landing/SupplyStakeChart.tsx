@@ -299,8 +299,8 @@ export function SupplyStakeChart() {
                 : [];
 
         const pct =
-            stats && stats.totalSupply > 0
-                ? `${((locked / stats.totalSupply) * 100).toFixed(1)}% of supply`
+            stats && available !== null && available > 0
+                ? `${((locked / available) * 100).toFixed(1)}% of available`
                 : null;
 
         return { pathAvailable, pathLocked, areaAvailable, areaLocked, yTicks: ticks, xLabels: labels, pctLabel: pct, series: pts, xs, ysAvail, ysLocked };
@@ -353,8 +353,8 @@ export function SupplyStakeChart() {
     const dAvail = hovered && prevHovered ? hovered.available - prevHovered.available : null;
     const dLocked = hovered && prevHovered ? hovered.locked - prevHovered.locked : null;
     const hoverPct =
-        hovered && stats && stats.totalSupply > 0
-            ? `${((hovered.locked / stats.totalSupply) * 100).toFixed(1)}%`
+        hovered && hovered.available > 0
+            ? `${((hovered.locked / hovered.available) * 100).toFixed(1)}%`
             : null;
     // Popover anchor: clamp inside the plot on both axes so it never overflows.
     const tipLeft = h ? Math.min(84, Math.max(16, (xs[h.i] / W) * 100)) : 50;

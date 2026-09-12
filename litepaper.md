@@ -139,8 +139,7 @@ stakers. Rewards are split by **weight**, and weight grows with commitment:
 
 - **Programs (Rust, Anchor 0.31)**: `amm` (offer desk, buybacks, dip,
   claims), `staking` (pool, multipliers, rewards), `crank-oracle` (market
-  status + keeper bounty). A devnet-only mock DEX powers localnet tests and
-  is removed before mainnet.
+  status + keeper bounty).
 - **DEX**: Raydium CPMM via raw `swap_base_input` CPI + a hand-written TWAP
   reader.
 - **Oracle**: Switchboard On-Demand for the market-status feed.

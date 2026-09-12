@@ -2,7 +2,8 @@
 //
 // The night desk's taking instructions — one per payment currency:
 //   offer_claim      buyer pays USDC
-//   offer_claim_sol  buyer pays SOL (lamports, priced via the sol_oracle)
+//   offer_claim_sol  buyer pays SOL (lamports, priced via the pinned
+//                    Raydium SOL/USDC CPMM pool)
 // Both buy discounted, vesting AFHO lots. Payment splits 80/10/10 at claim
 // time: 80% stays in the buyback vault (dex_buyback spends it while the
 // market is open), 10% to the dip reserve, 10% to the staker-rewards holding
@@ -16,8 +17,9 @@
 // or closed (states 1|2); the desk is dark while buybacks run.
 //
 // The floor (highest_buyback_basis) is USDC-denominated in BOTH paths: a SOL
-// claim converts its USDC-terms cost to lamports at the sol_oracle rate, so
-// the ratchet never mixes units. The buyer covers the CPMM 0.25% input fee
+// claim converts its USDC-terms cost to lamports at the pinned SOL/USDC pool
+// rate, so the ratchet never mixes units. The buyer covers the CPMM 0.25%
+// input fee
 // The buyer's lamports are solved from the SOL/USDC pool's actual reserves so
 // the swap nets the full USDC cost after the pool fee and the trade's own
 // price impact; the swap min-out and the vault-delta check enforce it

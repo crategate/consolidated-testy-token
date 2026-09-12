@@ -1,4 +1,4 @@
-use crate::state::offersState::{AcceptedOffers, AmmState};
+use crate::state::offersState::AmmState;
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
@@ -89,11 +89,6 @@ pub struct DexBuyback<'info> {
     )]
     pub market_status: UncheckedAccount<'info>,
 
-    /// Retained for IDL/keeper compatibility — buybacks no longer gate on
-    /// fill evidence (any balance is spent every trading day).
-    #[account(seeds = [b"accepted_offers", amm_state.afho_mint.as_ref()], bump)]
-    pub accepted_offers: Box<Account<'info, AcceptedOffers>>,
-
     #[account(mut, address = amm_state.usdc_vault)]
     pub usdc_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, address = amm_state.afho_vault)]
@@ -132,7 +127,6 @@ pub struct DexBuyback<'info> {
     pub token_program: Interface<'info, TokenInterface>,
     /// Token-2022 (AFHO out-leg via the pool)
     pub token_2022_program: Interface<'info, TokenInterface>,
-    pub system_program: Program<'info, System>,
 }
 
 // AccountInfo clones handed to the swap adapter, collected before amm_state
@@ -147,7 +141,6 @@ pub(crate) struct SwapInfos<'info> {
     pub usdc_mint: AccountInfo<'info>,
     pub token_program: AccountInfo<'info>,
     pub token_2022_program: AccountInfo<'info>,
-    pub system_program: AccountInfo<'info>,
     pub cpmm_pool_state: AccountInfo<'info>,
     pub cpmm_amm_config: AccountInfo<'info>,
     pub cpmm_input_vault: AccountInfo<'info>,
@@ -165,7 +158,6 @@ pub fn handler(ctx: Context<DexBuyback>) -> Result<()> {
         usdc_mint: ctx.accounts.usdc_mint.to_account_info(),
         token_program: ctx.accounts.token_program.to_account_info(),
         token_2022_program: ctx.accounts.token_2022_program.to_account_info(),
-        system_program: ctx.accounts.system_program.to_account_info(),
         cpmm_pool_state: ctx.accounts.cpmm_pool_state.to_account_info(),
         cpmm_amm_config: ctx.accounts.cpmm_amm_config.to_account_info(),
         cpmm_input_vault: ctx.accounts.cpmm_input_vault.to_account_info(),

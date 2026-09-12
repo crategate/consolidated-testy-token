@@ -11,7 +11,6 @@ type DeploymentState = {
     ammProgram?: string;
     ammState?: string;
     ammOfferList?: string;
-    ammSolVault?: string;
     ammUsdcVault?: string;
     ammAfhoVault?: string;
     coinMintProgram?: string;

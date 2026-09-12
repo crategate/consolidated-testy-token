@@ -26,14 +26,20 @@ pub(crate) fn record_price_change(metrics: &mut MarketMetrics, close: u64) {
     msg!("recorded daily price change: {} centi-percent", v);
 }
 
-// Current staking participation as a whole %: staked / total_supply.
-// NOTE: per the metric's definition this should be staked / (supply NOT left in
-// AMM vault); uses total_supply until a live circulating figure is wired in.
+// Current staking participation as a whole %: staked / available supply.
+// Available = total_supply minus the AFHO still in the AMM's own vault (the
+// bond-desk inventory the public can't stake). Falls back to total_supply
+// until update_tradeday_stats records the first live circulating figure.
 fn current_stake_ratio(metrics: &MarketMetrics) -> u8 {
-    if metrics.total_supply == 0 {
+    let supply = if metrics.available_supply > 0 {
+        metrics.available_supply
+    } else {
+        metrics.total_supply
+    };
+    if supply == 0 {
         return 0;
     }
-    ((metrics.total_staked as u128 * 100) / metrics.total_supply as u128) as u8
+    ((metrics.total_staked as u128 * 100) / supply as u128) as u8
 }
 
 // Stake health score, 0-100. Consumed by the combinator's VESTING step:

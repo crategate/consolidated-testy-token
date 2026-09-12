@@ -405,6 +405,7 @@ async function main() {
                                 cpmmOutputVault: statsCpmm.cpmmOutputVault,
                                 stakingPool: ammStateForStats.stakingPool,
                                 afhoMint,
+                                afhoVault: ammStateForStats.afhoVault,
                             })
                             .instruction();
                         const statsTx = await sb.asV0Tx({
@@ -433,7 +434,6 @@ async function main() {
                                 acceptedOffers: acceptedOffersPda,
                                 afhoMint: afhoMint,
                                 afhoVault: new PublicKey(deployment.ammAfhoVault),
-                                systemProgram: anchor.web3.SystemProgram.programId,
                             })
                             .instruction();
 
@@ -575,7 +575,6 @@ async function main() {
                                 stakingRewardVault,
                                 tokenProgram: TOKEN_PROGRAM_ID,
                                 token2022Program: TOKEN_2022_PROGRAM_ID,
-                                systemProgram: anchor.web3.SystemProgram.programId,
                             })
                             .instruction();
                         const distTx = await sb.asV0Tx({
@@ -678,7 +677,6 @@ async function main() {
                             cranker: keypair.publicKey,
                             ammState: ammStatePda,
                             marketStatus: marketStatusPda,
-                            acceptedOffers: acceptedOffersPda,
                             usdcVault: ammState.usdcVault,
                             afhoVault: ammState.afhoVault,
                             afhoMint,
@@ -686,7 +684,6 @@ async function main() {
                             ...cpmmAccountsFor(ammState, usdcMint),
                             tokenProgram: TOKEN_PROGRAM_ID,
                             token2022Program: TOKEN_2022_PROGRAM_ID,
-                            systemProgram: anchor.web3.SystemProgram.programId,
                         })
                         .instruction();
                     const bbTx = await sb.asV0Tx({
@@ -825,7 +822,6 @@ async function main() {
                         ...cpmmAccountsFor(ammState, usdcMint),
                         tokenProgram: TOKEN_PROGRAM_ID,
                         token2022Program: TOKEN_2022_PROGRAM_ID,
-                        systemProgram: anchor.web3.SystemProgram.programId,
                     })
                     .instruction();
                 const dipTx = await sb.asV0Tx({

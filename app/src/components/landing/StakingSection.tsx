@@ -3,9 +3,6 @@ import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { Positions } from '../Positions';
 import { usePositions } from '../../hooks/stake/usePositions';
-import { useClaimAll } from '../../hooks/stake/useClaimAll';
-import { useUnstake } from '../../hooks/stake/useUnstake';
-import { useMarketStatus } from '../../hooks/useMarketStatus';
 import { PublicKey } from '@solana/web3.js';
 import { GlitchText } from '../GlitchText';
 
@@ -17,35 +14,9 @@ interface StakingSectionProps {
 export function StakingSection({ mint, marketStatusPda }: StakingSectionProps) {
     const [expanded, setExpanded] = useState(true);
     const { connected } = useWallet();
-    const { positions, refresh: refreshPositions } = usePositions(mint);
-    const { data: marketData } = useMarketStatus(marketStatusPda);
-    const { claimAll, loading: claimLoading } = useClaimAll(mint, positions, marketStatusPda);
-    const { unstake } = useUnstake(mint, marketStatusPda, marketData?.state);
-    const claimsOpen = marketData?.state === 0;
+    const { positions } = usePositions(mint);
 
     const hasPositions = positions.length > 0;
-
-    const handleClaimAll = async () => {
-        try {
-            const tx = await claimAll();
-            alert(`All claims collected successfully! Tx: ${tx}`);
-            refreshPositions();
-        } catch (e) {
-            alert('Failed to collect claims: ' + (e as Error).message);
-        }
-    };
-
-    const handleExitAll = async () => {
-        for (const pos of positions) {
-            try {
-                await unstake(pos);
-            } catch (e) {
-                alert('Failed to exit a position: ' + (e as Error).message);
-                break;
-            }
-        }
-        refreshPositions();
-    };
 
     return (
         <section className="landing-section staking-section alt">
@@ -53,24 +24,6 @@ export function StakingSection({ mint, marketStatusPda }: StakingSectionProps) {
                 <div className="staking-toolbar">
                     <h2><GlitchText text="Active Positions" variant="streetlight" step={0.05} /></h2>
                     <div className="staking-actions">
-                        {connected && hasPositions && (
-                            <>
-                                <button
-                                    className="claim-collect"
-                                    onClick={handleClaimAll}
-                                    disabled={!claimsOpen || claimLoading}
-                                >
-                                    {!claimsOpen ? 'Claim after open' : claimLoading ? 'Collecting…' : 'Claim All Rewards'}
-                                </button>
-                                <button
-                                    className="exit-all-button neon-glitch"
-                                    onClick={handleExitAll}
-                                    disabled={positions.length === 0}
-                                >
-                                    Exit All Positions
-                                </button>
-                            </>
-                        )}
                         <button
                             className="staking-toggle neon-glitch glitch-shift"
                             onClick={() => setExpanded((v) => !v)}

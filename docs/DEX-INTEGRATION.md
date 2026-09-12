@@ -29,14 +29,12 @@ pub(crate) fn execute_swap(
     amount_in: u64,
     min_amount_out: u64,
     cpmm_program: Pubkey,
-    cpmm_active: bool,
 ) -> Result<()>
 ```
 
 Everything else in `dex_buyback` / `buy_the_dip` is swap-agnostic (budgeting,
-pacing, ratchet band, vault accounting). `cpmm_active` is
-`amm_state.cpmm_pool_state != Pubkey::default()` — when the pool is pinned the
-CPMM path runs; otherwise (localnet tests) the mock-dex-pool fallback runs.
+pacing, ratchet band, vault accounting). The pool is pinned via `set_cpmm_pool`;
+until then the swap instructions fail closed with `PoolNotPinned`.
 USDC in-leg only: the SOL legs in `dex_buyback` / `buy_the_dip` /
 `distribute_staker_rewards` are retired (see "SOL handling" below).
 
@@ -84,7 +82,7 @@ the buyer's lamports into the `wsol_vault` ATA and swaps SOL → USDC on the
 pinned SOL/USDC CPMM pool, then splits USDC 80/10/10 — so every downstream swap
 and every ratchet is USDC-denominated. `bounty_top_up` likewise hops
 AFHO → USDC → wSOL → lamports to fund the keeper bounty. The legacy
-`sol_vault` / `sol_dip` / `sol_rewards` / `sol_oracle` accounts still exist in
+`sol_vault` / `sol_dip` / `sol_rewards` accounts still exist in
 the instruction structs but are vestigial (see MAINNET_CHECKLIST §4 — remove
 them with the state-field cleanup).
 
@@ -107,9 +105,7 @@ vault deltas.
 
 ## What remains for mainnet
 
-- §2 of MAINNET_CHECKLIST: delete the mock fallback path (mock-dex-pool,
-  `send_afho` CPI, `dex_program`) once localnet tests migrate off it.
-- §4: remove the vestigial SOL accounts + `sol_*`/`sol_oracle` state fields.
+- §4: remove the vestigial SOL accounts + `sol_*` state fields.
 - §5: seed the mainnet CPMM pool (25% LP / 75% protocol) and pin it with
   `set_cpmm_pool` + `set_sol_usdc_pool`.
 - Devnet runtime-verify the SOL claim + `bounty_top_up` end-to-end.

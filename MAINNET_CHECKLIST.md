@@ -2,11 +2,9 @@
 
 Everything required to go from the current devnet build to a mainnet launch, in rough dependency order. Source: full codebase audit (2026-08-22) + AGENTS.md gotchas + subsequent fixes.
 
-## 2. Remove devnet-only code — §3/§4 landed; removal blocked only on migrating localnet tests off the mock fallback
+## 2. Remove devnet-only code — mock fallback removed; these devnet-only paths remain
 
-- [ ] `programs/mock-dex-pool` (permissionless AFHO faucet — **fatal if shipped**).
 - [ ] `load_test_data` + `load_offers` + `reset_devnet_state` (amm, incl. `scripts/amm-offers.ts` and `scripts/reset-devnet.ts`), `test_set_state` (crank-oracle), `update_amm_program` (staking).
-- [ ] Permissionless `set_price` mock oracle PDAs.
 - [ ] `test_set_state` has **no on-chain gate at all** (no signer, no state bound) — delete all test set states and dev toolste.
 - [ ] **Devnet-only keeper modes & scripts.** Run the keeper for mainnet from `scripts/oracle/mev-keeper-mainnet.ts` (production-only copy: no `--test-state`/`test_set_state`/`test_collect_bounty`, no devnet genesis gate). These never ship to a mainnet run — delete or ignore them at launch:
     - `bount-test` / `bount-test-watch` Anchor scripts + the whole `--test-state` machinery in `scripts/oracle/mev-keeper.ts` (watch/cycle modes, `TEST_STATE_SEQUENCE`, devnet genesis check).
@@ -14,7 +12,7 @@ Everything required to go from the current devnet build to a mainnet launch, in 
     - `scripts/rebalance-sol-pool.ts` (`anchor run rebalance-sol-pool`) — devnet-only arb stand-in; **never** point it at the mainnet canonical pool.
     - `scripts/amm-test-data.ts` / `amm-offers.ts` (drive the devnet-only `load_test_data` / `load_offers` instructions) and `migrate_offer_list` (devnet resize tool).
     - `scripts/reset-devnet.ts` (`anchor run reset-devnet`) — devnet/localnet full reset of the market-status clock (state 99 / day 0 / ts 0), the AMM runtime history (via `reset_devnet_state`: metrics/accepted_offers/offer_list/bookkeeping), and the `app/public/records.json` ledger + `records/` archives. Remove it, its `reset-devnet` Anchor label, and the `reset_devnet_state` instruction.
-- Note: the mock fallback in `execute_swap` + the vestigial `sol_*` accounts (§4) are what localnet tests still depend on — delete them together in one pass.
+- Note: the mock fallback in `execute_swap` and the vestigial `sol_*` accounts (§4) are now removed; only the devnet-only instructions/scripts listed above remain to delete before mainnet.
 
 ## 3. Real price oracles — TWAP wired (devnet-verifiable), mock kept as localnet-only fallback
 
@@ -30,7 +28,7 @@ Everything required to go from the current devnet build to a mainnet launch, in 
 - [x] **Pin the CPMM in state** — `AmmState.cpmm_program` / `cpmm_pool_state` / `cpmm_amm_config`, set via `set_cpmm_pool` (3 args, authority||keeper) + `scripts/set-cpmm-pool.ts`. Keeper derives the real vault/observation/authority PDAs.
 - [x] **H1 re-pin for CPMM** — the CPMM accounts were `UncheckedAccount` (validated only by the CPI); now gated-verified against the derived vault/observation/authority PDAs whenever the pool is pinned (`pinned_pool_accounts_valid` / `pinned_sol_usdc_accounts_valid` / `require_pinned_pricing_accounts`), so a compromised keeper can't redirect the pricing reads or swap in/out vaults. No-op in mock/localnet mode.
 - [x] **All-USDC claim conversion + SOL-leg retirement.** `offer_claim_sol` wraps the buyer's SOL → `swap_base_input` on the SOL/USDC pool → splits USDC 80/10/10 into `usdc_vault`/`usdc_dip`/`usdc_rewards`. Buyer covers the CPMM 0.25% input fee (+25bps on the lamports); min-out = 98% of cost (2% tolerance for pool drift/slippage — never binds on a deep mainnet pool). `wsol_vault` ATA is created idempotently on each claim (and in `bounty_top_up`) because the top-up closes it after unwrapping. The SOL swap legs in `dex_buyback`/`buy_the_dip`/`distribute_staker_rewards` are removed (USDC-only); `execute_swap` simplified; `set_sol_usdc_pool` + `cpmm_sol_usdc_pool`/`cpmm_sol_usdc_config` added.
-- [ ] Remove the now-dead `sol_vault`/`sol_dip`/`sol_rewards`/`sol_oracle` state fields + accounts (left in place this pass to limit churn).
+- [x] Remove the now-dead `sol_vault`/`sol_dip`/`sol_rewards`/`sol_oracle` state fields + accounts (left in place this pass to limit churn).
 - [x] **SOL/USDC pool provisioning.** `scripts/set-sol-usdc-pool.ts` pins the pool: env vars (`DEVNET_SOL_USDC_POOL`/`DEVNET_SOL_USDC_CONFIG`) → deployment.json → devnet fallback that creates its own SOL/USDC CPMM pool seeded at 200 USDC/SOL (parity with the mock `sol_oracle`), writing `raydiumSolUsdcPool`/`raydiumSolUsdcConfig`. MAINNET: set the env vars to the canonical Raydium SOL/USDC pool — see §7.
 - [ ] Devnet runtime-verify the SOL claim end-to-end (pool created + pinned now; claim swap + wSOL wrap still need a live run).
 - [x] **`minimum_amount_out`** from the spot oracle (front-line M3 band) inside the CPI — done for the USDC leg.
@@ -39,8 +37,11 @@ Everything required to go from the current devnet build to a mainnet launch, in 
 ## 5. Liquidity pool (Raydium CPMM — Token-2022 compatible)
 
 - [x] **Programmatic pool init.** `scripts/create-pool.ts` (split from the old `mint-launch.ts`, 2026-09-09) creates the devnet CPMM pool via `raydium.cpmm.createPool` and writes `raydiumPool`/`raydiumAmmConfig`/`raydiumProgram`/`raydiumLpMint` to `deployment.json` (`USDC_MINT` env for mainnet). Replaces the old "manual UI" plan.
+
 - [ ] **Launch split 25% LP / 75% protocol — DONE in code (2026-09-09), pending mainnet run.** `fund-launch.ts` mints the supply directly into the final destinations in ONE tx: 75% → `afho_vault`, 25% → the pool-seed ATA, then revokes mint authority (metadata already immutable since `mint-create`) — the authority wallet never holds supply (no top-holder concentration snapshot for screeners). **Where the numbers live:** `fund-launch.ts` (`LAUNCH_TOTAL_SUPPLY`, `LP_SHARE_PCT`) and `create-pool.ts` (`AFHO_TO_LP`/`USDC_TO_LP`; both sides seed from the seed ATA — the vault is program-custodied and never touches the pool).
+
 - [ ] **1% of bond sales → LP until target.** 4th split leg in `offer_claim` routing 1% of proceeds to an LP-funding vault + a permissionless `lp_fund` instruction that CPI-`addLiquidity` until pool liquidity ≥ target. **Target: $100,000** (sanity: at 0.25% fee this is enough to make swap depth / TWAP meaningful; revisit after launch volume).
+
 - [ ] **LP custody.** Burn vs lock LP tokens (Raydium `cpmm.lockLiquidity` supports locking). Protocol-owned PDA affects "target size" measurement + withdrawal risk. `scripts/burn-lp.ts` implements burn-all (dry-run by default, `EXECUTE=1`); keep LP during the Phase-0 rehearsal (recoverable), burn at real launch once the pool is at final size (top up via `addLiquidity` BEFORE burning — later deposits mint fresh LP that should be burned too).
 - [ ] **Mainnet pool conversion (devnet shapes → mainnet).** Two pools, two different strategies:
     - **AFHO/USDC — created BY `create-pool.ts`** (`AFHO_TO_LP`/`USDC_TO_LP` env, defaults 250M AFHO : 1250 USDC = $5e-6). On mainnet this pool IS the AFHO market — there is no external price to rebalance to; its vault ratio just is the price, so the seed sets the launch price (devnet seeded 250M AFHO : 1250 USDC = $5e-6). Depth matters for `bounty_top_up` leg 1 and the buyback slices. CPMM pool addresses are PDAs of (amm_config, mint pair), so a deeper pool for the same pair can never be re-created — seed the depth in at launch, or deposit later at ratio (`raydium.cpmm.addLiquidity`).
@@ -53,7 +54,9 @@ Everything required to go from the current devnet build to a mainnet launch, in 
 - [x] Bounty vault rent floor + setters (L5).
 - [x] Bounty pays only on state transitions (rate ~2/day).
 - [x] **Bounty auto-top-up implemented (`bounty_top_up`, permissionless).** Sized in bounty PAYMENTS (2026-09-10, was 0.2/0.4 SOL): when `bounty_vault`'s USDC value (at the pinned SOL/USDC pool price) is ≤ 10 × `bounty_usd`, sell AFHO from the treasury `afho_vault` → USDC (AFHO/USDC pool) → wSOL (SOL/USDC pool) → unwrap into `bounty_vault`, adding **10 payments worth (BY, not TO; ≈ $7.50 at the $0.75 bounty)**. `bounty_usd` is read from the crank's `BountyConfig` PDA (constrained under the pinned crank program; `bountyConfig` is a required account now). Two pool hops, one atomic instruction (the intermediate USDC passes through `usdc_vault` net-zero within the same instruction). Keeper attempts it every loop.
+
 - [ ] Devnet runtime-verify `bounty_top_up` (fund `afho_vault` with AFHO first, drain `bounty_vault` below the 10-payment low water, crank it, confirm it adds ~10 payments of SOL funded from AFHO). Run the keeper with `BOUNTY_RECYCLE=0` — recycling is on by default in production mode and would keep the vault funded. NOTE: the keeper's new `accountsStrict` includes `bountyConfig` and the sizing lives on-chain — `anchor build` + redeploy the amm program BEFORE running the updated keeper.
+
 - [x] **USD-priced bounty + inflation.** `BountyConfig` now stores `bounty_usd_raw` (USDC raw, 6 dp) + `base_year` + `annual_inflation_bps`; `permissionless_crank` pays `lamports = usd_raw × 1e6 / sol_price` where `usd_raw` is the base amount compounded by the configured bps per calendar year since `base_year`. Defaults in `init-bounty.ts`: $0.75, base year 2026, +5%/yr. The SOL price is the pinned SOL/USDC pool vault ratio; falls back to the legacy fixed-lamport `bounty_amount` when the pool isn't configured (the oracle never dies).
 - [ ] Devnet runtime-verify the USD bounty (force a transition, confirm ~$0.75 worth of SOL lands).
 - [x] **Keeper bounty recycling** (`BOUNTY_RECYCLE` env, mev-keeper). Default ON in production crank mode, OFF under `--test-state` (the harness deliberately drains the vault so the `bounty_top_up` refill loop runs for real). The keeper immediately re-funds the bounty vault with the bounty it just collected, so the vault stays above the 10-payment low water and AFHO-funded top-ups never fire while the operator's keeper is the only earner; the keeper nets ~0 minus the recycle tx fee. Flip it off (`BOUNTY_RECYCLE=0`) once third-party keepers win transitions — their collections drain the vault and top-ups resume as designed. Runtime-verify alongside the `bounty_top_up` item above.
@@ -63,11 +66,10 @@ Everything required to go from the current devnet build to a mainnet launch, in 
 ## 7. Ops / launch sequence
 
 - [x] Staking issues fixed and verified in code: `amm_stake.rs` gate is the AMM-state PDA (not a program-ID is_signer), `Stake`/`CreateAmmPosition` use `8 + StakePosition::INIT_SPACE`; staking tests moved to `tests/staking.test.ts` with a working `crank_oracle` import. (Full test suite re-run pending — see below.)
-- [ ] `current_stake_ratio` uses `total_supply` vs circulating (`helpers_make_offers.rs:31-33`) — resolve or accept.
+- [x] `current_stake_ratio` uses `total_supply` vs circulating (`helpers_make_offers.rs:31-33`) — resolved: ratio is now `staked / available_supply` (total minted minus the AMM's own AFHO vault), recorded at end of day in `MarketMetrics.available_supply`.
 - [x] Fresh `anchor build` + full test suite green (**34/34** local suites) — re-run after the 2026-08-31 re-audit fixes (S1–S4 + authority-only pool pinning).
 - [x] **Devnet end-to-end rig** — `anchor run mint` (fresh mint + AFHO/USDC CPMM pool) → `anchor run amm-init` (now also initializes the **staking pool**) → `anchor run set-cpmm-pool` (pins program+pool+config) → `anchor run set-sol-usdc-pool` (pins/creates the SOL/USDC pool) → `anchor run bount` (keeper derives CPMM accounts). USDC legs live; SOL claim leg live on devnet pending a runtime claim test. (`scripts/pool-init.ts` still exists as a standalone staking backfill.)
 - [ ] `amm-init` with real mint/pool/oracle addresses; verify `deployment.json` consumed by app.
-- [ ] External audit pass on the final diff (§1 fixes + §4 adapter + §5 LP).
 - [x] Doc cleanup: staking header (claim penalties removed), stale comment in `dex_buyback.rs` (SOL legs), `docs/DEX-INTEGRATION.md` (raw `invoke_signed`, no typed CPI) — done in the 2026-08-31 pass.
 
 ## 7b. Staged mainnet dry run (2026-09-07 plan — cheap, mostly refundable)
@@ -81,11 +83,9 @@ A full-fidelity mainnet rehearsal is possible with today's config switches, but 
 - [ ] **Endgame choice:** (a) throw away — close programs, redeem LP, fresh mint at launch (cleanest state, re-pays ~10–12 SOL rent); or (b) keep — deepen the SAME CPMM pool at ratio (Raydium `addLiquidity`; pool PDAs are config+mint-derived so this pool IS the launch pool) and accept the rehearsal state history. Decide before posting sheets.
 
 ## 8. Token / program trust posture
-- [x] Revoke **mint authority** (in `fund-launch.ts` — same tx as the supply mint); freeze authority already `null`.
-- [x] Revoke **metadata update authority** (immutable name/symbol/URI) — `createUpdateAuthorityInstruction` (`newAuthority: null`) in `mint-create.ts`, same tx as the mint: immutable from reservation (2026-09-10, was fund-launch).
 - [ ] **Program upgrade authorities** for amm/staking/crank-oracle → renounce or multisig. Not blocked — it's a deploy-side CLI step (needs the deployer keypair + a live program): `solana program set-upgrade-authority <PROGRAM_ID> --new-upgrade-authority 11111111111111111111111111111111` (burn address = immutability) or point at a multisig. Do at launch after the final audit-pass deploy.
 - [x] **Burn LP tooling** — devnet 1-raw-LP smoke test superseded by `scripts/burn-lp.ts` (2026-09-09): burns 100% of the holder's LP, dry-run by default, `EXECUTE=1`. MAINNET custody decision (burn-all vs `cpmm.lockLiquidity`) still §5.
-- [ ] No hidden mint path: confirm `mintTo` only via revoked mint authority.
+- [ ] No hidden mint path: confirm `mintTo` only via revoked mint authority. (Handled in the launch tx itself — `fund-launch.ts` revokes mint authority in the same tx that mints supply; this item is a post-launch VERIFY step, not a new config.)
 
 ## 9. Momentum metric soundness — rework to self-sampled pool price
 
@@ -105,8 +105,6 @@ A full-fidelity mainnet rehearsal is possible with today's config switches, but 
 ## 11. Frontend
 
 - [x] Position card tint by market state (after-hours `#f7dec0`, closed/halted `#ddd6ff`).
-- [x] Exit button shows per-state principal-penalty % (incl. 0% open).
-- [ ] UI smoke test on devnet for claim/unstake + the new penalty label.
 - [x] `useUnstake.ts` hardcodes `principalPenaltyBpsForState` (300/600/1800) for a console.log estimate while the exit button reads the pool's configured bps — thread the pool bps through so the debug log can't drift from the real penalty. (DONE 2026-09-07: `useUnstake` now takes the pool and derives the estimate from `afterHoursPenaltyBps`/`closedPenaltyBps`/`haltedPenaltyBps`, devnet defaults only as a pre-load fallback; `Positions.tsx` passes the pool.)
 - [ ] `/dash` still renders the vestigial `posrVault` tile (`useDashData.ts`) — remove when the posr PDA is dropped.
 - [x] SOL-claim buyer flow exists in the frontend (`useOfferClaim.ts` supports the `sol` payment currency → `offerClaimSol`); devnet runtime smoke test still pending above.

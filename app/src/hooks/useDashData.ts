@@ -129,9 +129,7 @@ interface RemainingAccounts {
     metrics: { data: Uint8Array; lamports: number } | null;
     ammAfhoVault: { data: Uint8Array; lamports: number } | null;
     ammUsdcVault: { data: Uint8Array; lamports: number } | null;
-    ammSolVault: { data: Uint8Array; lamports: number } | null;
     usdcDip: { data: Uint8Array; lamports: number } | null;
-    solDip: { data: Uint8Array; lamports: number } | null;
     stakeVault: { data: Uint8Array; lamports: number } | null;
     rewardVault: { data: Uint8Array; lamports: number } | null;
     penaltyVault: { data: Uint8Array; lamports: number } | null;
@@ -165,10 +163,6 @@ async function fetchRemainingAccounts(
         [Buffer.from('amm_usdc_dip'), mint.toBuffer()],
         ammProgram,
     );
-    const [solDipPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from('amm_sol_dip'), mint.toBuffer()],
-        ammProgram,
-    );
 
     const keys = [
         mint,
@@ -176,9 +170,7 @@ async function fetchRemainingAccounts(
         metricsPda,
         pk(deployment.ammAfhoVault),
         pk(deployment.ammUsdcVault),
-        pk(deployment.ammSolVault),
         usdcDipPda,
-        solDipPda,
         pk(deployment.vault),
         pk(deployment.rewardVault),
         pk(deployment.penaltyVault),
@@ -193,9 +185,7 @@ async function fetchRemainingAccounts(
         'metrics',
         'ammAfhoVault',
         'ammUsdcVault',
-        'ammSolVault',
         'usdcDip',
-        'solDip',
         'stakeVault',
         'rewardVault',
         'penaltyVault',
@@ -216,9 +206,7 @@ async function fetchRemainingAccounts(
         metrics: account('metrics'),
         ammAfhoVault: account('ammAfhoVault'),
         ammUsdcVault: account('ammUsdcVault'),
-        ammSolVault: account('ammSolVault'),
         usdcDip: account('usdcDip'),
-        solDip: account('solDip'),
         stakeVault: account('stakeVault'),
         rewardVault: account('rewardVault'),
         penaltyVault: account('penaltyVault'),
@@ -370,8 +358,14 @@ function buildDashData(
         offerFields.push(
             { label: 'Metrics day', value: `${field(metrics, 'dayIndex', 'day_index')}` },
             {
-                label: 'Staked / supply',
-                value: `${fmtToken(field(metrics, 'totalStaked', 'total_staked'), decimals)} / ${fmtToken(field(metrics, 'totalSupply', 'total_supply'), decimals)}`,
+                label: '% of available supply',
+                value: (() => {
+                    const staked = Number(String(field(metrics, 'totalStaked', 'total_staked') ?? 0));
+                    const supply = Number(String(field(metrics, 'totalSupply', 'total_supply') ?? 0));
+                    const vault = token(remaining.ammAfhoVault);
+                    const available = vault != null ? supply - Number(vault) : supply;
+                    return available > 0 ? `${((staked / available) * 100).toFixed(2)}%` : '—';
+                })(),
             },
             { label: 'Stake trend (5d)', value: trail.join(' → ') || '—' },
         );
@@ -414,8 +408,8 @@ function buildDashData(
         const usd = (f: bigint): string => `$${(Number(f) / 1e9).toFixed(9)}`;
         ammFields.push(
             {
-                label: 'SOL / USDC proceeds',
-                value: `${fmtSol(field(ammState, 'totalSolProceeds', 'total_sol_proceeds'))} / ${fmtToken(field(ammState, 'totalUsdcProceeds', 'total_usdc_proceeds'), 6)} USDC`,
+                label: 'USDC proceeds',
+                value: `${fmtToken(field(ammState, 'totalUsdcProceeds', 'total_usdc_proceeds'), 6)} USDC`,
             },
             {
                 label: 'Ratchet floor (USDC)',
@@ -462,14 +456,10 @@ function buildDashData(
     }
     const ammAfho = token(remaining.ammAfhoVault);
     const ammUsdc = token(remaining.ammUsdcVault);
-    const ammSol = remaining.ammSolVault;
     const usdcDip = token(remaining.usdcDip);
-    const solDip = remaining.solDip;
     if (ammAfho !== null) ammFields.push({ label: 'AFHO vault', value: fmtToken(ammAfho, decimals) });
     if (ammUsdc !== null) ammFields.push({ label: 'Buyback USDC vault', value: fmtToken(ammUsdc, 6) });
-    if (ammSol) ammFields.push({ label: 'Buyback SOL vault', value: fmtSol(ammSol.lamports) });
     if (usdcDip !== null) ammFields.push({ label: 'Dip USDC vault', value: fmtToken(usdcDip, 6) });
-    if (solDip) ammFields.push({ label: 'Dip SOL vault', value: fmtSol(solDip.lamports) });
     if (!ammState) missing.push('amm_state');
 
     // ---- Staking ----
@@ -546,10 +536,6 @@ function buildDashData(
         [Buffer.from('amm_usdc_dip'), deployment.mintKey.toBuffer()],
         ammProgram,
     );
-    const [solDipPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from('amm_sol_dip'), deployment.mintKey.toBuffer()],
-        ammProgram,
-    );
 
     const sections: DashSection[] = [
         {
@@ -570,9 +556,7 @@ function buildDashData(
                 addr('AmmState', deployment.ammState),
                 addr('AFHO vault', deployment.ammAfhoVault),
                 addr('Buyback USDC vault', deployment.ammUsdcVault),
-                addr('Buyback SOL vault', deployment.ammSolVault),
                 addr('Dip USDC vault', usdcDipPda.toBase58()),
-                addr('Dip SOL vault', solDipPda.toBase58()),
             ],
         },
         {

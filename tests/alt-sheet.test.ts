@@ -146,7 +146,7 @@ describe("alt sheet (make_alt_offers + gates)", () => {
         await provider.sendAndConfirm(ataTx, [payer]);
 
         await amm.methods
-            .initializeAmm(PublicKey.default, poolPda, PublicKey.default)
+            .initializeAmm(poolPda)
             .accounts({
                 authority: payer.publicKey,
                 afhoMint,
@@ -156,16 +156,11 @@ describe("alt sheet (make_alt_offers + gates)", () => {
                 usdcVault,
                 usdcDip: PublicKey.findProgramAddressSync([Buffer.from("amm_usdc_dip"), afhoMint.toBuffer()], amm.programId)[0],
                 usdcRewards: PublicKey.findProgramAddressSync([Buffer.from("amm_usdc_rewards"), afhoMint.toBuffer()], amm.programId)[0],
-                solDip: PublicKey.findProgramAddressSync([Buffer.from("amm_sol_dip"), afhoMint.toBuffer()], amm.programId)[0],
-                solVault: PublicKey.findProgramAddressSync([Buffer.from("amm_sol_vault"), afhoMint.toBuffer()], amm.programId)[0],
-                solRewards: PublicKey.findProgramAddressSync([Buffer.from("amm_sol_rewards"), afhoMint.toBuffer()], amm.programId)[0],
                 offerList: PublicKey.findProgramAddressSync([Buffer.from("offer_list"), afhoMint.toBuffer()], amm.programId)[0],
                 acceptedOffers: PublicKey.findProgramAddressSync([Buffer.from("accepted_offers"), afhoMint.toBuffer()], amm.programId)[0],
                 metrics: PublicKey.findProgramAddressSync([Buffer.from("metrics"), afhoMint.toBuffer()], amm.programId)[0],
                 marketStatusPda: marketStatusPda,
                 crankProgram: CRANK_ID,
-                priceOracle: marketStatusPda,
-                dexProgram: PublicKey.default,
                 tokenProgram: TOKEN_PROGRAM_ID,
                 token2022Program: TOKEN_2022_PROGRAM_ID,
                 associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,

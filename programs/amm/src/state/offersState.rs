@@ -80,7 +80,6 @@ pub struct OfferList {
 #[account(zero_copy)]
 pub struct AmmState {
     // --- align 8 (u64) block ---
-    pub total_sol_proceeds: u64,
     pub total_usdc_proceeds: u64,
     // AMM never offers bulk deals with price per share lower than this
     // (ratchet floor, moves up via fills, decays down via calc_completed_offers).
@@ -91,8 +90,6 @@ pub struct AmmState {
     pub bb_day_index: u64,
     pub bb_budget_usdc: u64,
     pub bb_spent_usdc: u64,
-    pub bb_budget_sol: u64,
-    pub bb_spent_sol: u64,
     pub bb_last_slot: u64,
     // Idempotency guard for distribute_staker_rewards.
     pub rewards_day_index: u64,
@@ -101,9 +98,7 @@ pub struct AmmState {
     // DAY_CAP of the snapshot and paced by dip_last_slot.
     pub dip_day_index: u64,
     pub dip_day_usdc: u64,
-    pub dip_day_sol: u64,
     pub dip_spent_usdc: u64,
-    pub dip_spent_sol: u64,
     pub dip_last_slot: u64,
     // --- align 2 (u16) block ---
     pub bb_slice_count: u16,
@@ -115,11 +110,8 @@ pub struct AmmState {
     pub untaken_days: u16,
     pub dip_slice_count: u16,
     // --- align 1 (u8) block ---
-    pub sol_dip_bump: u8,
     pub bump: u8,
-    pub sol_vault_bump: u8,
-    pub sol_rewards_bump: u8,
-    pub _pad: [u8; 6],
+    pub _pad: [u8; 1],
     // --- align 1 (Pubkey) block ---
     pub authority: Pubkey,
     // Hot wallet allowed to fire the daily crank-gated instructions
@@ -130,25 +122,14 @@ pub struct AmmState {
     pub usdc_mint: Pubkey,
     // big main vault, initial supply and where fees/buybacks go
     pub afho_vault: Pubkey,
-    // Vestigial SOL buyback PDA (SOL legs retired — USDC-only swaps; kept
-    // until the §4 state-field cleanup lands).
-    pub sol_vault: Pubkey,
     pub usdc_vault: Pubkey,
-    // Vestigial SOL dip PDA (10% SOL dip leg retired; §4 cleanup).
-    pub sol_dip: Pubkey,
     pub usdc_dip: Pubkey,
     pub offer_list: Pubkey,
     pub accepted_offers: Pubkey,
     pub market_status_pda: Pubkey,
     pub crank_program: Pubkey,
-    // Legacy Switchboard quote slot — pinned but never read (momentum comes
-    // from the self-sampled pool-price ring). §4 cleanup candidate.
-    pub price_oracle: Pubkey,
-    // Pool program dex_buyback CPIs for buybacks. Stub/mock on devnet;
-    // point at the real DEX pool program at launch.
-    pub dex_program: Pubkey,
-    // Raydium CPMM pool pinning (swap adapter). Pubkey::default() while the
-    // mock is in use; set via set_cpmm_pool once the real pool exists.
+    // Raydium CPMM pool pinning (swap adapter). Pubkey::default() until
+    // set_cpmm_pool pins the real pool.
     pub cpmm_pool_state: Pubkey,
     pub cpmm_amm_config: Pubkey,
     pub cpmm_program: Pubkey,
@@ -156,17 +137,10 @@ pub struct AmmState {
     // to USDC at claim time (All-USDC route).
     pub cpmm_sol_usdc_pool: Pubkey,
     pub cpmm_sol_usdc_config: Pubkey,
-    // Absolute-price oracle read by offer_claim / calc_completed_offers
-    // (raw-u64 mock PDA on devnet; real DEX/oracle adapter at mainnet).
-    pub spot_oracle: Pubkey,
     // Staking pool the offer desk CPIs into (purchased AFHO vest here).
     pub staking_pool: Pubkey,
     // Holding vault for the stakers' 10% share of USDC proceeds.
     pub usdc_rewards: Pubkey,
-    // Vestigial SOL/USD price oracle (SOL legs retired; §4 cleanup).
-    pub sol_oracle: Pubkey,
-    // Vestigial holding PDA for the stakers' 10% SOL share (retired; §4 cleanup).
-    pub sol_rewards: Pubkey,
 }
 
 // update beginning of trading day plz
@@ -183,9 +157,12 @@ pub struct AcceptedOffers {
 #[account(zero_copy)]
 pub struct MarketMetrics {
     pub day_index: u64,
-    pub treasury_sol: u64,
     pub total_staked: u64,
     pub total_supply: u64,
+    // Circulating stake-health denominator: total_supply minus the AFHO still
+    // held in the AMM's own vault (the bond-desk inventory the public can't
+    // stake). Refreshed with total_staked/total_supply at end of trading day.
+    pub available_supply: u64,
     pub spot_last_slot: u64,
     // Most recent end-of-day absolute close (floor units). Used to compute the
     // daily change into price_changes (close→close). 0 = no baseline yet.

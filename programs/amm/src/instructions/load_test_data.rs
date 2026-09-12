@@ -78,6 +78,7 @@ pub fn handler(ctx: Context<LoadTestData>, data: TestMetrics) -> Result<()> {
     if data.total_supply > 0 {
         metrics.total_staked = data.total_staked;
         metrics.total_supply = data.total_supply;
+        metrics.available_supply = data.total_supply;
     }
     if data.spot_prices.iter().any(|&p| p > 0) {
         metrics.spot_prices = data.spot_prices;

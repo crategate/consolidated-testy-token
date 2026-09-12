@@ -1,6 +1,6 @@
 use crate::state::offersState::{AmmState, MarketMetrics};
 use anchor_lang::prelude::*;
-use anchor_spl::token_interface::Mint;
+use anchor_spl::token_interface::{Mint, TokenAccount};
 
 use super::helpers_make_offers::{record_price_change, record_stake_ratio};
 
@@ -49,6 +49,10 @@ pub struct UpdateTradedayStats<'info> {
     /// AFHO mint — the source of truth for total_supply.
     #[account(address = amm_state.afho_mint)]
     pub afho_mint: Box<InterfaceAccount<'info, Mint>>,
+    /// The AMM's own AFHO vault — its balance is subtracted from total_supply
+    /// to get the circulating/available supply for the stake ratio.
+    #[account(address = amm_state.afho_vault)]
+    pub afho_vault: Box<InterfaceAccount<'info, TokenAccount>>,
 }
 
 pub fn handler(ctx: Context<UpdateTradedayStats>) -> Result<()> {
@@ -79,6 +83,11 @@ pub fn handler(ctx: Context<UpdateTradedayStats>) -> Result<()> {
     // recording today's stake ratio (without this, stake health reads 0).
     ctx.accounts.market_metrics.total_staked = ctx.accounts.staking_pool.total_staked;
     ctx.accounts.market_metrics.total_supply = ctx.accounts.afho_mint.supply;
+    ctx.accounts.market_metrics.available_supply = ctx
+        .accounts
+        .afho_mint
+        .supply
+        .saturating_sub(ctx.accounts.afho_vault.amount);
 
     // End-of-day metric writes (helpers_make_offers.rs). The momentum input is
     // a close→close change computed from the live AFHO/USDC price (pinned

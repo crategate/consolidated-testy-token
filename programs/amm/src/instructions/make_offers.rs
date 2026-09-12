@@ -42,7 +42,6 @@ pub struct MakeOffers<'info> {
     /// CHECK: nyse_vault for balance capping
     #[account(mut, address = amm_state.afho_vault)]
     pub afho_vault: AccountInfo<'info>,
-    pub system_program: Program<'info, System>,
 }
 
 pub fn handler(ctx: Context<MakeOffers>) -> Result<()> {

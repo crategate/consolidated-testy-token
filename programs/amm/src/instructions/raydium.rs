@@ -14,7 +14,6 @@ use anchor_lang::solana_program::instruction::{AccountMeta, Instruction};
 
 /// Pool authority / vault / LP-mint authority PDA seed.
 pub const AUTH_SEED: &[u8] = b"vault_and_lp_mint_auth_seed";
-pub const POOL_SEED: &[u8] = b"pool";
 pub const POOL_VAULT_SEED: &[u8] = b"pool_vault";
 pub const POOL_LP_MINT_SEED: &[u8] = b"pool_lp_mint";
 pub const OBSERVATION_SEED: &[u8] = b"observation";
@@ -28,28 +27,6 @@ pub const OBSERVATION_NUM: usize = 100;
 pub const Q32: u128 = 1 << 32;
 
 // ────────────────────────────── PDA derivation ──────────────────────────────
-
-fn sorted(a: Pubkey, b: Pubkey) -> (Pubkey, Pubkey) {
-    if a <= b {
-        (a, b)
-    } else {
-        (b, a)
-    }
-}
-
-/// `["pool", amm_config, token_0_mint, token_1_mint]` with mints sorted.
-pub fn pool_state_pda(
-    program: &Pubkey,
-    amm_config: Pubkey,
-    mint_a: Pubkey,
-    mint_b: Pubkey,
-) -> (Pubkey, u8) {
-    let (t0, t1) = sorted(mint_a, mint_b);
-    Pubkey::find_program_address(
-        &[POOL_SEED, amm_config.as_ref(), t0.as_ref(), t1.as_ref()],
-        program,
-    )
-}
 
 /// `["pool_vault", pool_state, mint]`.
 pub fn pool_vault_pda(program: &Pubkey, pool_state: Pubkey, mint: Pubkey) -> (Pubkey, u8) {

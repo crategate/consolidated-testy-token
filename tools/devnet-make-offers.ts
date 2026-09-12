@@ -35,8 +35,6 @@ async function main() {
             acceptedOffers: pda("accepted_offers"),
             afhoMint,
             afhoVault: new PublicKey(deployment.ammAfhoVault),
-            priceOracle: new PublicKey(deployment.oracleQuoteAccount),
-            systemProgram: anchor.web3.SystemProgram.programId,
         })
         .rpc();
 

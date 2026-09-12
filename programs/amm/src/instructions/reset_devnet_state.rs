@@ -47,9 +47,9 @@ fn reset_offer(o: &mut crate::state::offersState::Offer) {
 pub fn handler(ctx: Context<ResetDevnetState>) -> Result<()> {
     let m = &mut ctx.accounts.metrics;
     m.day_index = 0;
-    m.treasury_sol = 0;
     m.total_staked = 0;
     m.total_supply = 0;
+    m.available_supply = 0;
     m.spot_last_slot = 0;
     m.daily_close = 0;
     m.spot_prices = [0u64; 32];
@@ -65,21 +65,16 @@ pub fn handler(ctx: Context<ResetDevnetState>) -> Result<()> {
     a.sml_offers_accepted = [0u8; 5];
 
     let s = &mut ctx.accounts.amm_state;
-    s.total_sol_proceeds = 0;
     s.total_usdc_proceeds = 0;
     s.highest_buyback_basis = 0;
     s.bb_day_index = 0;
     s.bb_budget_usdc = 0;
     s.bb_spent_usdc = 0;
-    s.bb_budget_sol = 0;
-    s.bb_spent_sol = 0;
     s.bb_last_slot = 0;
     s.rewards_day_index = 0;
     s.dip_day_index = 0;
     s.dip_day_usdc = 0;
-    s.dip_day_sol = 0;
     s.dip_spent_usdc = 0;
-    s.dip_spent_sol = 0;
     s.dip_last_slot = 0;
     s.bb_slice_count = 0;
     s.untaken_days = 0;
